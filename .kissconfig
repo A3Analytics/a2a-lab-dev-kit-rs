@@ -1,0 +1,27 @@
+[gate]
+duplication_enabled = true
+min_similarity = 0.9
+orphan_module_enabled = true
+test_coverage_threshold = 0
+
+[rust]
+arguments = 18
+attributes_per_function = 4
+boolean_parameters = 4
+branches_per_function = 22
+calls_per_function = 203
+concrete_types_per_file = 25
+cycle_size = 0
+dependency_depth = 8
+functions_per_file = 73
+imported_names_per_file = 156
+indirect_dependencies = 1636
+interface_types_per_file = 1
+lines_per_file = 1458
+local_variables = 67
+max_indentation = 8
+methods_per_class = 40
+nested_function_depth = 4
+returns_per_function = 13
+statements_per_file = 425
+statements_per_function = 108

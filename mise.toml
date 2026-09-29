@@ -1,16 +1,13 @@
-# Mise configuration for this project
-# This file defines tools, environment variables, and tasks
+min_version = "2026.9.10"
 
 [tools]
-
+rust = "1.98.1"
+"cargo:cargo-nextest" = "0.9.146"
+"cargo:kiss-ai" = "0.4.9"
 
 [tools."github:MrLesk/Backlog.md"]
 version = "latest"
-bin = "backlog"  # Rename backlog-bun to backlog
-
-# Example: Set environment variables
-# [env]
-# NODE_ENV = "development"
+bin = "backlog"
 
 [task_config]
 includes = [".mise/run.toml"]

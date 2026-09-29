@@ -1,3 +1,45 @@
 [backlog-browser]
 description = "Start the backlog browser web interface for visual task management"
 run = "mise exec -- backlog browser"
+
+[build]
+description = "Compile the crate"
+run = "cargo check --workspace"
+
+[fmt]
+description = "Format Rust sources"
+run = "cargo fmt"
+
+[fmt-check]
+description = "Check Rust formatting without changing files"
+run = "cargo fmt --check"
+
+[check]
+description = "Type-check the crate with warnings denied"
+env = { CARGO_TARGET_DIR = "{{config_root}}/../target/quality", RUSTFLAGS = "-D warnings" }
+run = "cargo check --workspace"
+
+[clippy]
+description = "Lint all targets and features with warnings denied"
+env = { CARGO_TARGET_DIR = "{{config_root}}/../target/quality" }
+run = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[test]
+description = "Run the workspace test suite"
+run = "cargo nextest run --workspace"
+
+[kiss]
+description = "Check Rust complexity, excluding duplication and orphan-module findings"
+run = "bash .mise/scripts/quality.sh kiss"
+
+[duplication]
+description = "Scan production Rust for duplication"
+run = "bash .mise/scripts/duplication.sh"
+
+[duplication-test-code]
+description = "Scan test Rust for duplication (advisory)"
+run = "bash .mise/scripts/duplication.sh test"
+
+[quality]
+description = "Run formatting, complexity, duplication, compile, clippy, and test checks"
+run = "bash .mise/scripts/quality.sh"

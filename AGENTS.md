@@ -4,9 +4,7 @@ Operating guide for AI agents working in this repository.
 
 ## What this repo is
 
-`new-repo-template` — a bootstrap template for creating repositories standardized on **mise** (tooling + tasks), **Backlog.md** (task + doc management), and **Cursor** (agent skills). Select it from "Start with a template", then run `backlog init "<project name>"` and build on top.
-
-It ships empty on purpose: no application code, no tasks, no docs. Human setup steps live in `README.md`.
+`a2a-lab-sdk` — a Rust SDK managed with **mise** (tooling + tasks), **Backlog.md** (task + doc management), and **Cursor** (agent skills). The library crate lives at the repository root. Human setup and the local quality commands live in `README.md`.
 
 ## Tooling
 
@@ -15,8 +13,8 @@ Everything runs through `mise`. The `backlog` binary is provided by mise and is 
 - Install tools: `mise install`
 - List tasks: `mise tasks`
 - Run a task: `mise run <task>`
-- Configured tools: Backlog.md (`mise.toml`)
-- Configured tasks: `backlog-browser` (`.mise/run.toml`) — visual task board
+- Configured tools: Rust 1.98.1, cargo-nextest, kiss-ai, and Backlog.md (`mise.toml`)
+- Configured tasks: `build`, `fmt`, `fmt-check`, `check`, `clippy`, `test`, `kiss`, `duplication`, `duplication-test-code`, `quality`, and `backlog-browser` (`.mise/run.toml`)
 
 Add tools under `[tools]` in `mise.toml`; add tasks in `.mise/run.toml`.
 
@@ -28,7 +26,7 @@ Repo-specific agent skills live in `.cursor/skills/`:
 - `doc` — author backlog docs
 - `work` — implement a task to done
 
-The skills include examples referencing a downstream app (`apps/web`, TanStack Start, shadcn). Those describe a target project built *from* this template, not files present here — ignore app-specific paths until such an app exists.
+The skills include examples referencing a downstream app (`apps/web`, TanStack Start, shadcn). Ignore those paths. This repository is the Rust SDK, and its quality gate is `mise run quality`.
 
 ## Documentation policy
 
@@ -68,11 +66,11 @@ For multi-line values use ANSI-C quoting: `--notes $'Line 1\nLine 2'`.
 
 - Atomic (one PR), independent, and testable — acceptance criteria are observable outcomes, not implementation steps.
 - Never reference a higher-numbered task.
-- Description = the *why/what*; Implementation Plan (added only after starting) = the *how*.
+- Description = the _why/what_; Implementation Plan (added only after starting) = the _how_.
 
 ### Definition of Done
 
-All acceptance criteria checked · Implementation Notes written · Final Summary added · tests/lint clean · status set to `Done` via CLI.
+All acceptance criteria checked · Implementation Notes written · Final Summary added · `mise run quality` passes · status set to `Done` via CLI.
 
 Full CLI reference: `mise exec -- backlog --help`.
 
