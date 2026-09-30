@@ -6,6 +6,7 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod a2a;
+pub mod catalog;
 pub mod error;
 pub mod id;
 pub mod json_object;
@@ -21,6 +22,10 @@ pub mod workflows;
 pub use a2a::{
     A2A_PROTOCOL_VERSION, A2aClient, A2aServer, LAB_MEDIA_TYPE, StreamEvent, bind_local,
 };
+pub use catalog::{
+    Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
+    ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
+};
 pub use error::SdkError;
 pub use id::{MetricId, RunId, SourceId, WorkflowId};
 pub use json_object::JsonObject;
@@ -28,7 +33,7 @@ pub use logs::{
     ListLogSourcesRequest, LogLevel, LogProvider, LogRecord, LogSource, QueryLogsRequest,
 };
 pub use mcp::McpServer;
-pub use memory::{MemoryLogs, MemoryMetrics, MemoryWorkflows};
+pub use memory::{MemoryCatalog, MemoryLogs, MemoryMetrics, MemoryWorkflows};
 pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };

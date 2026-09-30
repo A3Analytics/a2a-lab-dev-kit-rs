@@ -9,6 +9,10 @@ use crate::error::SdkError;
 
 const MAX_LEN: usize = 128;
 
+pub(crate) fn parse_public(value: &str) -> Result<String, SdkError> {
+    validate(value)
+}
+
 pub(crate) fn validate(value: &str) -> Result<String, SdkError> {
     let allowed = value.chars().all(|character| {
         character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '-')

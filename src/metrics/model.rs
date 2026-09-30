@@ -19,6 +19,12 @@ pub struct MetricDescriptor {
     pub description: String,
     /// Unit of `value`, such as `ms` or `count`.
     pub unit: String,
+    /// Asset identifier from the industrial catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<String>,
+    /// Semantic identifier from the industrial catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_id: Option<String>,
 }
 
 /// One finite sample in a time series.

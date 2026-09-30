@@ -28,6 +28,8 @@ async fn service() -> Arc<dyn a2a_lab_sdk::LabApi> {
         id: SourceId::new("app").unwrap(),
         name: "App".to_owned(),
         description: "Application logs".to_owned(),
+        asset_id: None,
+        semantic_id: None,
     })
     .await;
     let workflows = MemoryWorkflows::new();
@@ -36,6 +38,8 @@ async fn service() -> Arc<dyn a2a_lab_sdk::LabApi> {
             id: WorkflowId::new("build").unwrap(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
+            asset_id: None,
+            semantic_id: None,
         })
         .await;
     LabService::new(logs, MemoryMetrics::new(), workflows).share()

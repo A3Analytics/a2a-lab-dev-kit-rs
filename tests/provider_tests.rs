@@ -23,6 +23,8 @@ fn source(id: &str) -> LogSource {
         id: SourceId::new(id).unwrap(),
         name: id.to_owned(),
         description: format!("{id} logs"),
+        asset_id: None,
+        semantic_id: None,
     }
 }
 
@@ -98,6 +100,8 @@ async fn queries_metric_samples_and_reports_provider_failure() {
             name: "Latency".to_owned(),
             description: "Request latency".to_owned(),
             unit: "ms".to_owned(),
+            asset_id: None,
+            semantic_id: None,
         })
         .await;
     metrics
@@ -138,6 +142,8 @@ async fn starts_a_workflow_and_tracks_its_status() {
             id: workflow_id.clone(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
+            asset_id: None,
+            semantic_id: None,
         })
         .await;
     let listed = workflows

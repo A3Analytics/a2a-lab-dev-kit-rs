@@ -37,12 +37,16 @@ async fn lab() -> Lab {
         id: source_id.clone(),
         name: "App".to_owned(),
         description: "Application logs".to_owned(),
+        asset_id: None,
+        semantic_id: None,
     })
     .await;
     logs.insert_source(LogSource {
         id: SourceId::new("worker").unwrap(),
         name: "Worker".to_owned(),
         description: "Worker logs".to_owned(),
+        asset_id: None,
+        semantic_id: None,
     })
     .await;
     for (stamp, message) in [
@@ -67,6 +71,8 @@ async fn lab() -> Lab {
             name: "CPU".to_owned(),
             description: "CPU load".to_owned(),
             unit: "percent".to_owned(),
+            asset_id: None,
+            semantic_id: None,
         })
         .await;
     metrics
@@ -81,6 +87,8 @@ async fn lab() -> Lab {
             id: WorkflowId::new("build").unwrap(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
+            asset_id: None,
+            semantic_id: None,
         })
         .await;
     let service = LabService::new(logs.clone(), metrics, workflows.clone()).share();

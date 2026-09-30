@@ -40,6 +40,12 @@ pub struct WorkflowDefinition {
     pub name: String,
     /// What the workflow does.
     pub description: String,
+    /// Asset identifier from the industrial catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<String>,
+    /// Semantic identifier from the industrial catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_id: Option<String>,
 }
 
 /// A started workflow and its current status.
