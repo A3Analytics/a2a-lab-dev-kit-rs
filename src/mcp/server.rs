@@ -177,7 +177,7 @@ impl McpServer {
 
     #[tool(
         name = "start_task",
-        description = "Start a task with a JSON object input and return the A2A task"
+        description = "Start a task with a JSON object input. Waits until the run is terminal unless wait is false."
     )]
     async fn start_task(
         &self,

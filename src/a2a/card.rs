@@ -57,7 +57,7 @@ fn skills() -> Vec<Value> {
         (
             "start-task",
             "Start task",
-            "Start a task with a JSON object input",
+            "Start a task with a JSON object input. Waits until the run is terminal unless wait is false.",
         ),
         (
             "get-task-status",

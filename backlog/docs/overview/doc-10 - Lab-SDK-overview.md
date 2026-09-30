@@ -51,7 +51,7 @@ flowchart TD
 3. `list_metrics` (`list-metrics`, `list_metrics`) lists metric descriptors.
 4. `query_metric` (`query-metric`, `query_metric`) reads samples for one metric.
 5. `list_tasks` (`list-tasks`, `list_tasks`) lists task definitions.
-6. `start_task` (`start-task`, `start_task`) starts a task with a JSON object and returns the run.
+6. `start_task` (`start-task`, `start_task`) starts a task with a JSON object and waits until the run is completed, failed, or canceled (`timeout_seconds` default 60). Set `wait` to false to return as soon as the run is accepted.
 7. `get_task_status` (`get-task-status`, `get_task_status`) reads one run.
 
 Query requests carry a `TimeRange`. The range is half-open UTC: `TimeRange` documents `[start, end)`, `start` must be strictly before `end`, and `contains` is true when the timestamp is greater than or equal to `start` and strictly less than `end`. `UtcTimestamp` accepts RFC 3339 text whose offset is `Z`, `+00:00`, or `-00:00`.

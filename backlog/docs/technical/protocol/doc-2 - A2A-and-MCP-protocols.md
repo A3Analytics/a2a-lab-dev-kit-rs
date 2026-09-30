@@ -46,7 +46,7 @@ This crate implements that HTTP+JSON profile directly and does not depend on a s
 
 `McpServer` targets MCP `2026-07-28` through `rmcp` 3.5. The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`. Input and output schemas come from the same request and result types used by A2A.
 
-`serve_stdio` uses newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener, the A2A server binds `127.0.0.1:31000` and the MCP server binds `127.0.0.1:31001`. Starting a task returns the run immediately. Call `get_task_status` to poll it.
+`serve_stdio` uses newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener, the A2A server binds `127.0.0.1:31000` and the MCP server binds `127.0.0.1:31001`. Starting a task waits until the run is completed, failed, or canceled. Set `wait` to false to return as soon as the run is accepted, then poll with `get_task_status`.
 
 Provider failures become MCP invalid-params or internal errors. The same failures become HTTP 400, 404, 502, or 503 on the A2A adapter, with a body of `{ "code", "message" }`.
 

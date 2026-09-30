@@ -11,7 +11,7 @@ Rust SDK for lab logs, metrics, and tasks. Provider traits are the source of tru
 3. `list_metrics` lists metric descriptors.
 4. `query_metric` reads samples for one metric.
 5. `list_tasks` lists task definitions.
-6. `start_task` starts a task with a JSON object and returns the run.
+6. `start_task` starts a task with a JSON object and waits until the run is terminal. Set `wait` to false to return as soon as the run is accepted.
 7. `get_task_status` reads one run.
 
 A2A skill ids are hyphenated (`list-log-sources`). MCP tool names match the Rust names (`list_log_sources`).

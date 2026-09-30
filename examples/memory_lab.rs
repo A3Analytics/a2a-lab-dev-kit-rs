@@ -140,10 +140,10 @@ async fn demonstrate_tasks() -> Result<(), SdkError> {
         })
         .await?;
     let run = tasks
-        .start(StartTaskRequest {
+        .start(StartTaskRequest::new(
             task_id,
-            input: JsonObject::parse(r#"{"branch":"main"}"#)?,
-        })
+            JsonObject::parse(r#"{"branch":"main"}"#)?,
+        ))
         .await?;
     tasks
         .transition(&run.id, TaskState::Completed, Some("done".to_owned()))

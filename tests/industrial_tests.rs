@@ -101,10 +101,13 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_tasks() {
         .unwrap();
     assert!((points.items()[0].value - 21.5).abs() < f64::EPSILON);
     let started = client
-        .start_task(StartTaskRequest {
-            task_id: TaskId::new("build").unwrap(),
-            input: JsonObject::parse(r#"{"profile":"standard"}"#).unwrap(),
-        })
+        .start_task(
+            StartTaskRequest::new(
+                TaskId::new("build").unwrap(),
+                JsonObject::parse(r#"{"profile":"standard"}"#).unwrap(),
+            )
+            .immediate(),
+        )
         .await
         .unwrap();
     assert_eq!(started.state, a2a_lab_sdk::TaskState::Submitted);

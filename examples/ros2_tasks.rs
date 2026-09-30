@@ -31,10 +31,10 @@ async fn main() -> Result<(), SdkError> {
     );
 
     let started = tasks
-        .start(StartTaskRequest {
-            task_id: TaskId::new("navigate_to_pose")?,
-            input: JsonObject::parse(r#"{"pose":"dock"}"#)?,
-        })
+        .start(StartTaskRequest::new(
+            TaskId::new("navigate_to_pose")?,
+            JsonObject::parse(r#"{"pose":"dock"}"#)?,
+        ))
         .await?;
     let goal_id = started
         .id

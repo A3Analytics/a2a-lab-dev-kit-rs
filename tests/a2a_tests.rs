@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_lab_sdk::{
-    A2aClient, A2aServer, GetTaskStatusRequest, JsonObject, LAB_MEDIA_TYPE, LabApi, LabResult,
-    LabService, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel, LogRecord,
-    LogSource, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint,
-    PageRequest, QueryLogsRequest, QueryMetricRequest, SourceId, StartTaskRequest, TaskDefinition,
-    TaskId, TaskState, TimeRange, UtcTimestamp, bind_local,
+    A2aClient, A2aServer, GetTaskStatusRequest, JsonObject, LAB_MEDIA_TYPE, LabApi, LabCommand,
+    LabResult, LabService, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel,
+    LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId,
+    MetricPoint, PageRequest, QueryLogsRequest, QueryMetricRequest, RunId, SourceId,
+    StartTaskRequest, TaskDefinition, TaskId, TaskState, TimeRange, UtcTimestamp, bind_local,
 };
 
 fn timestamp(value: &str) -> UtcTimestamp {
@@ -240,10 +240,13 @@ async fn reads_metrics_and_task_transitions() {
         .unwrap();
     assert_eq!(tasks.items()[0].id.as_str(), "build");
     let started = client
-        .start_task(StartTaskRequest {
-            task_id: TaskId::new("build").unwrap(),
-            input: JsonObject::parse(r#"{"branch":"main"}"#).unwrap(),
-        })
+        .start_task(
+            StartTaskRequest::new(
+                TaskId::new("build").unwrap(),
+                JsonObject::parse(r#"{"branch":"main"}"#).unwrap(),
+            )
+            .immediate(),
+        )
         .await
         .unwrap();
     assert_eq!(started.state, TaskState::Submitted);
@@ -317,4 +320,68 @@ async fn reports_invalid_missing_and_unavailable_requests() {
         .await
         .unwrap_err();
     assert_eq!(unavailable.code(), "unavailable");
+}
+
+#[test]
+fn omitted_wait_deserializes_as_wait() {
+    let request: StartTaskRequest =
+        serde_json::from_str(r#"{"task_id":"build","input":{}}"#).unwrap();
+    assert!(request.wait);
+    assert_eq!(request.timeout_seconds, None);
+}
+
+#[tokio::test]
+async fn start_task_returns_immediately_when_wait_is_false() {
+    let lab = lab().await;
+    let outcome = lab
+        .service
+        .execute(LabCommand::StartTask(
+            StartTaskRequest::new(TaskId::new("build").unwrap(), JsonObject::empty()).immediate(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(outcome.task.state, TaskState::Submitted);
+}
+
+#[tokio::test]
+async fn start_task_wait_returns_terminal_state() {
+    let lab = lab().await;
+    let tasks = lab.tasks.clone();
+    tokio::spawn(async move {
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            if tasks
+                .transition(
+                    &RunId::new("run-1").unwrap(),
+                    TaskState::Completed,
+                    Some("done".to_owned()),
+                )
+                .await
+                .is_ok()
+            {
+                break;
+            }
+        }
+    });
+    let mut request = StartTaskRequest::new(TaskId::new("build").unwrap(), JsonObject::empty());
+    request.timeout_seconds = Some(2);
+    let outcome = lab
+        .service
+        .execute(LabCommand::StartTask(request))
+        .await
+        .unwrap();
+    assert_eq!(outcome.task.state, TaskState::Completed);
+}
+
+#[tokio::test]
+async fn start_task_wait_times_out() {
+    let lab = lab().await;
+    let mut request = StartTaskRequest::new(TaskId::new("build").unwrap(), JsonObject::empty());
+    request.timeout_seconds = Some(1);
+    let error = lab
+        .service
+        .execute(LabCommand::StartTask(request))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), "unavailable");
 }

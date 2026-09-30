@@ -26,6 +26,7 @@ message StartTaskRequest {
   string task_id = 1;
   string input_json = 2;
   string run_id = 3;
+  bool wait = 4;
 }
 
 message CommandConfirmation {

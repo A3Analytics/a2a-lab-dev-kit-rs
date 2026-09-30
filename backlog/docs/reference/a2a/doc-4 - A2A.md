@@ -37,7 +37,7 @@ The adapter lives in `src/a2a` and uses Axum and reqwest. `A2A_PROTOCOL_VERSION`
 
 `POST /message:send` and `POST /message/send` accept a message whose data part deserializes as `LabCommand`. A present `mediaType` must equal `LAB_MEDIA_TYPE`. A success body is a task: `id`, `contextId`, `status.state`, and one artifact data part of type `LabResult`. Protocol state names are `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and `TASK_STATE_CANCELED`.
 
-A started task stores the run id as the A2A task id. `GET /tasks/{id}` reloads that task from `TaskProvider` and uses `TaskState`. Other commands allocate `task-{n}` and finish in `TASK_STATE_COMPLETED`.
+A started task stores the run id as the A2A task id. `GET /tasks/{id}` reloads that task from `TaskProvider` and uses `TaskState`. Other commands allocate `task-{n}` and finish in `TASK_STATE_COMPLETED`. `start_task` waits until the run is terminal unless `wait` is false.
 
 `GET /tasks/{id}/subscribe` emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`. Query-log and query-metric pages become one artifact chunk per item. Later chunks set `append`; the last chunk sets `lastChunk`. Other results are a single chunk. `statusUpdate` sets `final` when the task state is terminal.
 

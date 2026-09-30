@@ -203,7 +203,7 @@ where
     }
 
     async fn start_task(&self, request: StartTaskRequest) -> Result<TaskSnapshot, SdkError> {
-        let run = self.tasks.start(request).await?;
+        let run = crate::tasks::start_run(&self.tasks, request).await?;
         let id = run.id.as_str().to_owned();
         let stored = StoredTask {
             context_id: context_id(&id),

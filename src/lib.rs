@@ -53,7 +53,7 @@ pub use ros2::{MemoryRos2, Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph, Ros2
 pub use service::{LabApi, LabCommand, LabOutcome, LabResult, LabService, TaskSnapshot};
 pub use tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
-    TaskRun, TaskState,
+    TaskRun, TaskState, start_run,
 };
 pub use time::{TimeRange, UtcTimestamp};
 

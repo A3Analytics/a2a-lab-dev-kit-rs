@@ -94,6 +94,7 @@ pub async fn start_task(
             task_id: task_id.to_owned(),
             input_json: input_json.to_owned(),
             run_id: run_id.to_owned(),
+            wait: false,
         })
         .await
         .map_err(|error| SdkError::transport(error.to_string()))?

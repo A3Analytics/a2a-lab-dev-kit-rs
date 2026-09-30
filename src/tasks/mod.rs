@@ -6,4 +6,4 @@ mod provider;
 pub use model::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun, TaskState,
 };
-pub use provider::TaskProvider;
+pub use provider::{TaskProvider, start_run};

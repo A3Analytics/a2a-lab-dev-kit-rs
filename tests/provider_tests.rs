@@ -152,10 +152,10 @@ async fn starts_a_task_and_tracks_its_status() {
         .unwrap();
     assert_eq!(listed.items()[0].id, task_id);
     let run = tasks
-        .start(StartTaskRequest {
-            task_id: task_id.clone(),
-            input: JsonObject::parse(r#"{"branch":"main"}"#).unwrap(),
-        })
+        .start(StartTaskRequest::new(
+            task_id.clone(),
+            JsonObject::parse(r#"{"branch":"main"}"#).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(run.state, TaskState::Submitted);
@@ -170,10 +170,10 @@ async fn starts_a_task_and_tracks_its_status() {
     assert_eq!(status.state, TaskState::Completed);
     assert_eq!(status.message.as_deref(), Some("done"));
     let missing = tasks
-        .start(StartTaskRequest {
-            task_id: TaskId::new("missing").unwrap(),
-            input: JsonObject::empty(),
-        })
+        .start(StartTaskRequest::new(
+            TaskId::new("missing").unwrap(),
+            JsonObject::empty(),
+        ))
         .await
         .unwrap_err();
     assert_eq!(missing.code(), "not_found");

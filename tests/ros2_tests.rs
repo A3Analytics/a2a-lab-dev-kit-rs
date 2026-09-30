@@ -32,10 +32,10 @@ async fn lists_actions_and_maps_goal_status() {
     );
 
     let started = tasks
-        .start(a2a_lab_sdk::StartTaskRequest {
-            task_id: TaskId::new("navigate_to_pose").unwrap(),
-            input: JsonObject::parse(r#"{"pose":"dock"}"#).unwrap(),
-        })
+        .start(a2a_lab_sdk::StartTaskRequest::new(
+            TaskId::new("navigate_to_pose").unwrap(),
+            JsonObject::parse(r#"{"pose":"dock"}"#).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(started.state, TaskState::Submitted);
@@ -70,10 +70,10 @@ async fn lists_actions_and_maps_goal_status() {
     assert_eq!(finished.state, TaskState::Completed);
 
     let missing = tasks
-        .start(a2a_lab_sdk::StartTaskRequest {
-            task_id: TaskId::new("missing").unwrap(),
-            input: JsonObject::empty(),
-        })
+        .start(a2a_lab_sdk::StartTaskRequest::new(
+            TaskId::new("missing").unwrap(),
+            JsonObject::empty(),
+        ))
         .await
         .unwrap_err();
     assert_eq!(missing.code(), "not_found");

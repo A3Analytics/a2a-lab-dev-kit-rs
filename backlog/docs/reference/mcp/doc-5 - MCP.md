@@ -32,7 +32,7 @@ The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, 
 
 `serve_stdio` speaks newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener it binds `127.0.0.1:31001`.
 
-`invalid`, `protocol`, and `not_found` become MCP invalid-params errors. `unavailable` and `transport` become internal errors. `start_task` returns the run from `LabService` immediately. `get_task_status` is a separate call.
+`invalid`, `protocol`, and `not_found` become MCP invalid-params errors. `unavailable` and `transport` become internal errors. `start_task` waits until the run is terminal unless `wait` is false. `timeout_seconds` defaults to 60. `get_task_status` is a separate call.
 
 ## Entry points
 

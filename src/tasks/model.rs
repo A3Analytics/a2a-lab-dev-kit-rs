@@ -103,6 +103,42 @@ pub struct StartTaskRequest {
     pub task_id: TaskId,
     /// JSON object passed to the task.
     pub input: JsonObject,
+    /// When true, wait until the run is terminal before returning.
+    /// When false, return as soon as the run is accepted. Defaults to true.
+    #[serde(default = "default_wait", skip_serializing_if = "is_true")]
+    pub wait: bool,
+    /// Seconds to wait when [`Self::wait`] is true. Default 60.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u32>,
+}
+
+const fn default_wait() -> bool {
+    true
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_true(value: &bool) -> bool {
+    *value
+}
+
+impl StartTaskRequest {
+    /// Starts a task and waits until the run is terminal.
+    #[must_use]
+    pub fn new(task_id: TaskId, input: JsonObject) -> Self {
+        Self {
+            task_id,
+            input,
+            wait: true,
+            timeout_seconds: None,
+        }
+    }
+
+    /// Return as soon as the run is accepted.
+    #[must_use]
+    pub fn immediate(mut self) -> Self {
+        self.wait = false;
+        self
+    }
 }
 
 /// A2A Get Task request for a previously started task.
