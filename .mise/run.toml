@@ -40,6 +40,18 @@ run = "bash .mise/scripts/duplication.sh"
 description = "Scan test Rust for duplication (advisory)"
 run = "bash .mise/scripts/duplication.sh test"
 
+[wiki-check]
+description = "Generate the Wiki stage offline and validate public docs"
+run = "bash .mise/scripts/wiki-check.sh"
+
+[wiki-publish]
+description = "Publish the Wiki stage when GitHub credentials are available"
+run = "bash .mise/scripts/wiki-publish.sh"
+
+[wiki-drift]
+description = "Compare the Wiki stage with the remote Wiki without pushing"
+run = "bash .mise/scripts/wiki-drift.sh"
+
 [quality]
-description = "Run formatting, complexity, duplication, compile, clippy, and test checks"
+description = "Run formatting, Wiki, complexity, duplication, compile, clippy, and test checks"
 run = "bash .mise/scripts/quality.sh"

@@ -1,7 +1,7 @@
 ---
 id: doc-2
 title: A2A and MCP protocols
-type: specification
+type: technical
 audience: technical
 created_date: "2026-09-29 23:40"
 ---
@@ -40,7 +40,7 @@ A successful response is an A2A task. Its artifact data part uses the same media
 
 Task states use the protocol names `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and `TASK_STATE_CANCELED`. A workflow started through A2A uses the run ID as the task ID, so `GET /tasks/{id}` follows that run. `GET /tasks/{id}/subscribe` emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`. Query results are split into ordered artifact chunks. The last chunk sets `lastChunk` to true.
 
-This crate implements that HTTP+JSON profile directly. It does not depend on a third-party A2A crate, because the current official Rust server is centered on ConnectRPC and protobuf data parts.
+This crate implements that HTTP+JSON profile directly and does not depend on a separate A2A crate.
 
 ## MCP
 
@@ -48,6 +48,6 @@ This crate implements that HTTP+JSON profile directly. It does not depend on a t
 
 `serve_stdio` uses newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener, the A2A server binds `127.0.0.1:31000` and the MCP server binds `127.0.0.1:31001`. Starting a workflow returns the run immediately. Call `get_workflow_status` to poll it.
 
-Provider failures become MCP invalid-params or internal errors. The same failures become HTTP 400, 404, or 503 on the A2A adapter, with a body of `{ "code", "message" }`.
+Provider failures become MCP invalid-params or internal errors. The same failures become HTTP 400, 404, 502, or 503 on the A2A adapter, with a body of `{ "code", "message" }`.
 
-The architecture is described in doc-1.
+The architecture is described in [Lab SDK architecture](<../architecture/doc-1 - Lab-SDK-architecture.md>).

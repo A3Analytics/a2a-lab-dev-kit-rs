@@ -1,7 +1,7 @@
 ---
 id: doc-1
 title: Lab SDK architecture
-type: guide
+type: technical
 audience: technical
 created_date: "2026-09-29 23:40"
 ---
@@ -30,4 +30,4 @@ Identifiers are non-empty ASCII tokens. Timestamps are UTC. `TimeRange` is half-
 
 `A2aServer` and `A2aClient` speak A2A HTTP+JSON. `McpServer` registers the same operations as MCP tools and can serve stdio or Streamable HTTP. Both adapters take `Arc<dyn LabApi>`, so one provider implementation can be exposed on both protocols.
 
-See doc-2 for the wire contracts and doc-3 for the AAS, OPC UA, and SiLA 2 connectors.
+See [A2A and MCP protocols](<../protocol/doc-2 - A2A-and-MCP-protocols.md>) for the wire contracts and [Industrial equipment connectors](<../industrial/doc-3 - Industrial-equipment-connectors.md>) for the AAS, OPC UA, and SiLA 2 connectors.

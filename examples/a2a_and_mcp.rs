@@ -1,0 +1,77 @@
+//! One lab service on A2A HTTP+JSON and MCP Streamable HTTP.
+//!
+//! Both listeners are ephemeral. The process makes one client call on each
+//! protocol, then stops the servers and exits.
+
+use std::error::Error;
+use std::sync::Arc;
+
+use a2a_lab_sdk::{
+    A2aClient, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource, McpServer,
+    MemoryLogs, MemoryMetrics, MemoryWorkflows, Page, PageRequest, SdkError, SourceId, bind_local,
+};
+use rmcp::ServiceExt;
+use rmcp::model::{
+    CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation, ProtocolVersion,
+};
+use rmcp::transport::StreamableHttpClientTransport;
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let logs = MemoryLogs::new();
+    logs.insert_source(LogSource {
+        id: SourceId::new("app")?,
+        name: "App".to_owned(),
+        description: "Application logs".to_owned(),
+        asset_id: None,
+        semantic_id: None,
+    })
+    .await;
+    let service = LabService::new(logs, MemoryMetrics::new(), MemoryWorkflows::new()).share();
+
+    let (a2a_listener, a2a_address) = bind_local().await?;
+    let (mcp_listener, mcp_address) = bind_local().await?;
+    let a2a = spawn_a2a(Arc::clone(&service), a2a_listener);
+    let mcp = spawn_mcp(service, mcp_listener);
+
+    let client = A2aClient::new(&format!("http://{a2a_address}"))?;
+    let sources = client
+        .list_log_sources(ListLogSourcesRequest {
+            page: PageRequest::new(None, 10)?,
+        })
+        .await?;
+    println!("a2a list_log_sources: {}", sources.items()[0].id);
+
+    let transport = StreamableHttpClientTransport::from_uri(format!("http://{mcp_address}/mcp"));
+    let mcp_client = ClientConfig::new(
+        ClientCapabilities::default(),
+        Implementation::new("a2a-lab-example", env!("CARGO_PKG_VERSION")),
+    )
+    .with_protocol_version(ProtocolVersion::V_2026_07_28)
+    .serve(transport)
+    .await?;
+    let arguments = serde_json::json!({"page": {"limit": 10}})
+        .as_object()
+        .cloned()
+        .ok_or("tool arguments must be an object")?;
+    let page: Page<LogSource> = mcp_client
+        .call_tool(CallToolRequestParams::new("list_log_sources").with_arguments(arguments))
+        .await?
+        .into_typed()?;
+    println!("mcp list_log_sources: {}", page.items()[0].id);
+    mcp_client.cancel().await?;
+
+    a2a.abort();
+    mcp.abort();
+    Ok(())
+}
+
+fn spawn_a2a(service: Arc<dyn LabApi>, listener: TcpListener) -> JoinHandle<Result<(), SdkError>> {
+    tokio::spawn(async move { A2aServer::new(&service).listen(listener).await })
+}
+
+fn spawn_mcp(service: Arc<dyn LabApi>, listener: TcpListener) -> JoinHandle<Result<(), SdkError>> {
+    tokio::spawn(async move { McpServer::new(&service).serve_http(listener).await })
+}

@@ -37,6 +37,7 @@ clippy_warnings() {
 case "$mode" in
   all)
     step 'cargo fmt' cargo fmt --check
+    step 'wiki-check' bash .mise/scripts/wiki-check.sh
     step kiss kiss_check
     step duplication bash .mise/scripts/duplication.sh
     step check check_warnings

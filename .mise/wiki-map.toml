@@ -1,0 +1,30 @@
+# Canonical public docs published to the GitHub Wiki.
+# source is a directory under backlog/docs. Order is _Sidebar.md order.
+
+[[page]]
+source = "overview"
+wiki = "Home.md"
+
+[[page]]
+source = "reference/a2a"
+wiki = "A2A.md"
+
+[[page]]
+source = "reference/mcp"
+wiki = "MCP.md"
+
+[[page]]
+source = "reference/aas"
+wiki = "AAS.md"
+
+[[page]]
+source = "reference/opc-ua"
+wiki = "OPC-UA.md"
+
+[[page]]
+source = "reference/sila-2"
+wiki = "SiLA-2.md"
+
+[[page]]
+source = "reference/ros-2"
+wiki = "ROS-2.md"
