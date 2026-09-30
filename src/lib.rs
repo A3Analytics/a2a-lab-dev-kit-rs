@@ -16,6 +16,8 @@ pub mod logs;
 pub mod mcp;
 pub mod memory;
 pub mod metrics;
+#[cfg(feature = "opcua")]
+pub mod opcua;
 pub mod page;
 pub mod service;
 pub mod time;
