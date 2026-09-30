@@ -3,7 +3,7 @@ id: doc-10
 title: Lab SDK overview
 type: overview
 audience: public
-created_date: '2026-09-30 17:38'
+created_date: "2026-09-30 17:38"
 ---
 
 # Lab SDK overview
@@ -11,6 +11,36 @@ created_date: '2026-09-30 17:38'
 ## Role in this SDK
 
 `a2a-lab-sdk` is a Rust library for lab logs, metrics, and workflows. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `WorkflowProvider`, and stores an A2A task snapshot. A2A and MCP both call that service.
+
+An agent call enters through A2A or MCP. `LabService` fans out to the three provider traits. Each trait is backed by one implementation chosen when the service is built.
+
+```mermaid
+flowchart TD
+  agent[Agent] --> a2a[A2aServer]
+  agent --> mcp[McpServer]
+  a2a --> lab[LabService]
+  mcp --> lab
+  lab --> logs[LogProvider]
+  lab --> metrics[MetricProvider]
+  lab --> workflows[WorkflowProvider]
+  logs --> memLogs[MemoryLogs]
+  logs --> indLogs[IndustrialLogs]
+  metrics --> memMetrics[MemoryMetrics]
+  metrics --> indMetrics[IndustrialMetrics]
+  workflows --> memWf[MemoryWorkflows]
+  workflows --> indWf[IndustrialWorkflows]
+  workflows --> ros[Ros2Workflows]
+  indLogs --> catalog[AssetCatalogProvider]
+  indMetrics --> catalog
+  indWf --> catalog
+  indLogs --> live[LiveSource]
+  indMetrics --> live
+  indWf --> live
+  catalog --> aasClient[AasClient]
+  catalog --> memCat[MemoryCatalog]
+  live --> scripted[ScriptedLive]
+  ros --> graph[Ros2Graph]
+```
 
 ## What this crate implements
 
@@ -43,11 +73,11 @@ Protocol and equipment pages:
 - [SiLA 2](<../reference/sila-2/doc-8 - SiLA-2.md>)
 - [ROS 2](<../reference/ros-2/doc-9 - ROS-2.md>)
 
-The repository [README](<../../../README.md>) shows `LabService` with the memory providers, `A2aServer::listen`, and `McpServer::serve_http`.
+The repository [README](../../../README.md) shows `LabService` with the memory providers, `A2aServer::listen`, and `McpServer::serve_http`.
 
 ## Related
 
-- [README](<../../../README.md>)
+- [README](../../../README.md)
 - [A2A](<../reference/a2a/doc-4 - A2A.md>)
 - [MCP](<../reference/mcp/doc-5 - MCP.md>)
 - [Asset Administration Shell](<../reference/aas/doc-6 - Asset-Administration-Shell.md>)

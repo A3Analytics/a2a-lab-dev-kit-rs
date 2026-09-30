@@ -3,7 +3,7 @@ id: doc-7
 title: OPC UA
 type: reference
 audience: public
-created_date: '2026-09-30 17:38'
+created_date: "2026-09-30 17:38"
 ---
 
 # OPC UA
@@ -11,6 +11,17 @@ created_date: '2026-09-30 17:38'
 ## Role in this SDK
 
 OPC UA is an outbound history client, not an agent-facing protocol. Catalog bindings may point a lab token at an `Endpoint::OpcUa` node. `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialWorkflows` read history only through `LiveSource`. `OpcUaClient` is not a `LiveSource`.
+
+Catalog bindings feed `LiveSource`. `ScriptedLive` is the implementation in this crate. `OpcUaClient::read_history` is a separate helper and is not wired into that path.
+
+```mermaid
+flowchart TD
+  binding["Binding role metric or log_source"] --> industrial["IndustrialMetrics or IndustrialLogs"]
+  industrial --> live["LiveSource.query_metrics or query_logs"]
+  live --> scripted[ScriptedLive]
+  endpoint["Endpoint OpcUa"] --> reader["OpcUaClient.read_history"]
+  reader --> points["MetricPoints inside the half-open range"]
+```
 
 ## What this crate implements
 

@@ -3,7 +3,7 @@ id: doc-9
 title: ROS 2
 type: reference
 audience: public
-created_date: '2026-09-30 17:38'
+created_date: "2026-09-30 17:38"
 ---
 
 # ROS 2
@@ -11,6 +11,23 @@ created_date: '2026-09-30 17:38'
 ## Role in this SDK
 
 ROS 2 action servers are exposed as lab workflows. `Ros2Workflows` implements `WorkflowProvider`. It does not implement `LogProvider` or `MetricProvider`, and it is not an A2A or MCP adapter.
+
+`Ros2Workflows` is a `WorkflowProvider` over an in-process `Ros2Graph`. Action names become workflow ids. Goal status becomes `RunState`. There is no DDS or RCL link.
+
+```mermaid
+flowchart TD
+  lab[LabService] --> ros[Ros2Workflows]
+  ros --> graph[Ros2Graph]
+  graph --> mem[MemoryRos2]
+  ros --> listCall[list_workflows]
+  ros --> startCall[start]
+  ros --> statusCall[status]
+  listCall --> wfId["Action name becomes the workflow id"]
+  startCall --> sendGoal[send_goal]
+  sendGoal --> runId["Run id is ros2- plus the goal id"]
+  statusCall --> loadGoal["Goal id without the ros2- prefix"]
+  loadGoal --> runState[RunState]
+```
 
 ## What this crate implements
 

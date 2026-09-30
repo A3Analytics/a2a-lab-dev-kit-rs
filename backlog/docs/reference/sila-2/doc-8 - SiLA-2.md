@@ -3,7 +3,7 @@ id: doc-8
 title: SiLA 2
 type: reference
 audience: public
-created_date: '2026-09-30 17:38'
+created_date: "2026-09-30 17:38"
 ---
 
 # SiLA 2
@@ -11,6 +11,18 @@ created_date: '2026-09-30 17:38'
 ## Role in this SDK
 
 SiLA 2 is an outbound helper surface for one checked-in lab service, not an agent-facing protocol. Catalog bindings may store an `Endpoint::Sila2` feature member. `IndustrialWorkflows` starts commands only through `LiveSource`. Nothing in `src/sila` implements `LiveSource`.
+
+Workflow bindings start through `LiveSource`. `sila::start_workflow` is a separate helper that maps the first `LabAutomation` status onto `RunState`.
+
+```mermaid
+flowchart TD
+  binding["Binding role workflow"] --> ind["IndustrialWorkflows.start"]
+  ind --> live["LiveSource.start"]
+  live --> scripted[ScriptedLive]
+  helper["sila.start_workflow"] --> rpc["LabAutomation.StartWorkflow"]
+  rpc --> info[StartWorkflowInfo]
+  info --> state["execution_state to RunState"]
+```
 
 ## What this crate implements
 

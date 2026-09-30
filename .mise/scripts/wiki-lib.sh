@@ -263,8 +263,36 @@ validate_h1() {
         ;;
     esac
   done <"$body"
+  [ "$in_fence" -eq 0 ] || die "unclosed fence while checking H1"
   [ "$count" -eq 1 ] || die "expected one H1, found $count"
   [ "$found" = "$title" ] || die "H1 '$found' does not match title '$title'"
+}
+
+validate_fences() {
+  local body="$1" label="$2" line in_fence=0 opener=""
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '```'* | '~~~'*)
+        if [ "$in_fence" -eq 0 ]; then
+          in_fence=1
+          opener=$line
+        else
+          in_fence=0
+          opener=""
+        fi
+        ;;
+    esac
+  done <"$body"
+  if [ "$in_fence" -ne 0 ]; then
+    case "$opener" in
+      '```mermaid' | '```mermaid'*)
+        die "unclosed mermaid fence in ${label}"
+        ;;
+      *)
+        die "unclosed fence in ${label}: ${opener}"
+        ;;
+    esac
+  fi
 }
 
 prepare_pages() {
@@ -303,6 +331,7 @@ EOF
     [ "$type" = "$expected" ] || die "${page_files[$i]} type '$type' does not match directory '$source'"
     body="$wiki_tmp/$i.body"
     extract_body "$abs" "$body" || die "could not read frontmatter in ${page_files[$i]}"
+    validate_fences "$body" "${page_files[$i]}" || die "fence check failed for ${page_files[$i]}"
     validate_h1 "$body" "$title" || die "H1 check failed for ${page_files[$i]}"
     page_titles[$i]=$title
     i=$((i + 1))
@@ -471,6 +500,9 @@ render_pages() {
       rewrite_line "$src_dir" "$line" || die "could not rewrite links in ${page_files[$i]}"
       printf '%s\n' "$REWRITTEN_LINE" >>"$dest"
     done <"$wiki_tmp/$i.body"
+    if [ "${in_fence:-0}" -ne 0 ]; then
+      die "unclosed fence in ${page_files[$i]}"
+    fi
     in_fence=0
     i=$((i + 1))
   done
@@ -566,6 +598,20 @@ check_line_links() {
   done
 }
 
+check_mermaid_diagrams() {
+  local file base count
+  for file in "$WIKI_STAGE"/*.md; do
+    [ -f "$file" ] || continue
+    base=$(basename "$file")
+    [ "$base" = "_Sidebar.md" ] && continue
+    count=$(awk '
+      $0 ~ /^```mermaid([[:space:]]|$)/ { n++ }
+      END { print n + 0 }
+    ' "$file")
+    [ "$count" -eq 1 ] || die "$base must contain exactly one mermaid diagram (found $count)"
+  done
+}
+
 check_staged_links() {
   local file line in_fence lineno
   for file in "$WIKI_STAGE"/*.md; do
@@ -601,6 +647,7 @@ wiki_check() {
   ensure_public_docs_are_mapped
   render_pages
   check_staged_links
+  check_mermaid_diagrams
   if [ -n "${wiki_tmp:-}" ]; then
     rm -rf "$wiki_tmp"
     wiki_tmp=""

@@ -3,7 +3,7 @@ id: doc-5
 title: MCP
 type: reference
 audience: public
-created_date: '2026-09-30 17:38'
+created_date: "2026-09-30 17:38"
 ---
 
 # MCP
@@ -11,6 +11,18 @@ created_date: '2026-09-30 17:38'
 ## Role in this SDK
 
 MCP is the other agent-facing protocol. `McpServer` registers the seven lab operations as tools on the same `LabApi` that `A2aServer` uses.
+
+Both transports hit the same seven tools. Each tool calls `LabService.execute` and returns the unwrapped page or `WorkflowRun`.
+
+```mermaid
+flowchart LR
+  client["MCP client"] --> stdio["serve_stdio JSON-RPC"]
+  client --> http["serve_http at /mcp"]
+  stdio --> tools["Seven McpServer tools"]
+  http --> tools
+  tools --> lab["LabService.execute"]
+  lab --> body["Page or WorkflowRun"]
+```
 
 ## What this crate implements
 

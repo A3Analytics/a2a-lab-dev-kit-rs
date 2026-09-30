@@ -3,7 +3,7 @@ id: doc-6
 title: Asset Administration Shell
 type: reference
 audience: public
-created_date: '2026-09-30 17:38'
+created_date: "2026-09-30 17:38"
 ---
 
 # Asset Administration Shell
@@ -11,6 +11,20 @@ created_date: '2026-09-30 17:38'
 ## Role in this SDK
 
 The Asset Administration Shell HTTP repository is the outbound asset catalog. `AasClient` implements `AssetCatalogProvider`. Industrial log, metric, and workflow providers read bindings from that catalog. AAS is not one of the seven agent-facing operations.
+
+The first catalog read fills the cache from `description`, `shells`, and binding submodels. Later calls reuse that cache.
+
+```mermaid
+sequenceDiagram
+  participant Ind as Industrial provider
+  participant Cat as AasClient
+  participant Repo as AAS repository
+  Ind->>Cat: list_bindings
+  Cat->>Repo: GET description
+  Cat->>Repo: GET shells
+  Cat->>Repo: GET submodels by base64url id
+  Cat-->>Ind: Bindings with Endpoint
+```
 
 ## What this crate implements
 

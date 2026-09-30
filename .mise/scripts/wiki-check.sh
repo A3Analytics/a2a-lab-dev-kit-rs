@@ -15,3 +15,4 @@ trap cleanup EXIT
 # shellcheck disable=SC1091
 source "$root/.mise/scripts/wiki-lib.sh"
 wiki_check
+bash "$root/.mise/scripts/wiki-mermaid-fixture.sh"
