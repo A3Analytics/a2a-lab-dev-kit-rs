@@ -6,6 +6,8 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod a2a;
+#[cfg(feature = "aas")]
+pub mod aas;
 pub mod catalog;
 pub mod error;
 pub mod id;

@@ -13,6 +13,10 @@ type_complexity = "warn"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
+[features]
+default = []
+aas = []
+
 [dependencies]
 axum = "0.8.9"
 futures-util = "0.3.34"
