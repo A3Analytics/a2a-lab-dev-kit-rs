@@ -20,6 +20,7 @@ pub mod metrics;
 #[cfg(feature = "opcua")]
 pub mod opcua;
 pub mod page;
+pub mod ros2;
 pub mod service;
 #[cfg(feature = "sila2")]
 pub mod sila;
@@ -48,6 +49,7 @@ pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };
 pub use page::{MAX_PAGE_LIMIT, Page, PageRequest};
+pub use ros2::{MemoryRos2, Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph, Ros2Workflows};
 pub use service::{LabApi, LabCommand, LabOutcome, LabResult, LabService, TaskSnapshot, TaskState};
 pub use time::{TimeRange, UtcTimestamp};
 pub use workflows::{

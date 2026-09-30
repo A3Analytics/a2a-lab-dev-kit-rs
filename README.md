@@ -32,6 +32,8 @@ McpServer::new(&a2aLabService).serve_http(None).await?;
 
 The A2A server publishes `/.well-known/agent-card.json` and accepts `POST /message:send`. Workflow runs started over A2A can be followed with `GET /tasks/{id}` and `GET /tasks/{id}/subscribe`.
 
+`Ros2Workflows` is a `WorkflowProvider`. Advertise each ROS 2 action server on a `Ros2Graph` and the provider lists it as a workflow. A JSON goal starts the action. Accepted and executing goals stay in progress; succeeded, aborted, and canceled goals become completed, failed, and canceled runs.
+
 ## Setup
 
 Install the tools pinned in `mise.toml`:
