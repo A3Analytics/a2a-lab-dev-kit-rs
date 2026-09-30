@@ -677,10 +677,6 @@ wiki_token() {
     printf '%s' "$WIKI_TOKEN"
     return 0
   fi
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    printf '%s' "$GITHUB_TOKEN"
-    return 0
-  fi
   return 1
 }
 
@@ -693,11 +689,12 @@ wiki_redact() {
 }
 
 wiki_git() {
-  local token=""
+  local token="" header
   wiki_disable_interactive_auth
   if token=$(wiki_token); then
+    header=$(printf 'x-access-token:%s' "$token" | base64 | tr -d '\n')
     git -c credential.helper= \
-      -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${token}" \
+      -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${header}" \
       "$@"
     return
   fi

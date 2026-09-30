@@ -45,7 +45,7 @@ description = "Generate the Wiki stage offline and validate public docs"
 run = "bash .mise/scripts/wiki-check.sh"
 
 [wiki-publish]
-description = "Publish the Wiki stage from CI using WIKI_TOKEN or GITHUB_TOKEN"
+description = "Publish the Wiki stage from CI using WIKI_TOKEN"
 run = "bash .mise/scripts/wiki-publish.sh"
 
 [wiki-drift]

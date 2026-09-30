@@ -18,6 +18,10 @@ source "$root/.mise/scripts/wiki-lib.sh"
 wiki_cmd=wiki-publish
 wiki_disable_interactive_auth
 
+if [ "${GITHUB_ACTIONS:-}" = true ] && [ -z "${WIKI_TOKEN:-}" ]; then
+  die "set repository secret WIKI_TOKEN with Wikis read and write. GITHUB_TOKEN cannot publish the Wiki."
+fi
+
 wiki_check
 
 clone="$root/target/wiki-remote"
