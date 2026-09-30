@@ -30,7 +30,7 @@ flowchart LR
 
 The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`. Each tool takes the same request type `LabService` accepts and returns the matching page or `TaskRun`.
 
-`serve_stdio` speaks newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener it binds `127.0.0.1:31001`.
+`serve_stdio` speaks newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener it binds `127.0.0.1:31001`. Accepted `Host` values are `localhost`, `127.0.0.1`, `::1`, and `host.docker.internal`.
 
 `invalid`, `protocol`, and `not_found` become MCP invalid-params errors. `unavailable` and `transport` become internal errors. `start_task` waits until the run is terminal unless `wait` is false. `timeout_seconds` defaults to 60. `get_task_status` is a separate call.
 

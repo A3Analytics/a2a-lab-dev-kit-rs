@@ -124,6 +124,50 @@ where
 }
 
 #[tokio::test]
+async fn http_transport_accepts_docker_host_and_rejects_other_hosts() {
+    let lab = service().await;
+    let (listener, address) = bind_local().await.unwrap();
+    let port = address.port();
+    let server = McpServer::new(&lab);
+    tokio::spawn(async move {
+        server.serve_http(listener).await.unwrap();
+    });
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}"#;
+    let allowed = post_mcp(port, "host.docker.internal", body).await;
+    assert!(allowed.starts_with("HTTP/1.1 200"), "{allowed}");
+    let rejected = post_mcp(port, "evil.example", body).await;
+    assert!(rejected.contains("403"), "{rejected}");
+}
+
+async fn post_mcp(port: u16, host: &str, body: &str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::time::{Duration, timeout};
+
+    let mut stream = timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok(stream) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+                return stream;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("mcp server");
+    let request = format!(
+        "POST /mcp HTTP/1.1\r\nHost: {host}:{port}\r\ncontent-type: application/json\r\naccept: application/json, text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    timeout(Duration::from_secs(2), async {
+        let mut buf = [0_u8; 1024];
+        let read = stream.read(&mut buf).await.unwrap();
+        String::from_utf8_lossy(&buf[..read]).into_owned()
+    })
+    .await
+    .expect("mcp response")
+}
+
+#[tokio::test]
 async fn http_transport_lists_and_calls_tools() {
     let lab = service().await;
     let (listener, address) = bind_local().await.unwrap();

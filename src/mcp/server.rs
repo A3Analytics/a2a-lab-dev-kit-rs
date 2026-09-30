@@ -58,6 +58,8 @@ impl McpServer {
     /// Serves MCP Streamable HTTP at `/mcp`.
     ///
     /// `listener` defaults to `127.0.0.1:31001` when it is `None`.
+    /// Accepted `Host` values are loopback plus `host.docker.internal`, so a
+    /// Dockerized MCP inspector on Docker Desktop or Rancher Desktop can connect.
     pub async fn serve_http(
         self,
         listener: impl Into<Option<TcpListener>>,
@@ -71,7 +73,12 @@ impl McpServer {
         let service = StreamableHttpService::new(
             move || Ok(self.clone()),
             Arc::new(LocalSessionManager::default()),
-            StreamableHttpServerConfig::default(),
+            StreamableHttpServerConfig::default().with_allowed_hosts([
+                "localhost",
+                "127.0.0.1",
+                "::1",
+                "host.docker.internal",
+            ]),
         );
         let router = axum::Router::new().nest_service("/mcp", service);
         axum::serve(listener, router)
