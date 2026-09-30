@@ -10,6 +10,7 @@ fi
 
 WIKI_REPO="A3Analytics/a2a-lab-sdk-rs"
 WIKI_GIT_URL="https://github.com/${WIKI_REPO}.wiki.git"
+WIKI_PAGE_BASE="https://github.com/${WIKI_REPO}/wiki"
 WIKI_BLOB_BASE="https://github.com/${WIKI_REPO}/blob/main"
 WIKI_MAP="$root/.mise/wiki-map.toml"
 WIKI_STAGE="$root/target/wiki-stage"
@@ -241,6 +242,26 @@ expected_type_for() {
   esac
 }
 
+validate_mermaid_ids() {
+  local body="$1" label="$2" line in_mermaid=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '```mermaid' | '```mermaid'*)
+        in_mermaid=1
+        continue
+        ;;
+      '```'* | '~~~'*)
+        in_mermaid=0
+        continue
+        ;;
+    esac
+    [ "$in_mermaid" -eq 1 ] || continue
+    if printf '%s\n' "$line" | grep -Eq '(^|[[:space:]])(graph|end|subgraph|flowchart)(\[|\{|\(|[[:space:]]*-->)'; then
+      die "reserved Mermaid node id in ${label}: ${line}"
+    fi
+  done <"$body"
+}
+
 validate_h1() {
   local body="$1" title="$2" line in_fence=0 count=0 found=""
   while IFS= read -r line || [ -n "$line" ]; do
@@ -296,7 +317,7 @@ validate_fences() {
 }
 
 prepare_pages() {
-  local i=0 source dir found count abs title type audience expected body
+  local i=0 source dir found count abs title type audience expected body mermaid_count
   wiki_tmp=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki.XXXXXX")
   while [ "$i" -lt "$page_count" ]; do
     source=${page_sources[$i]}
@@ -333,6 +354,9 @@ EOF
     extract_body "$abs" "$body" || die "could not read frontmatter in ${page_files[$i]}"
     validate_fences "$body" "${page_files[$i]}" || die "fence check failed for ${page_files[$i]}"
     validate_h1 "$body" "$title" || die "H1 check failed for ${page_files[$i]}"
+    validate_mermaid_ids "$body" "${page_files[$i]}"
+    mermaid_count=$(awk '$0 ~ /^```mermaid([[:space:]]|$)/ { n++ } END { print n + 0 }' "$body")
+    [ "$mermaid_count" -eq 1 ] || die "${page_files[$i]} must contain exactly one mermaid diagram (found $mermaid_count)"
     page_titles[$i]=$title
     i=$((i + 1))
   done
@@ -366,10 +390,8 @@ EOF
 
 rewrite_url() {
   local url="$1" src_dir="$2" fragment="" path query="" combined normalized i name encoded
-  REWRITTEN_KIND=abs
   case "$url" in
     \#*)
-      REWRITTEN_KIND=hash
       REWRITTEN_URL=$url
       return 0
       ;;
@@ -383,7 +405,6 @@ rewrite_url() {
   esac
   case "$path" in
     http://* | https://*)
-      REWRITTEN_KIND=abs
       REWRITTEN_URL=$url
       return 0
       ;;
@@ -409,8 +430,7 @@ rewrite_url() {
   while [ "$i" -lt "$page_count" ]; do
     if [ "$normalized" = "${page_files[$i]}" ]; then
       name=${page_wikis[$i]%.md}
-      REWRITTEN_KIND=wiki
-      REWRITTEN_URL="${name}${fragment}"
+      REWRITTEN_URL="${WIKI_PAGE_BASE}/${name}${fragment}"
       return 0
     fi
     i=$((i + 1))
@@ -420,12 +440,11 @@ rewrite_url() {
     return 1
   fi
   encoded=$(urlencode_path "$normalized")
-  REWRITTEN_KIND=blob
   REWRITTEN_URL="${WIKI_BLOB_BASE}/${encoded}${query}${fragment}"
 }
 
 rewrite_line() {
-  local src_dir="$1" cursor="$2" out="" prefix text url page frag target
+  local src_dir="$1" cursor="$2" out="" prefix text url
   while true; do
     case "$cursor" in
       *'['*) ;;
@@ -464,36 +483,21 @@ rewrite_line() {
         ;;
     esac
     rewrite_url "$url" "$src_dir" || return 1
-    if [ "$REWRITTEN_KIND" = wiki ]; then
-      page=$REWRITTEN_URL
-      frag=""
-      case "$page" in
-        *\#*)
-          frag="#${page#*#}"
-          page=${page%%#*}
-          ;;
-      esac
-      target="${page}${frag}"
-      if [ "$text" = "$page" ]; then
-        out="$out$prefix[[$target]]"
-      else
-        out="$out$prefix[[$target|$text]]"
-      fi
-    else
-      out="$out$prefix[$text]($REWRITTEN_URL)"
-    fi
+    out="$out$prefix[$text]($REWRITTEN_URL)"
   done
 }
 
-escape_wiki_braces() {
-  local s="$1"
-  s=${s//\{/&#123;}
-  s=${s//\}/&#125;}
-  REWRITTEN_LINE=$s
+mermaid_to_wiki_image() {
+  local src="$1" title="$2" encoded
+  encoded=$(printf '%s' "$src" | base64 | tr -d '\r\n')
+  encoded=${encoded//+/%2B}
+  encoded=${encoded//\//%2F}
+  encoded=${encoded//=/%3D}
+  printf '![%s](https://mermaid.ink/svg/%s)\n' "$title" "$encoded"
 }
 
 render_pages() {
-  local i=0 src_dir line started dest
+  local i=0 src_dir line started dest in_fence in_mermaid mermaid_buf
   case "$WIKI_STAGE" in
     "$root"/target/wiki-stage) ;;
     *) die "refusing to replace unexpected stage path $WIKI_STAGE" ;;
@@ -505,6 +509,8 @@ render_pages() {
     dest="$WIKI_STAGE/${page_wikis[$i]}"
     started=0
     in_fence=0
+    in_mermaid=0
+    mermaid_buf=""
     : >"$dest"
     while IFS= read -r line || [ -n "$line" ]; do
       if [ "$started" -eq 0 ] && [ -z "$line" ]; then
@@ -512,28 +518,45 @@ render_pages() {
       fi
       started=1
       case "$line" in
-        '```'* | '~~~'*)
-          if [ "${in_fence:-0}" -eq 0 ]; then
+        '```mermaid' | '```mermaid'*)
+          if [ "$in_fence" -eq 0 ]; then
             in_fence=1
-          else
-            in_fence=0
+            in_mermaid=1
+            mermaid_buf=""
+            continue
           fi
-          printf '%s\n' "$line" >>"$dest"
+          ;;
+        '```'* | '~~~'*)
+          if [ "$in_fence" -eq 0 ]; then
+            in_fence=1
+            printf '%s\n' "$line" >>"$dest"
+            continue
+          fi
+          in_fence=0
+          if [ "$in_mermaid" -eq 1 ]; then
+            mermaid_to_wiki_image "$mermaid_buf" "${page_titles[$i]}" >>"$dest"
+            in_mermaid=0
+            mermaid_buf=""
+          else
+            printf '%s\n' "$line" >>"$dest"
+          fi
           continue
           ;;
       esac
-      if [ "${in_fence:-0}" -eq 1 ]; then
+      if [ "$in_mermaid" -eq 1 ]; then
+        mermaid_buf="${mermaid_buf}${line}"$'\n'
+        continue
+      fi
+      if [ "$in_fence" -eq 1 ]; then
         printf '%s\n' "$line" >>"$dest"
         continue
       fi
       rewrite_line "$src_dir" "$line" || die "could not rewrite links in ${page_files[$i]}"
-      escape_wiki_braces "$REWRITTEN_LINE"
       printf '%s\n' "$REWRITTEN_LINE" >>"$dest"
     done <"$wiki_tmp/$i.body"
-    if [ "${in_fence:-0}" -ne 0 ]; then
+    if [ "$in_fence" -ne 0 ]; then
       die "unclosed fence in ${page_files[$i]}"
     fi
-    in_fence=0
     i=$((i + 1))
   done
   {
@@ -650,38 +673,21 @@ check_wiki_bracket_links() {
 }
 
 check_mermaid_diagrams() {
-  local file base count in_mermaid line
+  local file base count fences
   for file in "$WIKI_STAGE"/*.md; do
     [ -f "$file" ] || continue
     base=$(basename "$file")
     [ "$base" = "_Sidebar.md" ] && continue
-    count=$(awk '
+    fences=$(awk '
       $0 ~ /^```mermaid([[:space:]]|$)/ { n++ }
       END { print n + 0 }
     ' "$file")
-    [ "$count" -eq 1 ] || die "$base must contain exactly one mermaid diagram (found $count)"
-    in_mermaid=0
-    while IFS= read -r line || [ -n "$line" ]; do
-      case "$line" in
-        '```mermaid' | '```mermaid'*)
-          in_mermaid=1
-          continue
-          ;;
-        '```' | '~~~' | '```'* | '~~~'*)
-          if [ "$in_mermaid" -eq 1 ]; then
-            in_mermaid=0
-          fi
-          continue
-          ;;
-      esac
-      if [ "$in_mermaid" -eq 1 ]; then
-        case "$line" in
-          *'{'* | *'}'*)
-            die "$base mermaid must not use curly braces (Wiki treats them as tags)"
-            ;;
-        esac
-      fi
-    done <"$file"
+    [ "$fences" -eq 0 ] || die "$base must not keep mermaid fences on the Wiki (found $fences)"
+    count=$(awk '
+      /https:\/\/mermaid\.ink\/svg\// { n++ }
+      END { print n + 0 }
+    ' "$file")
+    [ "$count" -eq 1 ] || die "$base must contain exactly one mermaid.ink diagram (found $count)"
   done
 }
 

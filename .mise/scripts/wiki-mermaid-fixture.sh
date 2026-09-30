@@ -111,12 +111,23 @@ flowchart TD
 EOF
 }
 
-extract_mermaid() {
+extract_mermaid_body() {
   awk '
-    $0 ~ /^```mermaid([[:space:]]|$)/ { printing = 1 }
-    printing { print }
-    printing && $0 == "```" && NR > 1 { exit }
+    $0 ~ /^```mermaid([[:space:]]|$)/ { start = 1; next }
+    start && $0 == "```" { exit }
+    start { print }
   ' "$1"
+}
+
+decode_staged_diagram() {
+  python3 -c '
+import base64, pathlib, re, sys, urllib.parse
+text = pathlib.Path(sys.argv[1]).read_text()
+match = re.search(r"https://mermaid.ink/svg/([^)\s]+)", text)
+if not match:
+    sys.exit(1)
+sys.stdout.write(base64.b64decode(urllib.parse.unquote(match.group(1))).decode())
+' "$1"
 }
 
 closed=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-mermaid.XXXXXX")
@@ -139,22 +150,29 @@ a2a="$closed/target/wiki-stage/A2A.md"
 [ -f "$home" ] || fail "missing staged Home.md"
 [ -f "$a2a" ] || fail "missing staged A2A.md"
 
-source_mermaid=$(extract_mermaid "$closed/backlog/docs/overview/doc-1 - Fixture-Home.md")
-staged_mermaid=$(extract_mermaid "$home")
+source_mermaid=$(extract_mermaid_body "$closed/backlog/docs/overview/doc-1 - Fixture-Home.md")
+staged_mermaid=$(decode_staged_diagram "$home")
 [ -n "$source_mermaid" ] || fail "source mermaid was empty"
-[ "$source_mermaid" = "$staged_mermaid" ] || fail "staged mermaid was rewritten"
+[ "$source_mermaid"$'\n' = "$staged_mermaid" ] || [ "$source_mermaid" = "$staged_mermaid" ] \
+  || fail "staged mermaid image did not round-trip the source diagram"
 
 printf '%s\n' "$staged_mermaid" | grep -q '# this heading is inside the fence' \
   || fail "heading inside mermaid was dropped"
 printf '%s\n' "$staged_mermaid" | grep -Fq '](<../overview/doc-1 - Fixture-Home.md>)' \
   || fail "markdown link inside mermaid was rewritten"
 
+if grep -q '```mermaid' "$home"; then
+  fail "staged Wiki kept a mermaid fence"
+fi
+grep -q 'https://mermaid.ink/svg/' "$home" \
+  || fail "staged Wiki is missing a mermaid.ink image"
+
 grep -q '\[README\](https://github.com/A3Analytics/a2a-lab-sdk-rs/blob/main/README.md)' "$home" \
   || fail "README link after mermaid was not rewritten"
-grep -q '\[\[A2A\]\]' "$home" \
+grep -q '\[A2A\](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/A2A)' "$home" \
   || fail "sibling Wiki link after mermaid was not rewritten"
-grep -q 'GET /tasks/&#123;id&#125;' "$home" \
-  || fail "curly braces after mermaid were not escaped"
+grep -q 'GET /tasks/{id}' "$home" \
+  || fail "curly braces after mermaid were rewritten"
 grep -q '\* \[\[Home|Fixture Home\]\]' "$closed/target/wiki-stage/_Sidebar.md" \
   || fail "sidebar is not Wiki link syntax"
 
@@ -175,4 +193,4 @@ printf '%s\n' "$err" | grep -q 'unclosed mermaid fence' \
 printf '%s\n' "$err" | grep -q 'Open-Fence.md' \
   || fail "unclosed mermaid error did not name the page"
 
-printf 'wiki-mermaid-fixture: mermaid fences are preserved, Wiki links use [[page]], and unclosed fences fail\n'
+printf 'wiki-mermaid-fixture: mermaid becomes a mermaid.ink image, Wiki links stay markdown, and unclosed fences fail\n'

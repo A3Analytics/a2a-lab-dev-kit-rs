@@ -17,8 +17,8 @@ ROS 2 action servers are exposed as lab workflows. `Ros2Workflows` implements `W
 ```mermaid
 flowchart TD
   lab["LabService"] --> ros["Ros2Workflows"]
-  ros --> graph["Ros2Graph"]
-  graph --> mem["MemoryRos2"]
+  ros --> rosGraph["Ros2Graph"]
+  rosGraph --> mem["MemoryRos2"]
   ros --> listCall["list_workflows"]
   ros --> startCall["start"]
   ros --> statusCall["status"]

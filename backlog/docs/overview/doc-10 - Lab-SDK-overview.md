@@ -39,7 +39,7 @@ flowchart TD
   catalog --> aasClient["AasClient"]
   catalog --> memCat["MemoryCatalog"]
   live --> scripted["ScriptedLive"]
-  ros --> graph["Ros2Graph"]
+  ros --> rosGraph["Ros2Graph"]
 ```
 
 ## What this crate implements
