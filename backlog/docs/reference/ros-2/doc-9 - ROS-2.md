@@ -16,17 +16,17 @@ ROS 2 action servers are exposed as lab workflows. `Ros2Workflows` implements `W
 
 ```mermaid
 flowchart TD
-  lab[LabService] --> ros[Ros2Workflows]
-  ros --> graph[Ros2Graph]
-  graph --> mem[MemoryRos2]
-  ros --> listCall[list_workflows]
-  ros --> startCall[start]
-  ros --> statusCall[status]
+  lab["LabService"] --> ros["Ros2Workflows"]
+  ros --> graph["Ros2Graph"]
+  graph --> mem["MemoryRos2"]
+  ros --> listCall["list_workflows"]
+  ros --> startCall["start"]
+  ros --> statusCall["status"]
   listCall --> wfId["Action name becomes the workflow id"]
-  startCall --> sendGoal[send_goal]
+  startCall --> sendGoal["send_goal"]
   sendGoal --> runId["Run id is ros2- plus the goal id"]
   statusCall --> loadGoal["Goal id without the ros2- prefix"]
-  loadGoal --> runState[RunState]
+  loadGoal --> runState["RunState"]
 ```
 
 ## What this crate implements

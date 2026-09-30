@@ -18,7 +18,7 @@ Catalog bindings feed `LiveSource`. `ScriptedLive` is the implementation in this
 flowchart TD
   binding["Binding role metric or log_source"] --> industrial["IndustrialMetrics or IndustrialLogs"]
   industrial --> live["LiveSource.query_metrics or query_logs"]
-  live --> scripted[ScriptedLive]
+  live --> scripted["ScriptedLive"]
   endpoint["Endpoint OpcUa"] --> reader["OpcUaClient.read_history"]
   reader --> points["MetricPoints inside the half-open range"]
 ```

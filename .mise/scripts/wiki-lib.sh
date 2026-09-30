@@ -366,8 +366,10 @@ EOF
 
 rewrite_url() {
   local url="$1" src_dir="$2" fragment="" path query="" combined normalized i name encoded
+  REWRITTEN_KIND=abs
   case "$url" in
     \#*)
+      REWRITTEN_KIND=hash
       REWRITTEN_URL=$url
       return 0
       ;;
@@ -381,6 +383,7 @@ rewrite_url() {
   esac
   case "$path" in
     http://* | https://*)
+      REWRITTEN_KIND=abs
       REWRITTEN_URL=$url
       return 0
       ;;
@@ -406,6 +409,7 @@ rewrite_url() {
   while [ "$i" -lt "$page_count" ]; do
     if [ "$normalized" = "${page_files[$i]}" ]; then
       name=${page_wikis[$i]%.md}
+      REWRITTEN_KIND=wiki
       REWRITTEN_URL="${name}${fragment}"
       return 0
     fi
@@ -416,11 +420,12 @@ rewrite_url() {
     return 1
   fi
   encoded=$(urlencode_path "$normalized")
+  REWRITTEN_KIND=blob
   REWRITTEN_URL="${WIKI_BLOB_BASE}/${encoded}${query}${fragment}"
 }
 
 rewrite_line() {
-  local src_dir="$1" cursor="$2" out="" prefix text url
+  local src_dir="$1" cursor="$2" out="" prefix text url page frag target
   while true; do
     case "$cursor" in
       *'['*) ;;
@@ -459,8 +464,32 @@ rewrite_line() {
         ;;
     esac
     rewrite_url "$url" "$src_dir" || return 1
-    out="$out$prefix[$text]($REWRITTEN_URL)"
+    if [ "$REWRITTEN_KIND" = wiki ]; then
+      page=$REWRITTEN_URL
+      frag=""
+      case "$page" in
+        *\#*)
+          frag="#${page#*#}"
+          page=${page%%#*}
+          ;;
+      esac
+      target="${page}${frag}"
+      if [ "$text" = "$page" ]; then
+        out="$out$prefix[[$target]]"
+      else
+        out="$out$prefix[[$target|$text]]"
+      fi
+    else
+      out="$out$prefix[$text]($REWRITTEN_URL)"
+    fi
   done
+}
+
+escape_wiki_braces() {
+  local s="$1"
+  s=${s//\{/&#123;}
+  s=${s//\}/&#125;}
+  REWRITTEN_LINE=$s
 }
 
 render_pages() {
@@ -498,6 +527,7 @@ render_pages() {
         continue
       fi
       rewrite_line "$src_dir" "$line" || die "could not rewrite links in ${page_files[$i]}"
+      escape_wiki_braces "$REWRITTEN_LINE"
       printf '%s\n' "$REWRITTEN_LINE" >>"$dest"
     done <"$wiki_tmp/$i.body"
     if [ "${in_fence:-0}" -ne 0 ]; then
@@ -509,7 +539,7 @@ render_pages() {
   {
     i=0
     while [ "$i" -lt "$page_count" ]; do
-      printf -- '- [%s](%s)\n' "${page_titles[$i]}" "${page_wikis[$i]%.md}"
+      printf -- '* [[%s|%s]]\n' "${page_wikis[$i]%.md}" "${page_titles[$i]}"
       i=$((i + 1))
     done
   } >"$WIKI_STAGE/_Sidebar.md"
@@ -598,8 +628,29 @@ check_line_links() {
   done
 }
 
+check_wiki_bracket_links() {
+  local cursor="$1" inner page
+  while true; do
+    case "$cursor" in
+      *'[['*) ;;
+      *) return 0 ;;
+    esac
+    cursor=${cursor#*\[\[}
+    case "$cursor" in
+      *']]'*) ;;
+      *) die "unclosed Wiki link" ;;
+    esac
+    inner=${cursor%%\]\]*}
+    cursor=${cursor#*\]\]}
+    page=${inner%%|*}
+    page=${page%%\#*}
+    [ -n "$page" ] || die "empty Wiki link"
+    resolve_staged_link "$page" || return 1
+  done
+}
+
 check_mermaid_diagrams() {
-  local file base count
+  local file base count in_mermaid line
   for file in "$WIKI_STAGE"/*.md; do
     [ -f "$file" ] || continue
     base=$(basename "$file")
@@ -609,6 +660,28 @@ check_mermaid_diagrams() {
       END { print n + 0 }
     ' "$file")
     [ "$count" -eq 1 ] || die "$base must contain exactly one mermaid diagram (found $count)"
+    in_mermaid=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        '```mermaid' | '```mermaid'*)
+          in_mermaid=1
+          continue
+          ;;
+        '```' | '~~~' | '```'* | '~~~'*)
+          if [ "$in_mermaid" -eq 1 ]; then
+            in_mermaid=0
+          fi
+          continue
+          ;;
+      esac
+      if [ "$in_mermaid" -eq 1 ]; then
+        case "$line" in
+          *'{'* | *'}'*)
+            die "$base mermaid must not use curly braces (Wiki treats them as tags)"
+            ;;
+        esac
+      fi
+    done <"$file"
   done
 }
 
@@ -635,6 +708,7 @@ check_staged_links() {
       esac
       [ "$in_fence" -eq 1 ] && continue
       check_line_links "$line" || die "unresolved link in $(basename "$file"):$lineno"
+      check_wiki_bracket_links "$line" || die "unresolved Wiki link in $(basename "$file"):$lineno"
     done <"$file"
   done
 }

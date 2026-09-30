@@ -17,7 +17,7 @@ Both transports hit the same seven tools. Each tool calls `LabService.execute` a
 ```mermaid
 flowchart LR
   client["MCP client"] --> stdio["serve_stdio JSON-RPC"]
-  client --> http["serve_http at /mcp"]
+  client --> http["serve_http at mcp"]
   stdio --> tools["Seven McpServer tools"]
   http --> tools
   tools --> lab["LabService.execute"]

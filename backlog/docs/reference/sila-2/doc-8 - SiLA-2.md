@@ -18,9 +18,9 @@ Workflow bindings start through `LiveSource`. `sila::start_workflow` is a separa
 flowchart TD
   binding["Binding role workflow"] --> ind["IndustrialWorkflows.start"]
   ind --> live["LiveSource.start"]
-  live --> scripted[ScriptedLive]
+  live --> scripted["ScriptedLive"]
   helper["sila.start_workflow"] --> rpc["LabAutomation.StartWorkflow"]
-  rpc --> info[StartWorkflowInfo]
+  rpc --> info["StartWorkflowInfo"]
   info --> state["execution_state to RunState"]
 ```
 

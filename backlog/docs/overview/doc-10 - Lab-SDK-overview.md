@@ -16,30 +16,30 @@ An agent call enters through A2A or MCP. `LabService` fans out to the three prov
 
 ```mermaid
 flowchart TD
-  agent[Agent] --> a2a[A2aServer]
-  agent --> mcp[McpServer]
-  a2a --> lab[LabService]
+  agent["Agent"] --> a2a["A2aServer"]
+  agent --> mcp["McpServer"]
+  a2a --> lab["LabService"]
   mcp --> lab
-  lab --> logs[LogProvider]
-  lab --> metrics[MetricProvider]
-  lab --> workflows[WorkflowProvider]
-  logs --> memLogs[MemoryLogs]
-  logs --> indLogs[IndustrialLogs]
-  metrics --> memMetrics[MemoryMetrics]
-  metrics --> indMetrics[IndustrialMetrics]
-  workflows --> memWf[MemoryWorkflows]
-  workflows --> indWf[IndustrialWorkflows]
-  workflows --> ros[Ros2Workflows]
-  indLogs --> catalog[AssetCatalogProvider]
+  lab --> logs["LogProvider"]
+  lab --> metrics["MetricProvider"]
+  lab --> workflows["WorkflowProvider"]
+  logs --> memLogs["MemoryLogs"]
+  logs --> indLogs["IndustrialLogs"]
+  metrics --> memMetrics["MemoryMetrics"]
+  metrics --> indMetrics["IndustrialMetrics"]
+  workflows --> memWf["MemoryWorkflows"]
+  workflows --> indWf["IndustrialWorkflows"]
+  workflows --> ros["Ros2Workflows"]
+  indLogs --> catalog["AssetCatalogProvider"]
   indMetrics --> catalog
   indWf --> catalog
-  indLogs --> live[LiveSource]
+  indLogs --> live["LiveSource"]
   indMetrics --> live
   indWf --> live
-  catalog --> aasClient[AasClient]
-  catalog --> memCat[MemoryCatalog]
-  live --> scripted[ScriptedLive]
-  ros --> graph[Ros2Graph]
+  catalog --> aasClient["AasClient"]
+  catalog --> memCat["MemoryCatalog"]
+  live --> scripted["ScriptedLive"]
+  ros --> graph["Ros2Graph"]
 ```
 
 ## What this crate implements

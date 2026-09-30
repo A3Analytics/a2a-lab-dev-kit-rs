@@ -16,15 +16,15 @@ A message data part is a `LabCommand`. A started workflow keeps the run id as th
 
 ```mermaid
 flowchart TD
-  card["GET /.well-known/agent-card.json"] --> send["POST /message:send"]
+  card["GET agent-card.json"] --> send["POST message send"]
   send --> command["LabCommand data part"]
   command --> exec["LabService.execute"]
-  exec --> kind{command}
+  exec --> kind["LabCommand"]
   kind -->|start_workflow| runTask["Task id is the run id"]
   kind -->|other six| doneTask["Task id is task-n"]
-  runTask --> reload["GET /tasks/id reloads the run"]
+  runTask --> reload["GET tasks id reloads the run"]
   reload --> mapped["RunState maps onto TaskState"]
-  runTask --> sse["GET /tasks/id/subscribe"]
+  runTask --> sse["GET tasks id subscribe"]
   doneTask --> sse
   sse --> events["SSE task, statusUpdate, artifactUpdate"]
 ```

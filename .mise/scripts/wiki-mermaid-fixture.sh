@@ -53,6 +53,7 @@ flowchart TD
 
 - [README](<../../../README.md>)
 - [A2A](<../reference/a2a/doc-2 - Fixture-A2A.md>)
+- GET /tasks/{id}
 EOF
   cat >"$dest/backlog/docs/reference/a2a/doc-2 - Fixture-A2A.md" <<'EOF'
 ---
@@ -150,8 +151,12 @@ printf '%s\n' "$staged_mermaid" | grep -Fq '](<../overview/doc-1 - Fixture-Home.
 
 grep -q '\[README\](https://github.com/A3Analytics/a2a-lab-sdk-rs/blob/main/README.md)' "$home" \
   || fail "README link after mermaid was not rewritten"
-grep -q '\[A2A\](A2A)' "$home" \
+grep -q '\[\[A2A\]\]' "$home" \
   || fail "sibling Wiki link after mermaid was not rewritten"
+grep -q 'GET /tasks/&#123;id&#125;' "$home" \
+  || fail "curly braces after mermaid were not escaped"
+grep -q '\* \[\[Home|Fixture Home\]\]' "$closed/target/wiki-stage/_Sidebar.md" \
+  || fail "sidebar is not Wiki link syntax"
 
 write_unclosed_docs "$unclosed"
 set +e
@@ -170,4 +175,4 @@ printf '%s\n' "$err" | grep -q 'unclosed mermaid fence' \
 printf '%s\n' "$err" | grep -q 'Open-Fence.md' \
   || fail "unclosed mermaid error did not name the page"
 
-printf 'wiki-mermaid-fixture: mermaid fences are preserved and unclosed fences fail\n'
+printf 'wiki-mermaid-fixture: mermaid fences are preserved, Wiki links use [[page]], and unclosed fences fail\n'

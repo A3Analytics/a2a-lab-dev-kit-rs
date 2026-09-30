@@ -16,9 +16,9 @@ The first catalog read fills the cache from `description`, `shells`, and binding
 
 ```mermaid
 sequenceDiagram
-  participant Ind as Industrial provider
+  participant Ind as IndustrialProvider
   participant Cat as AasClient
-  participant Repo as AAS repository
+  participant Repo as AasRepository
   Ind->>Cat: list_bindings
   Cat->>Repo: GET description
   Cat->>Repo: GET shells
