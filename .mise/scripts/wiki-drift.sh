@@ -16,7 +16,7 @@ trap cleanup EXIT
 source "$root/.mise/scripts/wiki-lib.sh"
 
 wiki_cmd=wiki-drift
-export GIT_TERMINAL_PROMPT=0
+wiki_disable_interactive_auth
 
 wiki_check
 

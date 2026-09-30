@@ -1,0 +1,32 @@
+name: Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backlog/docs/**
+      - .mise/wiki-map.toml
+      - .mise/scripts/wiki-*.sh
+      - .github/workflows/wiki.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Publish Wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: bash .mise/scripts/wiki-publish.sh

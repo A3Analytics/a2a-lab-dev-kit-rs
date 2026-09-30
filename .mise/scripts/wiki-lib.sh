@@ -657,14 +657,56 @@ wiki_check() {
 }
 
 wiki_access_fail() {
-  printf '%s: GitHub Wiki access is unavailable for %s. Enable the Wiki and authenticate git. This command does not force-push.\n' \
+  printf '%s: GitHub Wiki access is unavailable for %s. Enable Wikis, create the first page in the GitHub Wiki tab so .wiki.git exists, and publish from GitHub Actions. This command does not force-push.\n' \
     "${wiki_cmd:-wiki}" "$WIKI_GIT_URL" >&2
   exit 1
 }
 
+wiki_disable_interactive_auth() {
+  unset GIT_ASKPASS
+  unset SSH_ASKPASS
+  unset VSCODE_GIT_ASKPASS_MAIN
+  unset VSCODE_GIT_ASKPASS_NODE
+  unset VSCODE_GIT_ASKPASS_EXTRA_ARGS
+  unset VSCODE_GIT_IPC_HANDLE
+  export GIT_TERMINAL_PROMPT=0
+}
+
+wiki_token() {
+  if [ -n "${WIKI_TOKEN:-}" ]; then
+    printf '%s' "$WIKI_TOKEN"
+    return 0
+  fi
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    printf '%s' "$GITHUB_TOKEN"
+    return 0
+  fi
+  return 1
+}
+
+wiki_redact() {
+  local text="$1" token=""
+  if token=$(wiki_token); then
+    text=${text//$token/********}
+  fi
+  printf '%s' "$text"
+}
+
+wiki_git() {
+  local token=""
+  wiki_disable_interactive_auth
+  if token=$(wiki_token); then
+    git -c credential.helper= \
+      -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${token}" \
+      "$@"
+    return
+  fi
+  git -c credential.helper= "$@"
+}
+
 wiki_default_branch() {
   local line
-  line=$(GIT_TERMINAL_PROMPT=0 git ls-remote --symref "$WIKI_GIT_URL" HEAD 2>"$wiki_tmp/git.err") || return 1
+  line=$(wiki_git ls-remote --symref "$WIKI_GIT_URL" HEAD 2>"$wiki_tmp/git.err") || return 1
   line=$(printf '%s\n' "$line" | awk 'NR == 1 { print $2 }')
   case "$line" in
     refs/heads/*) printf '%s\n' "${line#refs/heads/}" ;;
@@ -679,16 +721,17 @@ wiki_fetch_clone() {
   mkdir -p "$wiki_tmp"
   if ! branch=$(wiki_default_branch); then
     if [ -f "$wiki_tmp/git.err" ]; then
-      cat "$wiki_tmp/git.err" >&2
+      wiki_redact "$(cat "$wiki_tmp/git.err")" >&2
+      printf '\n' >&2
     fi
     wiki_access_fail
   fi
   if [ ! -d "$dest/.git" ]; then
-    if ! GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --branch "$branch" "$WIKI_GIT_URL" "$dest"; then
+    if ! wiki_git clone --quiet --depth 1 --branch "$branch" "$WIKI_GIT_URL" "$dest"; then
       wiki_access_fail
     fi
   else
-    if ! GIT_TERMINAL_PROMPT=0 git -C "$dest" fetch --quiet --depth 1 origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+    if ! wiki_git -C "$dest" fetch --quiet --depth 1 origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"; then
       wiki_access_fail
     fi
   fi

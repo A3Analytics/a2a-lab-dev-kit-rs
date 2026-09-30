@@ -16,16 +16,21 @@ trap cleanup EXIT
 source "$root/.mise/scripts/wiki-lib.sh"
 
 wiki_cmd=wiki-publish
-export GIT_TERMINAL_PROMPT=0
+wiki_disable_interactive_auth
 
 wiki_check
 
 clone="$root/target/wiki-remote"
 branch=$(wiki_fetch_clone "$clone")
 
-git -C "$clone" reset --hard
-git -C "$clone" clean -fd
-git -C "$clone" checkout -B "$branch" "origin/$branch"
+if [ "${GITHUB_ACTIONS:-}" = true ]; then
+  wiki_git -C "$clone" config user.name "github-actions[bot]"
+  wiki_git -C "$clone" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+fi
+
+wiki_git -C "$clone" reset --hard
+wiki_git -C "$clone" clean -fd
+wiki_git -C "$clone" checkout -B "$branch" "origin/$branch"
 
 for existing in "$clone"/*.md; do
   [ -e "$existing" ] || continue
@@ -36,13 +41,13 @@ for existing in "$clone"/*.md; do
 done
 cp "$WIKI_STAGE"/*.md "$clone"/
 
-git -C "$clone" add -A -- .
-if git -C "$clone" diff --cached --quiet; then
+wiki_git -C "$clone" add -A -- .
+if wiki_git -C "$clone" diff --cached --quiet; then
   printf 'wiki-publish: remote Wiki already matches target/wiki-stage\n'
   exit 0
 fi
 
-if ! git -C "$clone" commit -m "$(cat <<'EOF'
+if ! wiki_git -C "$clone" commit -m "$(cat <<'EOF'
 Publish the Wiki from public backlog docs.
 
 EOF
@@ -51,8 +56,8 @@ EOF
   exit 1
 fi
 
-if ! err=$(git -C "$clone" push origin "$branch" 2>&1); then
-  printf '%s\n' "$err" >&2
+if ! err=$(wiki_git -C "$clone" push origin "$branch" 2>&1); then
+  printf '%s\n' "$(wiki_redact "$err")" >&2
   case "$err" in
     *non-fast-forward* | *\[rejected\]* | *failed\ to\ push*)
       printf 'wiki-publish: push was rejected. Refusing to force-push.\n' >&2

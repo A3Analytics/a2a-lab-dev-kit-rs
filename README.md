@@ -53,15 +53,15 @@ A2A publishes `/.well-known/agent-card.json` and accepts `POST /message:send`. M
 
 ## Standards
 
-| Topic | Wiki |
-| --- | --- |
-| Lab SDK overview | [Home](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/Home) |
-| A2A | [A2A](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/A2A) |
-| MCP | [MCP](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/MCP) |
-| Asset Administration Shell | [AAS](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/AAS) |
-| OPC UA | [OPC-UA](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/OPC-UA) |
-| SiLA 2 | [SiLA-2](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/SiLA-2) |
-| ROS 2 | [ROS-2](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/ROS-2) |
+| Topic                      | Wiki                                                                |
+| -------------------------- | ------------------------------------------------------------------- |
+| Lab SDK overview           | [Home](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/Home)     |
+| A2A                        | [A2A](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/A2A)       |
+| MCP                        | [MCP](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/MCP)       |
+| Asset Administration Shell | [AAS](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/AAS)       |
+| OPC UA                     | [OPC-UA](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/OPC-UA) |
+| SiLA 2                     | [SiLA-2](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/SiLA-2) |
+| ROS 2                      | [ROS-2](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/ROS-2)   |
 
 ## Features
 
@@ -90,3 +90,5 @@ mise run quality
 ```
 
 `mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, and tests.
+
+Wiki pages are generated from public Backlog docs and published by the Wiki GitHub Action. Do not publish from a local checkout. GitHub's `GITHUB_TOKEN` cannot write Wikis, so add a `WIKI_TOKEN` repository secret with Wikis read/write. Create the first GitHub Wiki page once so `.wiki.git` exists, then re-run the Action.
