@@ -14,7 +14,7 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
 [features]
-default = []
+default = ["aas", "opcua", "sila2"]
 aas = []
 opcua = ["dep:async-opcua-client", "dep:async-opcua-types"]
 sila2 = [

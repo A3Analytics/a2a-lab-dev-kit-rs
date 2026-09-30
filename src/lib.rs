@@ -11,6 +11,7 @@ pub mod aas;
 pub mod catalog;
 pub mod error;
 pub mod id;
+pub mod industrial;
 pub mod json_object;
 pub mod logs;
 pub mod mcp;
@@ -34,6 +35,9 @@ pub use catalog::{
 };
 pub use error::SdkError;
 pub use id::{MetricId, RunId, SourceId, WorkflowId};
+pub use industrial::{
+    IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialWorkflows, ScriptedLive,
+};
 pub use json_object::JsonObject;
 pub use logs::{
     ListLogSourcesRequest, LogLevel, LogProvider, LogRecord, LogSource, QueryLogsRequest,

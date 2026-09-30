@@ -26,7 +26,7 @@ run = "cargo clippy --all-targets --all-features -- -D warnings"
 
 [test]
 description = "Run the workspace test suite"
-run = "cargo nextest run --workspace"
+run = "cargo nextest run --workspace --all-features"
 
 [kiss]
 description = "Check Rust complexity, excluding duplication and orphan-module findings"

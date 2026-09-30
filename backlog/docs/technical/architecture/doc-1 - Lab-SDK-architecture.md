@@ -30,4 +30,4 @@ Identifiers are non-empty ASCII tokens. Timestamps are UTC. `TimeRange` is half-
 
 `A2aServer` and `A2aClient` speak A2A HTTP+JSON. `McpServer` registers the same operations as MCP tools and can serve stdio or Streamable HTTP. Both adapters take `Arc<dyn LabApi>`, so one provider implementation can be exposed on both protocols.
 
-See doc-2 for the wire contracts.
+See doc-2 for the wire contracts and doc-3 for the AAS, OPC UA, and SiLA 2 connectors.

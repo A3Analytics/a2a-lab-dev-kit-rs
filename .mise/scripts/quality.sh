@@ -41,7 +41,7 @@ case "$mode" in
     step duplication bash .mise/scripts/duplication.sh
     step check check_warnings
     step clippy clippy_warnings
-    step nextest cargo nextest run --workspace
+    step nextest cargo nextest run --workspace --all-features
     ;;
   kiss)
     kiss_check
