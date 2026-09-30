@@ -17,9 +17,8 @@ use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest}
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
 use crate::service::{LabApi, LabCommand, LabResult};
-use crate::workflows::{
-    GetWorkflowStatusRequest, ListWorkflowsRequest, StartWorkflowRequest, WorkflowDefinition,
-    WorkflowRun,
+use crate::tasks::{
+    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
 };
 
 /// MCP server exposing the lab operations as tools.
@@ -162,50 +161,47 @@ impl McpServer {
     }
 
     #[tool(
-        name = "list_workflows",
-        description = "List the workflows this agent can start"
+        name = "list_tasks",
+        description = "List the tasks this agent can start"
     )]
-    async fn list_workflows(
+    async fn list_tasks(
         &self,
-        params: Parameters<ListWorkflowsRequest>,
-    ) -> Result<Json<Page<WorkflowDefinition>>, ErrorData> {
-        self.take(LabCommand::ListWorkflows(params.0), |result| match result {
-            LabResult::ListWorkflows(page) => Some(page),
+        params: Parameters<ListTasksRequest>,
+    ) -> Result<Json<Page<TaskDefinition>>, ErrorData> {
+        self.take(LabCommand::ListTasks(params.0), |result| match result {
+            LabResult::ListTasks(page) => Some(page),
             _ => None,
         })
         .await
     }
 
     #[tool(
-        name = "start_workflow",
-        description = "Start a workflow with a JSON object input and return the run"
+        name = "start_task",
+        description = "Start a task with a JSON object input and return the A2A task"
     )]
-    async fn start_workflow(
+    async fn start_task(
         &self,
-        params: Parameters<StartWorkflowRequest>,
-    ) -> Result<Json<WorkflowRun>, ErrorData> {
-        self.take(LabCommand::StartWorkflow(params.0), |result| match result {
-            LabResult::StartWorkflow(run) => Some(run),
+        params: Parameters<StartTaskRequest>,
+    ) -> Result<Json<TaskRun>, ErrorData> {
+        self.take(LabCommand::StartTask(params.0), |result| match result {
+            LabResult::StartTask(run) => Some(run),
             _ => None,
         })
         .await
     }
 
     #[tool(
-        name = "get_workflow_status",
-        description = "Read the status of a workflow run"
+        name = "get_task_status",
+        description = "Read the status of an A2A task"
     )]
-    async fn get_workflow_status(
+    async fn get_task_status(
         &self,
-        params: Parameters<GetWorkflowStatusRequest>,
-    ) -> Result<Json<WorkflowRun>, ErrorData> {
-        self.take(
-            LabCommand::GetWorkflowStatus(params.0),
-            |result| match result {
-                LabResult::GetWorkflowStatus(run) => Some(run),
-                _ => None,
-            },
-        )
+        params: Parameters<GetTaskStatusRequest>,
+    ) -> Result<Json<TaskRun>, ErrorData> {
+        self.take(LabCommand::GetTaskStatus(params.0), |result| match result {
+            LabResult::GetTaskStatus(run) => Some(run),
+            _ => None,
+        })
         .await
     }
 }
@@ -217,7 +213,7 @@ impl ServerHandler for McpServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2026_07_28)
             .with_server_info(Implementation::new("a2a-lab", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Lab logs, metrics, and workflows")
+            .with_instructions("Lab logs, metrics, and tasks")
     }
 }
 

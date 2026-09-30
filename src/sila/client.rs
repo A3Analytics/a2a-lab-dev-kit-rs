@@ -2,7 +2,7 @@
 
 use crate::error::SdkError;
 use crate::sila::proto;
-use crate::workflows::RunState;
+use crate::tasks::TaskState;
 
 /// Maximum SiLA binary-transfer chunk size.
 pub const MAX_CHUNK: usize = 2 * 1024 * 1024;
@@ -19,12 +19,12 @@ pub struct SilaEndpoint {
 }
 
 /// Maps a SiLA execution status code onto a lab run state.
-pub fn execution_state(status: u32) -> Result<RunState, SdkError> {
+pub fn execution_state(status: u32) -> Result<TaskState, SdkError> {
     match status {
-        0 => Ok(RunState::Submitted),
-        1 => Ok(RunState::Working),
-        2 => Ok(RunState::Completed),
-        3 => Ok(RunState::Failed),
+        0 => Ok(TaskState::Submitted),
+        1 => Ok(TaskState::Working),
+        2 => Ok(TaskState::Completed),
+        3 => Ok(TaskState::Failed),
         _ => Err(SdkError::protocol(format!(
             "unknown SiLA execution status {status}"
         ))),
@@ -82,16 +82,16 @@ pub fn certificate_accepted(
     Ok(())
 }
 
-/// Starts a workflow through the generated SiLA client and returns its execution UUID.
-pub async fn start_workflow(
+/// Starts a task through the generated SiLA client and returns its execution UUID.
+pub async fn start_task(
     client: &mut proto::lab_automation_client::LabAutomationClient<tonic::transport::Channel>,
-    workflow_id: &str,
+    task_id: &str,
     input_json: &str,
     run_id: &str,
-) -> Result<(String, RunState), SdkError> {
+) -> Result<(String, TaskState), SdkError> {
     let confirmation = client
-        .start_workflow(proto::StartWorkflowRequest {
-            workflow_id: workflow_id.to_owned(),
+        .start_task(proto::StartTaskRequest {
+            task_id: task_id.to_owned(),
             input_json: input_json.to_owned(),
             run_id: run_id.to_owned(),
         })
@@ -104,7 +104,7 @@ pub async fn start_workflow(
         ));
     }
     let mut info = client
-        .start_workflow_info(proto::CommandExecution {
+        .start_task_info(proto::CommandExecution {
             command_execution_uuid: confirmation.command_execution_uuid.clone(),
         })
         .await

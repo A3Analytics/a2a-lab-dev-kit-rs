@@ -9,5 +9,5 @@ pub mod proto {
 
 pub use client::{
     MAX_CHUNK, SilaEndpoint, certificate_accepted, chunk_binary, execution_state, parse_discovery,
-    start_workflow,
+    start_task,
 };

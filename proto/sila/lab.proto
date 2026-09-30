@@ -6,24 +6,24 @@ package sila.lab;
 // 0 waiting, 1 running, 2 finishedSuccessfully, 3 finishedWithError.
 
 service LabAutomation {
-  rpc GetAvailableWorkflows(Empty) returns (WorkflowList);
-  rpc StartWorkflow(StartWorkflowRequest) returns (CommandConfirmation);
-  rpc StartWorkflowInfo(CommandExecution) returns (stream ExecutionInfo);
-  rpc StartWorkflowResult(CommandExecution) returns (StartWorkflowResponse);
-  rpc GetWorkflowLogs(LogRequest) returns (LogResponse);
-  rpc GetWorkflowMetrics(MetricRequest) returns (MetricResponse);
+  rpc GetAvailableTasks(Empty) returns (TaskList);
+  rpc StartTask(StartTaskRequest) returns (CommandConfirmation);
+  rpc StartTaskInfo(CommandExecution) returns (stream ExecutionInfo);
+  rpc StartTaskResult(CommandExecution) returns (StartTaskResponse);
+  rpc GetTaskLogs(LogRequest) returns (LogResponse);
+  rpc GetTaskMetrics(MetricRequest) returns (MetricResponse);
   rpc CreateBinary(CreateBinaryRequest) returns (BinaryUpload);
   rpc UploadChunk(stream BinaryChunk) returns (Empty);
 }
 
 message Empty {}
 
-message WorkflowList {
+message TaskList {
   repeated string identifiers = 1;
 }
 
-message StartWorkflowRequest {
-  string workflow_id = 1;
+message StartTaskRequest {
+  string task_id = 1;
   string input_json = 2;
   string run_id = 3;
 }
@@ -41,7 +41,7 @@ message ExecutionInfo {
   double progress = 2;
 }
 
-message StartWorkflowResponse {
+message StartTaskResponse {
   string message = 1;
 }
 

@@ -115,7 +115,7 @@ fn binding_from_element(asset: &AssetKey, element: &Value) -> Result<Binding, Sd
     let role = match field(&fields, "role")? {
         "log_source" => BindingRole::LogSource,
         "metric" => BindingRole::Metric,
-        "workflow" => BindingRole::Workflow,
+        "task" => BindingRole::Task,
         other => {
             return Err(SdkError::protocol(format!(
                 "unknown binding role `{other}`"

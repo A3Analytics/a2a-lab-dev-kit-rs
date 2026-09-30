@@ -3,9 +3,9 @@
 mod catalog;
 mod logs;
 mod metrics;
-mod workflows;
+mod tasks;
 
 pub use catalog::MemoryCatalog;
 pub use logs::MemoryLogs;
 pub use metrics::MemoryMetrics;
-pub use workflows::MemoryWorkflows;
+pub use tasks::MemoryTasks;

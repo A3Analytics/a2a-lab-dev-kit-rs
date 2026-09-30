@@ -1,20 +1,19 @@
-//! ROS 2 actions exposed as lab workflows.
+//! ROS 2 actions exposed as lab tasks.
 
 use crate::error::SdkError;
-use crate::id::{RunId, WorkflowId};
+use crate::id::{RunId, TaskId};
 use crate::page::{Page, slice_page};
 use crate::ros2::{Ros2Action, Ros2Graph};
-use crate::workflows::{
-    GetWorkflowStatusRequest, ListWorkflowsRequest, StartWorkflowRequest, WorkflowDefinition,
-    WorkflowProvider, WorkflowRun,
+use crate::tasks::{
+    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider, TaskRun,
 };
 
-/// Workflow provider backed by ROS 2 action servers.
-pub struct Ros2Workflows<G> {
+/// Task provider backed by ROS 2 action servers.
+pub struct Ros2Tasks<G> {
     graph: G,
 }
 
-impl<G> Ros2Workflows<G> {
+impl<G> Ros2Tasks<G> {
     /// Creates a provider over a ROS 2 action graph.
     #[must_use]
     pub const fn new(graph: G) -> Self {
@@ -28,50 +27,50 @@ impl<G> Ros2Workflows<G> {
     }
 }
 
-impl<G: Ros2Graph> WorkflowProvider for Ros2Workflows<G> {
-    async fn list_workflows(
+impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
+    async fn list_tasks(
         &self,
-        request: ListWorkflowsRequest,
-    ) -> Result<Page<WorkflowDefinition>, SdkError> {
+        request: ListTasksRequest,
+    ) -> Result<Page<TaskDefinition>, SdkError> {
         let mut actions = self.graph.actions().await?;
         actions.sort_by(|left, right| left.name.cmp(&right.name));
-        let mut workflows = Vec::new();
+        let mut tasks = Vec::new();
         for action in actions {
-            workflows.push(definition(&action)?);
+            tasks.push(definition(&action)?);
         }
-        slice_page(&workflows, &request.page)
+        slice_page(&tasks, &request.page)
     }
 
-    async fn start(&self, request: StartWorkflowRequest) -> Result<WorkflowRun, SdkError> {
-        let action_name = action_name(request.workflow_id.as_str());
+    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, SdkError> {
+        let action_name = action_name(request.task_id.as_str());
         let goal = self
             .graph
             .send_goal(&action_name, request.input.clone())
             .await?;
-        Ok(WorkflowRun {
+        Ok(TaskRun {
             id: RunId::new(goal_token(&goal.id))?,
-            workflow_id: request.workflow_id,
-            state: goal.status.to_run_state(),
+            task_id: request.task_id,
+            state: goal.status.to_task_state(),
             input: request.input,
             message: goal.message,
         })
     }
 
-    async fn status(&self, request: GetWorkflowStatusRequest) -> Result<WorkflowRun, SdkError> {
-        let goal = self.graph.goal(&goal_name(request.run_id.as_str())).await?;
-        Ok(WorkflowRun {
-            id: request.run_id,
-            workflow_id: WorkflowId::new(action_token(&goal.action_name))?,
-            state: goal.status.to_run_state(),
+    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+        let goal = self.graph.goal(&goal_name(request.id.as_str())).await?;
+        Ok(TaskRun {
+            id: request.id,
+            task_id: TaskId::new(action_token(&goal.action_name))?,
+            state: goal.status.to_task_state(),
             input: crate::json_object::JsonObject::empty(),
             message: goal.message,
         })
     }
 }
 
-fn definition(action: &Ros2Action) -> Result<WorkflowDefinition, SdkError> {
-    Ok(WorkflowDefinition {
-        id: WorkflowId::new(action_token(&action.name))?,
+fn definition(action: &Ros2Action) -> Result<TaskDefinition, SdkError> {
+    Ok(TaskDefinition {
+        id: TaskId::new(action_token(&action.name))?,
         name: action.name.clone(),
         description: action.type_name.clone(),
         asset_id: None,

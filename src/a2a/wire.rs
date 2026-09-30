@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::SdkError;
-use crate::service::{LabCommand, LabResult, TaskSnapshot, TaskState};
+use crate::service::{LabCommand, LabResult, TaskSnapshot};
+use crate::tasks::TaskState;
 
 /// Media type of lab command and result data parts.
 pub const LAB_MEDIA_TYPE: &str = "application/vnd.a2a-lab.v1+json";

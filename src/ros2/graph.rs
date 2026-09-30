@@ -1,8 +1,8 @@
-//! ROS 2 action graph used by the workflow provider.
+//! ROS 2 action graph used by the task provider.
 
 use crate::error::SdkError;
 use crate::json_object::JsonObject;
-use crate::workflows::RunState;
+use crate::tasks::TaskState;
 
 /// A ROS 2 action server advertised on the graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,15 +31,15 @@ pub enum Ros2GoalStatus {
 }
 
 impl Ros2GoalStatus {
-    /// Maps a ROS 2 goal status onto a lab run state.
+    /// Maps a ROS 2 goal status onto an A2A task state.
     #[must_use]
-    pub const fn to_run_state(self) -> RunState {
+    pub const fn to_task_state(self) -> TaskState {
         match self {
-            Self::Accepted => RunState::Submitted,
-            Self::Executing | Self::Canceling => RunState::Working,
-            Self::Succeeded => RunState::Completed,
-            Self::Aborted => RunState::Failed,
-            Self::Canceled => RunState::Canceled,
+            Self::Accepted => TaskState::Submitted,
+            Self::Executing | Self::Canceling => TaskState::Working,
+            Self::Succeeded => TaskState::Completed,
+            Self::Aborted => TaskState::Failed,
+            Self::Canceled => TaskState::Canceled,
         }
     }
 }

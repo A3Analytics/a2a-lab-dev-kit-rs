@@ -1,6 +1,6 @@
 use a2a_lab_sdk::{
-    GetWorkflowStatusRequest, JsonObject, ListWorkflowsRequest, MemoryRos2, PageRequest,
-    Ros2Action, Ros2GoalStatus, Ros2Workflows, RunState, WorkflowId, WorkflowProvider,
+    GetTaskStatusRequest, JsonObject, ListTasksRequest, MemoryRos2, PageRequest, Ros2Action,
+    Ros2GoalStatus, Ros2Tasks, TaskId, TaskProvider, TaskState,
 };
 
 #[tokio::test]
@@ -18,9 +18,9 @@ async fn lists_actions_and_maps_goal_status() {
             type_name: "control_msgs/action/FollowJointTrajectory".to_owned(),
         })
         .await;
-    let workflows = Ros2Workflows::new(graph.clone());
-    let page = workflows
-        .list_workflows(ListWorkflowsRequest {
+    let tasks = Ros2Tasks::new(graph.clone());
+    let page = tasks
+        .list_tasks(ListTasksRequest {
             page: PageRequest::new(None, 10).unwrap(),
         })
         .await
@@ -31,14 +31,14 @@ async fn lists_actions_and_maps_goal_status() {
         Some("nav2_msgs/action/NavigateToPose")
     );
 
-    let started = workflows
-        .start(a2a_lab_sdk::StartWorkflowRequest {
-            workflow_id: WorkflowId::new("navigate_to_pose").unwrap(),
+    let started = tasks
+        .start(a2a_lab_sdk::StartTaskRequest {
+            task_id: TaskId::new("navigate_to_pose").unwrap(),
             input: JsonObject::parse(r#"{"pose":"dock"}"#).unwrap(),
         })
         .await
         .unwrap();
-    assert_eq!(started.state, RunState::Submitted);
+    assert_eq!(started.state, TaskState::Submitted);
     graph
         .set_status(
             started.id.as_str().strip_prefix("ros2-").unwrap(),
@@ -47,13 +47,13 @@ async fn lists_actions_and_maps_goal_status() {
         )
         .await
         .unwrap();
-    let status = workflows
-        .status(GetWorkflowStatusRequest {
-            run_id: started.id.clone(),
+    let status = tasks
+        .status(GetTaskStatusRequest {
+            id: started.id.clone(),
         })
         .await
         .unwrap();
-    assert_eq!(status.state, RunState::Working);
+    assert_eq!(status.state, TaskState::Working);
     assert_eq!(status.message.as_deref(), Some("moving"));
     graph
         .set_status(
@@ -63,15 +63,15 @@ async fn lists_actions_and_maps_goal_status() {
         )
         .await
         .unwrap();
-    let finished = workflows
-        .status(GetWorkflowStatusRequest { run_id: started.id })
+    let finished = tasks
+        .status(GetTaskStatusRequest { id: started.id })
         .await
         .unwrap();
-    assert_eq!(finished.state, RunState::Completed);
+    assert_eq!(finished.state, TaskState::Completed);
 
-    let missing = workflows
-        .start(a2a_lab_sdk::StartWorkflowRequest {
-            workflow_id: WorkflowId::new("missing").unwrap(),
+    let missing = tasks
+        .start(a2a_lab_sdk::StartTaskRequest {
+            task_id: TaskId::new("missing").unwrap(),
             input: JsonObject::empty(),
         })
         .await

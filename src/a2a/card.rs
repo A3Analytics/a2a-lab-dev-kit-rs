@@ -9,7 +9,7 @@ use super::wire::{A2A_PROTOCOL_VERSION, LAB_MEDIA_TYPE};
 pub(crate) fn agent_card(public_url: &str) -> Value {
     json!({
         "name": "a2a-lab",
-        "description": "Lab logs, metrics, and workflows",
+        "description": "Lab logs, metrics, and tasks",
         "version": env!("CARGO_PKG_VERSION"),
         "protocolVersion": A2A_PROTOCOL_VERSION,
         "supportedInterfaces": [{
@@ -50,19 +50,19 @@ fn skills() -> Vec<Value> {
             "Read metric samples over a UTC time range",
         ),
         (
-            "list-workflows",
-            "List workflows",
-            "List the workflows this agent can start",
+            "list-tasks",
+            "List tasks",
+            "List the tasks this agent can start",
         ),
         (
-            "start-workflow",
-            "Start workflow",
-            "Start a workflow with a JSON object input",
+            "start-task",
+            "Start task",
+            "Start a task with a JSON object input",
         ),
         (
-            "get-workflow-status",
-            "Get workflow status",
-            "Read the status of a workflow run",
+            "get-task-status",
+            "Get task status",
+            "Read the status of an A2A task",
         ),
     ]
     .into_iter()

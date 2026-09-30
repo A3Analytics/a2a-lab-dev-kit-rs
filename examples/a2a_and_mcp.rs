@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use a2a_lab_sdk::{
     A2aClient, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource, McpServer,
-    MemoryLogs, MemoryMetrics, MemoryWorkflows, Page, PageRequest, SdkError, SourceId, bind_local,
+    MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SdkError, SourceId, bind_local,
 };
 use rmcp::ServiceExt;
 use rmcp::model::{
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         semantic_id: None,
     })
     .await;
-    let service = LabService::new(logs, MemoryMetrics::new(), MemoryWorkflows::new()).share();
+    let service = LabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
 
     let (a2a_listener, a2a_address) = bind_local().await?;
     let (mcp_listener, mcp_address) = bind_local().await?;

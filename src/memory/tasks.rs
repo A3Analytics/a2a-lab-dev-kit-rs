@@ -1,4 +1,4 @@
-//! In-memory workflow provider.
+//! In-memory task provider.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,34 +8,34 @@ use tokio::sync::Mutex;
 use crate::error::SdkError;
 use crate::id::RunId;
 use crate::page::{Page, slice_page};
-use crate::workflows::{
-    GetWorkflowStatusRequest, ListWorkflowsRequest, RunState, StartWorkflowRequest,
-    WorkflowDefinition, WorkflowProvider, WorkflowRun,
+use crate::tasks::{
+    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
+    TaskRun, TaskState,
 };
 
 #[derive(Default)]
-struct WorkflowState {
-    definitions: Vec<WorkflowDefinition>,
-    runs: Vec<WorkflowRun>,
+struct Store {
+    definitions: Vec<TaskDefinition>,
+    runs: Vec<TaskRun>,
     unavailable: Option<String>,
 }
 
-/// In-memory [`WorkflowProvider`] for examples and tests.
+/// In-memory [`TaskProvider`] for examples and tests.
 #[derive(Clone, Default)]
-pub struct MemoryWorkflows {
-    inner: Arc<Mutex<WorkflowState>>,
+pub struct MemoryTasks {
+    inner: Arc<Mutex<Store>>,
     ids: Arc<AtomicU64>,
 }
 
-impl MemoryWorkflows {
+impl MemoryTasks {
     /// Creates an empty catalog.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a workflow definition.
-    pub async fn insert(&self, definition: WorkflowDefinition) {
+    /// Adds a task definition.
+    pub async fn insert(&self, definition: TaskDefinition) {
         self.inner.lock().await.definitions.push(definition);
     }
 
@@ -43,7 +43,7 @@ impl MemoryWorkflows {
     pub async fn transition(
         &self,
         run_id: &RunId,
-        state: RunState,
+        state: TaskState,
         message: Option<String>,
     ) -> Result<(), SdkError> {
         let mut data = self.inner.lock().await;
@@ -51,7 +51,7 @@ impl MemoryWorkflows {
             .runs
             .iter_mut()
             .find(|run| &run.id == run_id)
-            .ok_or_else(|| SdkError::not_found("workflow run", run_id.to_string()))?;
+            .ok_or_else(|| SdkError::not_found("task run", run_id.to_string()))?;
         run.state = state;
         run.message = message;
         Ok(())
@@ -68,11 +68,11 @@ impl MemoryWorkflows {
     }
 }
 
-impl WorkflowProvider for MemoryWorkflows {
-    async fn list_workflows(
+impl TaskProvider for MemoryTasks {
+    async fn list_tasks(
         &self,
-        request: ListWorkflowsRequest,
-    ) -> Result<Page<WorkflowDefinition>, SdkError> {
+        request: ListTasksRequest,
+    ) -> Result<Page<TaskDefinition>, SdkError> {
         let state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
             return Err(SdkError::unavailable(message.clone()));
@@ -82,7 +82,7 @@ impl WorkflowProvider for MemoryWorkflows {
         slice_page(&definitions, &request.page)
     }
 
-    async fn start(&self, request: StartWorkflowRequest) -> Result<WorkflowRun, SdkError> {
+    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, SdkError> {
         let mut state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
             return Err(SdkError::unavailable(message.clone()));
@@ -90,18 +90,15 @@ impl WorkflowProvider for MemoryWorkflows {
         if !state
             .definitions
             .iter()
-            .any(|definition| definition.id == request.workflow_id)
+            .any(|definition| definition.id == request.task_id)
         {
-            return Err(SdkError::not_found(
-                "workflow",
-                request.workflow_id.to_string(),
-            ));
+            return Err(SdkError::not_found("task", request.task_id.to_string()));
         }
         let number = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
-        let run = WorkflowRun {
+        let run = TaskRun {
             id: RunId::new(format!("run-{number}"))?,
-            workflow_id: request.workflow_id,
-            state: RunState::Submitted,
+            task_id: request.task_id,
+            state: TaskState::Submitted,
             input: request.input,
             message: None,
         };
@@ -109,7 +106,7 @@ impl WorkflowProvider for MemoryWorkflows {
         Ok(run)
     }
 
-    async fn status(&self, request: GetWorkflowStatusRequest) -> Result<WorkflowRun, SdkError> {
+    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
         let state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
             return Err(SdkError::unavailable(message.clone()));
@@ -117,8 +114,8 @@ impl WorkflowProvider for MemoryWorkflows {
         state
             .runs
             .iter()
-            .find(|run| run.id == request.run_id)
+            .find(|run| run.id == request.id)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("workflow run", request.run_id.to_string()))
+            .ok_or_else(|| SdkError::not_found("task run", request.id.to_string()))
     }
 }

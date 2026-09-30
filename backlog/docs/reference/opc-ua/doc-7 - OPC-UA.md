@@ -10,7 +10,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this SDK
 
-OPC UA is an outbound history client, not an agent-facing protocol. Catalog bindings may point a lab token at an `Endpoint::OpcUa` node. `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialWorkflows` read history only through `LiveSource`. `OpcUaClient` is not a `LiveSource`.
+OPC UA is an outbound history client, not an agent-facing protocol. Catalog bindings may point a lab token at an `Endpoint::OpcUa` node. `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` read history only through `LiveSource`. `OpcUaClient` is not a `LiveSource`.
 
 Catalog bindings feed `LiveSource`. `ScriptedLive` is the implementation in this crate. `OpcUaClient::read_history` is a separate helper and is not wired into that path.
 

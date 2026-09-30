@@ -16,9 +16,9 @@ The server speaks A2A 1.0 over HTTP+JSON. It publishes an Agent Card at `/.well-
 - `query-logs`
 - `list-metrics`
 - `query-metric`
-- `list-workflows`
-- `start-workflow`
-- `get-workflow-status`
+- `list-tasks`
+- `start-task`
+- `get-task-status`
 
 Clients send a `message` to `POST /message:send` or `POST /message/send`. The command is a data part with media type `application/vnd.a2a-lab.v1+json`:
 
@@ -38,15 +38,15 @@ A successful response is an A2A task. Its artifact data part uses the same media
 }
 ```
 
-Task states use the protocol names `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and `TASK_STATE_CANCELED`. A workflow started through A2A uses the run ID as the task ID, so `GET /tasks/{id}` follows that run. `GET /tasks/{id}/subscribe` emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`. Query results are split into ordered artifact chunks. The last chunk sets `lastChunk` to true.
+Task states use the protocol names `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and `TASK_STATE_CANCELED`. A task started through A2A uses the run ID as the task ID, so `GET /tasks/{id}` follows that run. `GET /tasks/{id}/subscribe` emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`. Query results are split into ordered artifact chunks. The last chunk sets `lastChunk` to true.
 
 This crate implements that HTTP+JSON profile directly and does not depend on a separate A2A crate.
 
 ## MCP
 
-`McpServer` targets MCP `2026-07-28` through `rmcp` 3.5. The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_workflows`, `start_workflow`, and `get_workflow_status`. Input and output schemas come from the same request and result types used by A2A.
+`McpServer` targets MCP `2026-07-28` through `rmcp` 3.5. The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`. Input and output schemas come from the same request and result types used by A2A.
 
-`serve_stdio` uses newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener, the A2A server binds `127.0.0.1:31000` and the MCP server binds `127.0.0.1:31001`. Starting a workflow returns the run immediately. Call `get_workflow_status` to poll it.
+`serve_stdio` uses newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener, the A2A server binds `127.0.0.1:31000` and the MCP server binds `127.0.0.1:31001`. Starting a task returns the run immediately. Call `get_task_status` to poll it.
 
 Provider failures become MCP invalid-params or internal errors. The same failures become HTTP 400, 404, 502, or 503 on the A2A adapter, with a body of `{ "code", "message" }`.
 

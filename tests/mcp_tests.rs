@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use a2a_lab_sdk::{
-    LabService, LogSource, McpServer, MemoryLogs, MemoryMetrics, MemoryWorkflows, Page, SourceId,
-    WorkflowDefinition, WorkflowId, bind_local,
+    LabService, LogSource, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, SourceId,
+    TaskDefinition, TaskId, bind_local,
 };
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation, ProtocolVersion,
@@ -32,17 +32,17 @@ async fn service() -> Arc<dyn a2a_lab_sdk::LabApi> {
         semantic_id: None,
     })
     .await;
-    let workflows = MemoryWorkflows::new();
-    workflows
-        .insert(WorkflowDefinition {
-            id: WorkflowId::new("build").unwrap(),
+    let tasks = MemoryTasks::new();
+    tasks
+        .insert(TaskDefinition {
+            id: TaskId::new("build").unwrap(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
         })
         .await;
-    LabService::new(logs, MemoryMetrics::new(), workflows).share()
+    LabService::new(logs, MemoryMetrics::new(), tasks).share()
 }
 
 async fn assert_lab_tools(client: &impl ToolClient) {
@@ -52,13 +52,13 @@ async fn assert_lab_tools(client: &impl ToolClient) {
     assert_eq!(
         names,
         [
-            "get_workflow_status",
+            "get_task_status",
             "list_log_sources",
             "list_metrics",
-            "list_workflows",
+            "list_tasks",
             "query_logs",
             "query_metric",
-            "start_workflow",
+            "start_task",
         ]
     );
     let logs = listed

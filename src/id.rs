@@ -88,5 +88,5 @@ macro_rules! id_type {
 
 id_type!(SourceId, "log source");
 id_type!(MetricId, "metric");
-id_type!(WorkflowId, "workflow definition");
-id_type!(RunId, "workflow run");
+id_type!(TaskId, "task definition");
+id_type!(RunId, "A2A task");

@@ -52,7 +52,7 @@ fn rejects_invalid_pages_and_omits_the_last_cursor() {
 }
 
 #[test]
-fn rejects_non_object_workflow_input() {
+fn rejects_non_object_task_input() {
     assert!(JsonObject::parse("[1]").is_err());
     assert!(JsonObject::parse("\"text\"").is_err());
     assert!(JsonObject::parse("{").is_err());

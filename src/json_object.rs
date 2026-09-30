@@ -1,4 +1,4 @@
-//! JSON objects accepted as workflow input.
+//! JSON objects accepted as task input.
 
 use std::fmt;
 

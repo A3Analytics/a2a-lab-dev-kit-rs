@@ -1,9 +1,9 @@
 use a2a_lab_sdk::{
-    GetWorkflowStatusRequest, JsonObject, ListLogSourcesRequest, ListMetricsRequest,
-    ListWorkflowsRequest, LogLevel, LogProvider, LogRecord, LogSource, MemoryLogs, MemoryMetrics,
-    MemoryWorkflows, MetricDescriptor, MetricId, MetricPoint, MetricProvider, PageRequest,
-    QueryLogsRequest, QueryMetricRequest, RunState, SourceId, StartWorkflowRequest, TimeRange,
-    UtcTimestamp, WorkflowDefinition, WorkflowId, WorkflowProvider,
+    GetTaskStatusRequest, JsonObject, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest,
+    LogLevel, LogProvider, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    MetricDescriptor, MetricId, MetricPoint, MetricProvider, PageRequest, QueryLogsRequest,
+    QueryMetricRequest, SourceId, StartTaskRequest, TaskDefinition, TaskId, TaskProvider,
+    TaskState, TimeRange, UtcTimestamp,
 };
 
 fn timestamp(value: &str) -> UtcTimestamp {
@@ -134,46 +134,44 @@ async fn queries_metric_samples_and_reports_provider_failure() {
 }
 
 #[tokio::test]
-async fn starts_a_workflow_and_tracks_its_status() {
-    let workflows = MemoryWorkflows::new();
-    let workflow_id = WorkflowId::new("build").unwrap();
-    workflows
-        .insert(WorkflowDefinition {
-            id: workflow_id.clone(),
+async fn starts_a_task_and_tracks_its_status() {
+    let tasks = MemoryTasks::new();
+    let task_id = TaskId::new("build").unwrap();
+    tasks
+        .insert(TaskDefinition {
+            id: task_id.clone(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
         })
         .await;
-    let listed = workflows
-        .list_workflows(ListWorkflowsRequest { page: page(10) })
+    let listed = tasks
+        .list_tasks(ListTasksRequest { page: page(10) })
         .await
         .unwrap();
-    assert_eq!(listed.items()[0].id, workflow_id);
-    let run = workflows
-        .start(StartWorkflowRequest {
-            workflow_id: workflow_id.clone(),
+    assert_eq!(listed.items()[0].id, task_id);
+    let run = tasks
+        .start(StartTaskRequest {
+            task_id: task_id.clone(),
             input: JsonObject::parse(r#"{"branch":"main"}"#).unwrap(),
         })
         .await
         .unwrap();
-    assert_eq!(run.state, RunState::Submitted);
-    workflows
-        .transition(&run.id, RunState::Completed, Some("done".to_owned()))
+    assert_eq!(run.state, TaskState::Submitted);
+    tasks
+        .transition(&run.id, TaskState::Completed, Some("done".to_owned()))
         .await
         .unwrap();
-    let status = workflows
-        .status(GetWorkflowStatusRequest {
-            run_id: run.id.clone(),
-        })
+    let status = tasks
+        .status(GetTaskStatusRequest { id: run.id.clone() })
         .await
         .unwrap();
-    assert_eq!(status.state, RunState::Completed);
+    assert_eq!(status.state, TaskState::Completed);
     assert_eq!(status.message.as_deref(), Some("done"));
-    let missing = workflows
-        .start(StartWorkflowRequest {
-            workflow_id: WorkflowId::new("missing").unwrap(),
+    let missing = tasks
+        .start(StartTaskRequest {
+            task_id: TaskId::new("missing").unwrap(),
             input: JsonObject::empty(),
         })
         .await

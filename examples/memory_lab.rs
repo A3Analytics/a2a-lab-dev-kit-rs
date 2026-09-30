@@ -1,21 +1,21 @@
-//! In-memory logs, metrics, and workflows.
+//! In-memory logs, metrics, and tasks.
 //!
 //! Lists log sources one at a time, then queries a half-open UTC range
 //! `[start, end)`.
 
 use a2a_lab_sdk::{
-    GetWorkflowStatusRequest, JsonObject, ListLogSourcesRequest, ListMetricsRequest,
-    ListWorkflowsRequest, LogLevel, LogProvider, LogRecord, LogSource, MemoryLogs, MemoryMetrics,
-    MemoryWorkflows, MetricDescriptor, MetricId, MetricPoint, MetricProvider, PageRequest,
-    QueryLogsRequest, QueryMetricRequest, RunState, SdkError, SourceId, StartWorkflowRequest,
-    TimeRange, UtcTimestamp, WorkflowDefinition, WorkflowId, WorkflowProvider,
+    GetTaskStatusRequest, JsonObject, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest,
+    LogLevel, LogProvider, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    MetricDescriptor, MetricId, MetricPoint, MetricProvider, PageRequest, QueryLogsRequest,
+    QueryMetricRequest, SdkError, SourceId, StartTaskRequest, TaskDefinition, TaskId, TaskProvider,
+    TaskState, TimeRange, UtcTimestamp,
 };
 
 #[tokio::main]
 async fn main() -> Result<(), SdkError> {
     demonstrate_logs().await?;
     demonstrate_metrics().await?;
-    demonstrate_workflows().await?;
+    demonstrate_tasks().await?;
     Ok(())
 }
 
@@ -122,39 +122,37 @@ async fn demonstrate_metrics() -> Result<(), SdkError> {
     Ok(())
 }
 
-async fn demonstrate_workflows() -> Result<(), SdkError> {
-    let workflows = MemoryWorkflows::new();
-    let workflow_id = WorkflowId::new("build")?;
-    workflows
-        .insert(WorkflowDefinition {
-            id: workflow_id.clone(),
+async fn demonstrate_tasks() -> Result<(), SdkError> {
+    let tasks = MemoryTasks::new();
+    let task_id = TaskId::new("build")?;
+    tasks
+        .insert(TaskDefinition {
+            id: task_id.clone(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
         })
         .await;
-    let listed = workflows
-        .list_workflows(ListWorkflowsRequest {
+    let listed = tasks
+        .list_tasks(ListTasksRequest {
             page: PageRequest::new(None, 10)?,
         })
         .await?;
-    let run = workflows
-        .start(StartWorkflowRequest {
-            workflow_id,
+    let run = tasks
+        .start(StartTaskRequest {
+            task_id,
             input: JsonObject::parse(r#"{"branch":"main"}"#)?,
         })
         .await?;
-    workflows
-        .transition(&run.id, RunState::Completed, Some("done".to_owned()))
+    tasks
+        .transition(&run.id, TaskState::Completed, Some("done".to_owned()))
         .await?;
-    let status = workflows
-        .status(GetWorkflowStatusRequest {
-            run_id: run.id.clone(),
-        })
+    let status = tasks
+        .status(GetTaskStatusRequest { id: run.id.clone() })
         .await?;
     println!(
-        "workflow {} run {} {:?}",
+        "task {} run {} {:?}",
         listed.items()[0].id,
         status.id,
         status.state

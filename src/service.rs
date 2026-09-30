@@ -17,61 +17,13 @@ use crate::metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };
 use crate::page::{Page, PageRequest};
-use crate::workflows::{
-    GetWorkflowStatusRequest, ListWorkflowsRequest, RunState, StartWorkflowRequest,
-    WorkflowDefinition, WorkflowProvider, WorkflowRun,
+use crate::tasks::{
+    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
+    TaskRun, TaskState,
 };
 
 /// Future returned by [`LabApi`].
 pub type LabFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// Lifecycle of an A2A task created by the lab service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskState {
-    /// The task has been accepted.
-    Submitted,
-    /// The task is running.
-    Working,
-    /// The task finished successfully.
-    Completed,
-    /// The task finished with an error.
-    Failed,
-    /// The task was canceled.
-    Canceled,
-}
-
-impl TaskState {
-    /// Reports whether no further state changes are expected.
-    #[must_use]
-    pub const fn is_terminal(self) -> bool {
-        matches!(self, Self::Completed | Self::Failed | Self::Canceled)
-    }
-
-    /// Returns the A2A 1.0 protocol state name.
-    #[must_use]
-    pub const fn as_protocol(&self) -> &'static str {
-        match self {
-            Self::Submitted => "TASK_STATE_SUBMITTED",
-            Self::Working => "TASK_STATE_WORKING",
-            Self::Completed => "TASK_STATE_COMPLETED",
-            Self::Failed => "TASK_STATE_FAILED",
-            Self::Canceled => "TASK_STATE_CANCELED",
-        }
-    }
-
-    /// Parses an A2A 1.0 protocol state name.
-    pub fn from_protocol(value: &str) -> Result<Self, SdkError> {
-        match value {
-            "TASK_STATE_SUBMITTED" => Ok(Self::Submitted),
-            "TASK_STATE_WORKING" => Ok(Self::Working),
-            "TASK_STATE_COMPLETED" => Ok(Self::Completed),
-            "TASK_STATE_FAILED" => Ok(Self::Failed),
-            "TASK_STATE_CANCELED" => Ok(Self::Canceled),
-            _ => Err(SdkError::protocol(format!("unknown task state `{value}`"))),
-        }
-    }
-}
 
 /// Tagged request envelope shared by A2A and MCP.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -85,12 +37,12 @@ pub enum LabCommand {
     ListMetrics(ListMetricsRequest),
     /// Query one metric.
     QueryMetric(QueryMetricRequest),
-    /// List workflows.
-    ListWorkflows(ListWorkflowsRequest),
-    /// Start a workflow.
-    StartWorkflow(StartWorkflowRequest),
-    /// Read workflow status.
-    GetWorkflowStatus(GetWorkflowStatusRequest),
+    /// List tasks.
+    ListTasks(ListTasksRequest),
+    /// Start a task.
+    StartTask(StartTaskRequest),
+    /// Read task status.
+    GetTaskStatus(GetTaskStatusRequest),
 }
 
 /// Tagged result envelope shared by A2A and MCP.
@@ -105,12 +57,12 @@ pub enum LabResult {
     ListMetrics(Page<MetricDescriptor>),
     /// A page of metric samples.
     QueryMetric(Page<MetricPoint>),
-    /// A page of workflow definitions.
-    ListWorkflows(Page<WorkflowDefinition>),
+    /// A page of task definitions.
+    ListTasks(Page<TaskDefinition>),
     /// The run created by a start request.
-    StartWorkflow(WorkflowRun),
+    StartTask(TaskRun),
     /// The current run status.
-    GetWorkflowStatus(WorkflowRun),
+    GetTaskStatus(TaskRun),
 }
 
 /// Stored view of an A2A task.
@@ -158,8 +110,8 @@ enum StoredBody {
 pub struct LabService<L, M, W> {
     logs: L,
     metrics: M,
-    workflows: W,
-    tasks: Mutex<BTreeMap<String, StoredTask>>,
+    tasks: W,
+    task_store: Mutex<BTreeMap<String, StoredTask>>,
     ids: AtomicU64,
 }
 
@@ -167,16 +119,16 @@ impl<L, M, W> LabService<L, M, W>
 where
     L: LogProvider,
     M: MetricProvider,
-    W: WorkflowProvider,
+    W: TaskProvider,
 {
     /// Creates a service over the three providers.
     #[must_use]
-    pub const fn new(logs: L, metrics: M, workflows: W) -> Self {
+    pub const fn new(logs: L, metrics: M, tasks: W) -> Self {
         Self {
             logs,
             metrics,
-            workflows,
-            tasks: Mutex::const_new(BTreeMap::new()),
+            tasks,
+            task_store: Mutex::const_new(BTreeMap::new()),
             ids: AtomicU64::new(0),
         }
     }
@@ -199,17 +151,17 @@ where
             LabCommand::QueryLogs(request) => self.query_logs(request).await?,
             LabCommand::ListMetrics(request) => self.list_metrics(request).await?,
             LabCommand::QueryMetric(request) => self.query_metric(request).await?,
-            LabCommand::ListWorkflows(request) => self.list_workflows(request).await?,
-            LabCommand::StartWorkflow(request) => self.start_workflow(request).await?,
-            LabCommand::GetWorkflowStatus(request) => self.workflow_status(request).await?,
+            LabCommand::ListTasks(request) => self.list_tasks(request).await?,
+            LabCommand::StartTask(request) => self.start_task(request).await?,
+            LabCommand::GetTaskStatus(request) => self.task_status(request).await?,
         };
         Ok(LabOutcome { task })
     }
 
-    /// Returns a task, refreshing workflow runs from the provider.
+    /// Returns a task, refreshing task runs from the provider.
     pub async fn task(&self, task_id: &str) -> Result<TaskSnapshot, SdkError> {
         let stored = self
-            .tasks
+            .task_store
             .lock()
             .await
             .get(task_id)
@@ -244,35 +196,29 @@ where
         self.store_snapshot(LabResult::QueryMetric(page)).await
     }
 
-    async fn list_workflows(
-        &self,
-        request: ListWorkflowsRequest,
-    ) -> Result<TaskSnapshot, SdkError> {
+    async fn list_tasks(&self, request: ListTasksRequest) -> Result<TaskSnapshot, SdkError> {
         check_page(&request.page)?;
-        let page = self.workflows.list_workflows(request).await?;
-        self.store_snapshot(LabResult::ListWorkflows(page)).await
+        let page = self.tasks.list_tasks(request).await?;
+        self.store_snapshot(LabResult::ListTasks(page)).await
     }
 
-    async fn start_workflow(
-        &self,
-        request: StartWorkflowRequest,
-    ) -> Result<TaskSnapshot, SdkError> {
-        let run = self.workflows.start(request).await?;
+    async fn start_task(&self, request: StartTaskRequest) -> Result<TaskSnapshot, SdkError> {
+        let run = self.tasks.start(request).await?;
         let id = run.id.as_str().to_owned();
         let stored = StoredTask {
             context_id: context_id(&id),
             body: StoredBody::Run(run.id.clone()),
         };
-        self.tasks.lock().await.insert(id.clone(), stored.clone());
+        self.task_store
+            .lock()
+            .await
+            .insert(id.clone(), stored.clone());
         self.materialize(&id, stored).await
     }
 
-    async fn workflow_status(
-        &self,
-        request: GetWorkflowStatusRequest,
-    ) -> Result<TaskSnapshot, SdkError> {
-        let run = self.workflows.status(request).await?;
-        self.store_snapshot(LabResult::GetWorkflowStatus(run)).await
+    async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskSnapshot, SdkError> {
+        let run = self.tasks.status(request).await?;
+        self.store_snapshot(LabResult::GetTaskStatus(run)).await
     }
 
     async fn store_snapshot(&self, result: LabResult) -> Result<TaskSnapshot, SdkError> {
@@ -284,19 +230,19 @@ where
                 result,
             },
         };
-        self.tasks.lock().await.insert(id.clone(), stored.clone());
+        self.task_store
+            .lock()
+            .await
+            .insert(id.clone(), stored.clone());
         self.materialize(&id, stored).await
     }
 
     async fn materialize(&self, id: &str, stored: StoredTask) -> Result<TaskSnapshot, SdkError> {
         let (state, result) = match stored.body {
             StoredBody::Snapshot { state, result } => (state, result),
-            StoredBody::Run(run_id) => {
-                let run = self
-                    .workflows
-                    .status(GetWorkflowStatusRequest { run_id })
-                    .await?;
-                (map_run(run.state), LabResult::StartWorkflow(run))
+            StoredBody::Run(id) => {
+                let run = self.tasks.status(GetTaskStatusRequest { id }).await?;
+                (run.state, LabResult::StartTask(run))
             }
         };
         Ok(TaskSnapshot {
@@ -317,7 +263,7 @@ impl<L, M, W> LabApi for LabService<L, M, W>
 where
     L: LogProvider + 'static,
     M: MetricProvider + 'static,
-    W: WorkflowProvider + 'static,
+    W: TaskProvider + 'static,
 {
     fn execute(&self, command: LabCommand) -> LabFuture<'_, Result<LabOutcome, SdkError>> {
         Box::pin(LabService::execute(self, command))
@@ -335,14 +281,4 @@ fn check_page(page: &PageRequest) -> Result<(), SdkError> {
 
 fn context_id(task_id: &str) -> String {
     format!("ctx-{task_id}")
-}
-
-fn map_run(state: RunState) -> TaskState {
-    match state {
-        RunState::Submitted => TaskState::Submitted,
-        RunState::Working => TaskState::Working,
-        RunState::Completed => TaskState::Completed,
-        RunState::Failed => TaskState::Failed,
-        RunState::Canceled => TaskState::Canceled,
-    }
 }

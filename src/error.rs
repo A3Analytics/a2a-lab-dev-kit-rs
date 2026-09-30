@@ -14,7 +14,7 @@ pub enum SdkError {
     /// The requested resource does not exist.
     #[error("{kind} `{id}` was not found")]
     NotFound {
-        /// Kind of resource, such as `log source` or `workflow run`.
+        /// Kind of resource, such as `log source` or `task run`.
         kind: &'static str,
         /// Identifier that was requested.
         id: String,

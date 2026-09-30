@@ -4,13 +4,13 @@ mod live;
 mod logs;
 mod metrics;
 mod scripted;
-mod workflows;
+mod tasks;
 
 pub use live::{LiveRun, LiveSource};
 pub use logs::IndustrialLogs;
 pub use metrics::IndustrialMetrics;
 pub use scripted::ScriptedLive;
-pub use workflows::IndustrialWorkflows;
+pub use tasks::IndustrialTasks;
 
 use std::sync::Arc;
 
@@ -48,9 +48,9 @@ where
         IndustrialMetrics::new(Arc::clone(&self.catalog), Arc::clone(&self.live))
     }
 
-    /// Workflow provider using the shared instance.
+    /// Task provider using the shared instance.
     #[must_use]
-    pub fn workflows(&self) -> IndustrialWorkflows<C, L> {
-        IndustrialWorkflows::new(Arc::clone(&self.catalog), Arc::clone(&self.live))
+    pub fn tasks(&self) -> IndustrialTasks<C, L> {
+        IndustrialTasks::new(Arc::clone(&self.catalog), Arc::clone(&self.live))
     }
 }

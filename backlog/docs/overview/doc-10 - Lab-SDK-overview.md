@@ -10,7 +10,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this SDK
 
-`a2a-lab-sdk` is a Rust library for lab logs, metrics, and workflows. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `WorkflowProvider`, and stores an A2A task snapshot. A2A and MCP both call that service.
+`a2a-lab-sdk` is a Rust library for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `TaskProvider`, and stores an A2A task snapshot. A2A and MCP both call that service.
 
 An agent call enters through A2A or MCP. `LabService` fans out to the three provider traits. Each trait is backed by one implementation chosen when the service is built.
 
@@ -22,14 +22,14 @@ flowchart TD
   mcp --> lab
   lab --> logs["LogProvider"]
   lab --> metrics["MetricProvider"]
-  lab --> workflows["WorkflowProvider"]
+  lab --> tasks["TaskProvider"]
   logs --> memLogs["MemoryLogs"]
   logs --> indLogs["IndustrialLogs"]
   metrics --> memMetrics["MemoryMetrics"]
   metrics --> indMetrics["IndustrialMetrics"]
-  workflows --> memWf["MemoryWorkflows"]
-  workflows --> indWf["IndustrialWorkflows"]
-  workflows --> ros["Ros2Workflows"]
+  tasks --> memWf["MemoryTasks"]
+  tasks --> indWf["IndustrialTasks"]
+  tasks --> ros["Ros2Tasks"]
   indLogs --> catalog["AssetCatalogProvider"]
   indMetrics --> catalog
   indWf --> catalog
@@ -50,15 +50,15 @@ flowchart TD
 2. `query_logs` (`query-logs`, `query_logs`) reads structured records for one source.
 3. `list_metrics` (`list-metrics`, `list_metrics`) lists metric descriptors.
 4. `query_metric` (`query-metric`, `query_metric`) reads samples for one metric.
-5. `list_workflows` (`list-workflows`, `list_workflows`) lists workflow definitions.
-6. `start_workflow` (`start-workflow`, `start_workflow`) starts a workflow with a JSON object and returns the run.
-7. `get_workflow_status` (`get-workflow-status`, `get_workflow_status`) reads one run.
+5. `list_tasks` (`list-tasks`, `list_tasks`) lists task definitions.
+6. `start_task` (`start-task`, `start_task`) starts a task with a JSON object and returns the run.
+7. `get_task_status` (`get-task-status`, `get_task_status`) reads one run.
 
 Query requests carry a `TimeRange`. The range is half-open UTC: `TimeRange` documents `[start, end)`, `start` must be strictly before `end`, and `contains` is true when the timestamp is greater than or equal to `start` and strictly less than `end`. `UtcTimestamp` accepts RFC 3339 text whose offset is `Z`, `+00:00`, or `-00:00`.
 
-List and query requests also carry a `PageRequest`. The limit must be from 1 to `MAX_PAGE_LIMIT` (1000). The default limit is 100. A cursor is an optional string of ASCII digits. Identifiers such as `SourceId`, `MetricId`, `WorkflowId`, and `RunId` are 1 to 128 characters of ASCII letters, digits, or `.` `_` `:` `-`. `SdkError::code` is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`.
+List and query requests also carry a `PageRequest`. The limit must be from 1 to `MAX_PAGE_LIMIT` (1000). The default limit is 100. A cursor is an optional string of ASCII digits. Identifiers such as `SourceId`, `MetricId`, `TaskId`, and `RunId` are 1 to 128 characters of ASCII letters, digits, or `.` `_` `:` `-`. `SdkError::code` is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`.
 
-In-memory providers are `MemoryLogs`, `MemoryMetrics`, `MemoryWorkflows`, and `MemoryCatalog`. `IndustrialLabBuilder` can share one catalog and one `LiveSource` across `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialWorkflows`. `ScriptedLive` is the `LiveSource` implemented in this crate.
+In-memory providers are `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryCatalog`. `IndustrialLabBuilder` can share one catalog and one `LiveSource` across `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks`. `ScriptedLive` is the `LiveSource` implemented in this crate.
 
 ## Entry points
 

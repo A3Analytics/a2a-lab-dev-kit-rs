@@ -1,4 +1,4 @@
-//! Rust SDK for lab logs, metrics, and workflows.
+//! Rust SDK for lab logs, metrics, and tasks.
 //!
 //! Provider traits are the source of truth. The A2A HTTP+JSON adapter and the
 //! MCP adapter expose the same seven operations over those traits.
@@ -24,8 +24,8 @@ pub mod ros2;
 pub mod service;
 #[cfg(feature = "sila2")]
 pub mod sila;
+pub mod tasks;
 pub mod time;
-pub mod workflows;
 
 pub use a2a::{
     A2A_PROTOCOL_VERSION, A2aClient, A2aServer, LAB_MEDIA_TYPE, StreamEvent, bind_local,
@@ -35,27 +35,27 @@ pub use catalog::{
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
 };
 pub use error::SdkError;
-pub use id::{MetricId, RunId, SourceId, WorkflowId};
+pub use id::{MetricId, RunId, SourceId, TaskId};
 pub use industrial::{
-    IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialWorkflows, ScriptedLive,
+    IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialTasks, ScriptedLive,
 };
 pub use json_object::JsonObject;
 pub use logs::{
     ListLogSourcesRequest, LogLevel, LogProvider, LogRecord, LogSource, QueryLogsRequest,
 };
 pub use mcp::McpServer;
-pub use memory::{MemoryCatalog, MemoryLogs, MemoryMetrics, MemoryWorkflows};
+pub use memory::{MemoryCatalog, MemoryLogs, MemoryMetrics, MemoryTasks};
 pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };
 pub use page::{MAX_PAGE_LIMIT, Page, PageRequest};
-pub use ros2::{MemoryRos2, Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph, Ros2Workflows};
-pub use service::{LabApi, LabCommand, LabOutcome, LabResult, LabService, TaskSnapshot, TaskState};
-pub use time::{TimeRange, UtcTimestamp};
-pub use workflows::{
-    GetWorkflowStatusRequest, ListWorkflowsRequest, RunState, StartWorkflowRequest,
-    WorkflowDefinition, WorkflowProvider, WorkflowRun,
+pub use ros2::{MemoryRos2, Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph, Ros2Tasks};
+pub use service::{LabApi, LabCommand, LabOutcome, LabResult, LabService, TaskSnapshot};
+pub use tasks::{
+    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
+    TaskRun, TaskState,
 };
+pub use time::{TimeRange, UtcTimestamp};
 
 /// Returns the SDK package version.
 #[must_use]

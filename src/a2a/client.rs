@@ -9,9 +9,8 @@ use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest}
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
 use crate::service::{LabCommand, LabResult, TaskSnapshot};
-use crate::workflows::{
-    GetWorkflowStatusRequest, ListWorkflowsRequest, StartWorkflowRequest, WorkflowDefinition,
-    WorkflowRun,
+use crate::tasks::{
+    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
 };
 
 use super::wire::{self, ClientTask, StreamEvent};
@@ -83,41 +82,32 @@ impl A2aClient {
         .await
     }
 
-    /// Lists workflows.
-    pub async fn list_workflows(
+    /// Lists tasks.
+    pub async fn list_tasks(
         &self,
-        request: ListWorkflowsRequest,
-    ) -> Result<Page<WorkflowDefinition>, SdkError> {
-        self.result(LabCommand::ListWorkflows(request), |result| match result {
-            LabResult::ListWorkflows(page) => Some(page),
+        request: ListTasksRequest,
+    ) -> Result<Page<TaskDefinition>, SdkError> {
+        self.result(LabCommand::ListTasks(request), |result| match result {
+            LabResult::ListTasks(page) => Some(page),
             _ => None,
         })
         .await
     }
 
-    /// Starts a workflow and returns its A2A task.
-    pub async fn start_workflow(
-        &self,
-        request: StartWorkflowRequest,
-    ) -> Result<TaskSnapshot, SdkError> {
-        let snapshot = self.invoke(LabCommand::StartWorkflow(request)).await?;
-        expect_variant(snapshot, |result| {
-            matches!(result, LabResult::StartWorkflow(_))
-        })
+    /// Starts a task and returns the A2A task (`id` is the run id).
+    pub async fn start_task(&self, request: StartTaskRequest) -> Result<TaskSnapshot, SdkError> {
+        let snapshot = self.invoke(LabCommand::StartTask(request)).await?;
+        expect_variant(snapshot, |result| matches!(result, LabResult::StartTask(_)))
     }
 
-    /// Reads a workflow run through a completed status task.
-    pub async fn workflow_status(
-        &self,
-        request: GetWorkflowStatusRequest,
-    ) -> Result<WorkflowRun, SdkError> {
-        self.result(
-            LabCommand::GetWorkflowStatus(request),
-            |result| match result {
-                LabResult::GetWorkflowStatus(run) => Some(run),
-                _ => None,
-            },
-        )
+    /// A2A Get Task analog used by MCP: reads a started task through a completed status task.
+    ///
+    /// `task` is `GET /tasks/{id}` and reloads the original A2A task.
+    pub async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+        self.result(LabCommand::GetTaskStatus(request), |result| match result {
+            LabResult::GetTaskStatus(run) => Some(run),
+            _ => None,
+        })
         .await
     }
 

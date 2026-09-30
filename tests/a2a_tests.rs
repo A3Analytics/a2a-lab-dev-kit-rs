@@ -2,12 +2,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_lab_sdk::{
-    A2aClient, A2aServer, GetWorkflowStatusRequest, JsonObject, LAB_MEDIA_TYPE, LabApi, LabResult,
-    LabService, ListLogSourcesRequest, ListMetricsRequest, ListWorkflowsRequest, LogLevel,
-    LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryWorkflows, MetricDescriptor, MetricId,
-    MetricPoint, PageRequest, QueryLogsRequest, QueryMetricRequest, RunState, SourceId,
-    StartWorkflowRequest, TaskState, TimeRange, UtcTimestamp, WorkflowDefinition, WorkflowId,
-    bind_local,
+    A2aClient, A2aServer, GetTaskStatusRequest, JsonObject, LAB_MEDIA_TYPE, LabApi, LabResult,
+    LabService, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel, LogRecord,
+    LogSource, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint,
+    PageRequest, QueryLogsRequest, QueryMetricRequest, SourceId, StartTaskRequest, TaskDefinition,
+    TaskId, TaskState, TimeRange, UtcTimestamp, bind_local,
 };
 
 fn timestamp(value: &str) -> UtcTimestamp {
@@ -24,14 +23,14 @@ fn page(limit: u32) -> PageRequest {
 
 struct Lab {
     logs: MemoryLogs,
-    workflows: MemoryWorkflows,
+    tasks: MemoryTasks,
     service: Arc<dyn LabApi>,
 }
 
 async fn lab() -> Lab {
     let logs = MemoryLogs::new();
     let metrics = MemoryMetrics::new();
-    let workflows = MemoryWorkflows::new();
+    let tasks = MemoryTasks::new();
     let source_id = SourceId::new("app").unwrap();
     logs.insert_source(LogSource {
         id: source_id.clone(),
@@ -82,19 +81,19 @@ async fn lab() -> Lab {
         )
         .await
         .unwrap();
-    workflows
-        .insert(WorkflowDefinition {
-            id: WorkflowId::new("build").unwrap(),
+    tasks
+        .insert(TaskDefinition {
+            id: TaskId::new("build").unwrap(),
             name: "Build".to_owned(),
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
         })
         .await;
-    let service = LabService::new(logs.clone(), metrics, workflows.clone()).share();
+    let service = LabService::new(logs.clone(), metrics, tasks.clone()).share();
     Lab {
         logs,
-        workflows,
+        tasks,
         service,
     }
 }
@@ -131,9 +130,9 @@ async fn agent_card_advertises_every_skill() {
             "query-logs",
             "list-metrics",
             "query-metric",
-            "list-workflows",
-            "start-workflow",
-            "get-workflow-status",
+            "list-tasks",
+            "start-task",
+            "get-task-status",
         ]
     );
     assert_eq!(card["protocolVersion"], "1.0");
@@ -216,7 +215,7 @@ async fn exercises_every_operation_failure_and_stream() {
 }
 
 #[tokio::test]
-async fn reads_metrics_and_workflow_transitions() {
+async fn reads_metrics_and_task_transitions() {
     let lab = lab().await;
     let base = serve(Arc::clone(&lab.service)).await;
     let client = A2aClient::new(&base).unwrap();
@@ -235,20 +234,20 @@ async fn reads_metrics_and_workflow_transitions() {
         .unwrap();
     assert!((points.items()[0].value - 0.5).abs() < f64::EPSILON);
 
-    let workflows = client
-        .list_workflows(ListWorkflowsRequest { page: page(10) })
+    let tasks = client
+        .list_tasks(ListTasksRequest { page: page(10) })
         .await
         .unwrap();
-    assert_eq!(workflows.items()[0].id.as_str(), "build");
+    assert_eq!(tasks.items()[0].id.as_str(), "build");
     let started = client
-        .start_workflow(StartWorkflowRequest {
-            workflow_id: WorkflowId::new("build").unwrap(),
+        .start_task(StartTaskRequest {
+            task_id: TaskId::new("build").unwrap(),
             input: JsonObject::parse(r#"{"branch":"main"}"#).unwrap(),
         })
         .await
         .unwrap();
     assert_eq!(started.state, TaskState::Submitted);
-    let LabResult::StartWorkflow(run) = &started.result else {
+    let LabResult::StartTask(run) = &started.result else {
         panic!("start result");
     };
     let run_id = run.id.clone();
@@ -258,8 +257,8 @@ async fn reads_metrics_and_workflow_transitions() {
         async move { client.subscribe(run_id.as_str()).await.unwrap() }
     });
     tokio::time::sleep(Duration::from_millis(80)).await;
-    lab.workflows
-        .transition(&run_id, RunState::Completed, Some("built".to_owned()))
+    lab.tasks
+        .transition(&run_id, TaskState::Completed, Some("built".to_owned()))
         .await
         .unwrap();
     let events = tokio::time::timeout(Duration::from_secs(2), stream)
@@ -280,10 +279,10 @@ async fn reads_metrics_and_workflow_transitions() {
     assert_eq!(refreshed.state, TaskState::Completed);
 
     let status = client
-        .workflow_status(GetWorkflowStatusRequest { run_id })
+        .task_status(GetTaskStatusRequest { id: run_id })
         .await
         .unwrap();
-    assert_eq!(status.state, RunState::Completed);
+    assert_eq!(status.state, TaskState::Completed);
 }
 
 #[tokio::test]

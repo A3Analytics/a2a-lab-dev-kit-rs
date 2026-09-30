@@ -12,7 +12,7 @@ created_date: "2026-09-30 17:38"
 
 A2A is one of the two agent-facing protocols. `A2aServer` and `A2aClient` speak HTTP+JSON to `LabApi`. `LabService` runs the same seven operations it exposes over MCP.
 
-A message data part is a `LabCommand`. A started workflow keeps the run id as the task id. The other six commands finish as `task-n`. Subscribe emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`.
+A message data part is a `LabCommand`. A started task keeps the run id as the task id. The other six commands finish as `task-n`. Subscribe emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`.
 
 ```mermaid
 flowchart TD
@@ -20,10 +20,10 @@ flowchart TD
   send --> command["LabCommand data part"]
   command --> exec["LabService.execute"]
   exec --> kind["LabCommand"]
-  kind -->|start_workflow| runTask["Task id is the run id"]
+  kind -->|start_task| runTask["Task id is the run id"]
   kind -->|other six| doneTask["Task id is task-n"]
   runTask --> reload["GET tasks id reloads the run"]
-  reload --> mapped["RunState maps onto TaskState"]
+  reload --> mapped["TaskState is the A2A task state"]
   runTask --> sse["GET tasks id subscribe"]
   doneTask --> sse
   sse --> events["SSE task, statusUpdate, artifactUpdate"]
@@ -33,11 +33,11 @@ flowchart TD
 
 The adapter lives in `src/a2a` and uses Axum and reqwest. `A2A_PROTOCOL_VERSION` is `"1.0"`. Cargo.toml does not depend on a separate A2A crate.
 
-`GET /.well-known/agent-card.json` returns a card named `a2a-lab`. The card sets `protocolVersion` and the `HTTP+JSON` interface to `1.0`, `streaming` to true, and `pushNotifications` to false. Its skills are `list-log-sources`, `query-logs`, `list-metrics`, `query-metric`, `list-workflows`, `start-workflow`, and `get-workflow-status`. Input and output modes are `application/vnd.a2a-lab.v1+json` (`LAB_MEDIA_TYPE`).
+`GET /.well-known/agent-card.json` returns a card named `a2a-lab`. The card sets `protocolVersion` and the `HTTP+JSON` interface to `1.0`, `streaming` to true, and `pushNotifications` to false. Its skills are `list-log-sources`, `query-logs`, `list-metrics`, `query-metric`, `list-tasks`, `start-task`, and `get-task-status`. Input and output modes are `application/vnd.a2a-lab.v1+json` (`LAB_MEDIA_TYPE`).
 
 `POST /message:send` and `POST /message/send` accept a message whose data part deserializes as `LabCommand`. A present `mediaType` must equal `LAB_MEDIA_TYPE`. A success body is a task: `id`, `contextId`, `status.state`, and one artifact data part of type `LabResult`. Protocol state names are `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and `TASK_STATE_CANCELED`.
 
-A started workflow stores the run id as the task id. `GET /tasks/{id}` reloads that run from the workflow provider and maps `RunState` onto `TaskState`. Other commands allocate `task-{n}` and finish in `TASK_STATE_COMPLETED`.
+A started task stores the run id as the A2A task id. `GET /tasks/{id}` reloads that task from `TaskProvider` and uses `TaskState`. Other commands allocate `task-{n}` and finish in `TASK_STATE_COMPLETED`.
 
 `GET /tasks/{id}/subscribe` emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`. Query-log and query-metric pages become one artifact chunk per item. Later chunks set `append`; the last chunk sets `lastChunk`. Other results are a single chunk. `statusUpdate` sets `final` when the task state is terminal.
 
@@ -50,7 +50,7 @@ With no listener, `A2aServer::listen` binds `127.0.0.1:31000`.
 Re-exported from the crate root:
 
 - `A2aServer::new` and `A2aServer::listen`
-- `A2aClient::new`, `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_workflows`, `start_workflow`, `workflow_status`, `task`, and `subscribe`
+- `A2aClient::new`, `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, `task_status`, `task`, and `subscribe`
 - `bind_local`, `A2A_PROTOCOL_VERSION`, `LAB_MEDIA_TYPE`, and `StreamEvent`
 
 `A2aClient` posts to `message:send` with role `ROLE_USER`. `subscribe` reads the SSE body after the HTTP response completes.

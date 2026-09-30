@@ -27,7 +27,7 @@ pub enum BindingRole {
     /// A numeric time series.
     Metric,
     /// A startable command.
-    Workflow,
+    Task,
 }
 
 /// OPC UA security mode. Unsecured sessions are rejected.

@@ -13,8 +13,8 @@ use crate::json_object::JsonObject;
 use crate::logs::LogRecord;
 use crate::metrics::MetricPoint;
 use crate::page::{Page, PageRequest, slice_page};
+use crate::tasks::TaskState;
 use crate::time::TimeRange;
-use crate::workflows::RunState;
 
 #[derive(Default)]
 struct Script {
@@ -48,12 +48,12 @@ impl ScriptedLive {
     }
 
     /// Changes a run state.
-    pub async fn transition(&self, run_id: &str, state: RunState) -> Result<(), SdkError> {
+    pub async fn transition(&self, run_id: &str, state: TaskState) -> Result<(), SdkError> {
         let mut script = self.inner.lock().await;
         let run = script
             .runs
             .get_mut(run_id)
-            .ok_or_else(|| SdkError::not_found("workflow run", run_id))?;
+            .ok_or_else(|| SdkError::not_found("task run", run_id))?;
         run.state = state;
         Ok(())
     }
@@ -95,15 +95,15 @@ impl LiveSource for ScriptedLive {
     async fn start(
         &self,
         _endpoint: &Endpoint,
-        workflow_id: &str,
+        task_id: &str,
         _input: JsonObject,
     ) -> Result<LiveRun, SdkError> {
         let mut script = self.inner.lock().await;
         script.next += 1;
         let run = LiveRun {
             id: format!("run-{}", script.next),
-            workflow_id: workflow_id.to_owned(),
-            state: RunState::Submitted,
+            task_id: task_id.to_owned(),
+            state: TaskState::Submitted,
             message: None,
         };
         script.runs.insert(run.id.clone(), run.clone());
@@ -117,6 +117,6 @@ impl LiveSource for ScriptedLive {
             .runs
             .get(run_id)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("workflow run", run_id))
+            .ok_or_else(|| SdkError::not_found("task run", run_id))
     }
 }

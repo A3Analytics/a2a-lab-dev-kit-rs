@@ -3,8 +3,8 @@ use std::sync::Arc;
 use a2a_lab_sdk::{
     A2aClient, A2aServer, Asset, AssetKey, Binding, BindingRole, Endpoint, IndustrialLabBuilder,
     JsonObject, LabService, ListMetricsRequest, MemoryCatalog, MetricPoint, OpcUaIdentityKind,
-    PageRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind, StartWorkflowRequest,
-    TimeRange, UtcTimestamp, WorkflowId, bind_local,
+    PageRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind, StartTaskRequest, TaskId,
+    TimeRange, UtcTimestamp, bind_local,
 };
 
 fn timestamp(value: &str) -> UtcTimestamp {
@@ -28,13 +28,13 @@ fn sila() -> Endpoint {
         host: "lab.local".to_owned(),
         port: 50052,
         feature: "org.silastandard/core/LabAutomation/v1".to_owned(),
-        member: "StartWorkflow".to_owned(),
+        member: "StartTask".to_owned(),
         version: "1".to_owned(),
     }
 }
 
 #[tokio::test]
-async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_workflows() {
+async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_tasks() {
     let asset = AssetKey::new("https://example.com/aas/pump").unwrap();
     let catalog = MemoryCatalog::new();
     catalog
@@ -59,7 +59,7 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_workflows() {
                     asset,
                     SemanticId::new(SemanticKind::Iri, "https://example.com/semantic/build")
                         .unwrap(),
-                    BindingRole::Workflow,
+                    BindingRole::Task,
                     sila(),
                 )
                 .unwrap(),
@@ -70,7 +70,7 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_workflows() {
     live.insert_metric(MetricPoint::new(timestamp("2024-01-01T00:30:00Z"), 21.5).unwrap())
         .await;
     let builder = IndustrialLabBuilder::new(catalog, live);
-    let service = LabService::new(builder.logs(), builder.metrics(), builder.workflows()).share();
+    let service = LabService::new(builder.logs(), builder.metrics(), builder.tasks()).share();
     let (listener, address) = bind_local().await.unwrap();
     let server = A2aServer::new(&service);
     tokio::spawn(async move {
@@ -101,8 +101,8 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_workflows() {
         .unwrap();
     assert!((points.items()[0].value - 21.5).abs() < f64::EPSILON);
     let started = client
-        .start_workflow(StartWorkflowRequest {
-            workflow_id: WorkflowId::new("build").unwrap(),
+        .start_task(StartTaskRequest {
+            task_id: TaskId::new("build").unwrap(),
             input: JsonObject::parse(r#"{"profile":"standard"}"#).unwrap(),
         })
         .await
