@@ -20,6 +20,8 @@ pub mod metrics;
 pub mod opcua;
 pub mod page;
 pub mod service;
+#[cfg(feature = "sila2")]
+pub mod sila;
 pub mod time;
 pub mod workflows;
 

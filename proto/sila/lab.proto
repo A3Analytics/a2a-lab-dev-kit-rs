@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package sila.lab;
+
+// Observable-command shapes follow sila_base v1.2 ExecutionInfo statuses:
+// 0 waiting, 1 running, 2 finishedSuccessfully, 3 finishedWithError.
+
+service LabAutomation {
+  rpc GetAvailableWorkflows(Empty) returns (WorkflowList);
+  rpc StartWorkflow(StartWorkflowRequest) returns (CommandConfirmation);
+  rpc StartWorkflowInfo(CommandExecution) returns (stream ExecutionInfo);
+  rpc StartWorkflowResult(CommandExecution) returns (StartWorkflowResponse);
+  rpc GetWorkflowLogs(LogRequest) returns (LogResponse);
+  rpc GetWorkflowMetrics(MetricRequest) returns (MetricResponse);
+  rpc CreateBinary(CreateBinaryRequest) returns (BinaryUpload);
+  rpc UploadChunk(stream BinaryChunk) returns (Empty);
+}
+
+message Empty {}
+
+message WorkflowList {
+  repeated string identifiers = 1;
+}
+
+message StartWorkflowRequest {
+  string workflow_id = 1;
+  string input_json = 2;
+  string run_id = 3;
+}
+
+message CommandConfirmation {
+  string command_execution_uuid = 1;
+}
+
+message CommandExecution {
+  string command_execution_uuid = 1;
+}
+
+message ExecutionInfo {
+  uint32 command_status = 1;
+  double progress = 2;
+}
+
+message StartWorkflowResponse {
+  string message = 1;
+}
+
+message LogRequest {
+  string run_id = 1;
+}
+
+message LogLine {
+  string timestamp = 1;
+  string message = 2;
+}
+
+message LogResponse {
+  repeated LogLine lines = 1;
+}
+
+message MetricRequest {
+  string metric_id = 1;
+  string start = 2;
+  string end = 3;
+}
+
+message MetricSample {
+  string timestamp = 1;
+  double value = 2;
+}
+
+message MetricResponse {
+  repeated MetricSample samples = 1;
+}
+
+message CreateBinaryRequest {
+  uint64 size = 1;
+  uint32 chunk_count = 2;
+}
+
+message BinaryUpload {
+  string binary_transfer_uuid = 1;
+}
+
+message BinaryChunk {
+  string binary_transfer_uuid = 1;
+  uint32 index = 2;
+  bytes data = 3;
+}
