@@ -5,11 +5,11 @@ use std::fmt;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
-fn required(field: &'static str, value: &str) -> Result<(), SdkError> {
+fn required(field: &'static str, value: &str) -> Result<(), A2aLabError> {
     if value.is_empty() || value.len() > 2_048 {
-        return Err(SdkError::invalid(field, "must be 1..=2048 characters"));
+        return Err(A2aLabError::invalid(field, "must be 1..=2048 characters"));
     }
     Ok(())
 }
@@ -20,7 +20,7 @@ pub struct AssetKey(String);
 
 impl AssetKey {
     /// Validates and creates an asset key.
-    pub fn new(value: impl AsRef<str>) -> Result<Self, SdkError> {
+    pub fn new(value: impl AsRef<str>) -> Result<Self, A2aLabError> {
         let value = value.as_ref();
         required("asset_key", value)?;
         Ok(Self(value.to_owned()))
@@ -82,7 +82,7 @@ pub struct SemanticId {
 
 impl SemanticId {
     /// Creates a semantic identifier after checking its kind.
-    pub fn new(kind: SemanticKind, value: impl Into<String>) -> Result<Self, SdkError> {
+    pub fn new(kind: SemanticKind, value: impl Into<String>) -> Result<Self, A2aLabError> {
         let value = value.into();
         required("semantic_id", &value)?;
         let valid = match kind {
@@ -91,7 +91,7 @@ impl SemanticId {
             SemanticKind::Custom => !value.contains("://") && !value.contains('#'),
         };
         if !valid {
-            return Err(SdkError::invalid(
+            return Err(A2aLabError::invalid(
                 "semantic_id",
                 "does not match its declared kind",
             ));

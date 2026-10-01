@@ -12,7 +12,7 @@ use rmcp::transport::StreamableHttpClientTransport;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::RunId;
 use crate::service::{LabApi, LabCommand, LabFuture, LabOutcome, LabResult, TaskSnapshot};
 use crate::tasks::{GetTaskStatusRequest, TaskState};
@@ -30,8 +30,8 @@ pub struct McpLab {
 
 impl McpLab {
     /// Connects to `url`, retrying until the server accepts a session.
-    pub async fn connect(url: &str) -> Result<Arc<dyn LabApi>, SdkError> {
-        let mut last = SdkError::transport(format!("mcp not ready at {url}"));
+    pub async fn connect(url: &str) -> Result<Arc<dyn LabApi>, A2aLabError> {
+        let mut last = A2aLabError::transport(format!("mcp not ready at {url}"));
         for _ in 0..CONNECT_TRIES {
             match connect_once(url).await {
                 Ok(lab) => return Ok(Arc::new(lab)),
@@ -43,30 +43,30 @@ impl McpLab {
     }
 
     /// Connects to [`DEFAULT_MCP_URL`].
-    pub async fn connect_default() -> Result<Arc<dyn LabApi>, SdkError> {
+    pub async fn connect_default() -> Result<Arc<dyn LabApi>, A2aLabError> {
         Self::connect(DEFAULT_MCP_URL).await
     }
 
-    async fn call<Req, Res>(&self, name: &str, request: Req) -> Result<Res, SdkError>
+    async fn call<Req, Res>(&self, name: &str, request: Req) -> Result<Res, A2aLabError>
     where
         Req: Serialize,
         Res: DeserializeOwned,
     {
-        let value =
-            serde_json::to_value(request).map_err(|error| SdkError::protocol(error.to_string()))?;
+        let value = serde_json::to_value(request)
+            .map_err(|error| A2aLabError::protocol(error.to_string()))?;
         let arguments = value
             .as_object()
             .cloned()
-            .ok_or_else(|| SdkError::protocol("mcp tool arguments must be an object"))?;
+            .ok_or_else(|| A2aLabError::protocol("mcp tool arguments must be an object"))?;
         self.client
             .call_tool(CallToolRequestParams::new(name.to_owned()).with_arguments(arguments))
             .await
             .map_err(from_service_error)?
             .into_typed()
-            .map_err(|error| SdkError::protocol(error.to_string()))
+            .map_err(|error| A2aLabError::protocol(error.to_string()))
     }
 
-    async fn execute_command(&self, command: LabCommand) -> Result<LabOutcome, SdkError> {
+    async fn execute_command(&self, command: LabCommand) -> Result<LabOutcome, A2aLabError> {
         let result = match command {
             LabCommand::ListLogSources(request) => {
                 LabResult::ListLogSources(self.call("list_log_sources", request).await?)
@@ -95,11 +95,11 @@ impl McpLab {
 }
 
 impl LabApi for McpLab {
-    fn execute(&self, command: LabCommand) -> LabFuture<'_, Result<LabOutcome, SdkError>> {
+    fn execute(&self, command: LabCommand) -> LabFuture<'_, Result<LabOutcome, A2aLabError>> {
         Box::pin(self.execute_command(command))
     }
 
-    fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, SdkError>> {
+    fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, A2aLabError>> {
         let task_id = task_id.to_owned();
         Box::pin(async move {
             let id = RunId::new(task_id)?;
@@ -114,12 +114,12 @@ impl LabApi for McpLab {
     fn cancel(
         &self,
         _request: GetTaskStatusRequest,
-    ) -> LabFuture<'_, Result<TaskSnapshot, SdkError>> {
-        Box::pin(async { Err(SdkError::unavailable("task is not cancelable")) })
+    ) -> LabFuture<'_, Result<TaskSnapshot, A2aLabError>> {
+        Box::pin(async { Err(A2aLabError::unavailable("task is not cancelable")) })
     }
 }
 
-async fn connect_once(url: &str) -> Result<McpLab, SdkError> {
+async fn connect_once(url: &str) -> Result<McpLab, A2aLabError> {
     let transport = StreamableHttpClientTransport::from_uri(url);
     let client = ClientConfig::new(
         ClientCapabilities::default(),
@@ -128,7 +128,7 @@ async fn connect_once(url: &str) -> Result<McpLab, SdkError> {
     .with_protocol_version(ProtocolVersion::V_2026_07_28)
     .serve(transport)
     .await
-    .map_err(|error| SdkError::transport(error.to_string()))?;
+    .map_err(|error| A2aLabError::transport(error.to_string()))?;
     Ok(McpLab { client })
 }
 
@@ -149,7 +149,7 @@ fn outcome(result: LabResult) -> LabOutcome {
     }
 }
 
-fn from_service_error(error: ServiceError) -> SdkError {
+fn from_service_error(error: ServiceError) -> A2aLabError {
     match error {
         ServiceError::McpError(data) => {
             let code = data
@@ -158,8 +158,8 @@ fn from_service_error(error: ServiceError) -> SdkError {
                 .and_then(|value| value.get("code"))
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("protocol");
-            SdkError::from_code(code, data.message.to_string())
+            A2aLabError::from_code(code, data.message.to_string())
         }
-        other => SdkError::transport(other.to_string()),
+        other => A2aLabError::transport(other.to_string()),
     }
 }

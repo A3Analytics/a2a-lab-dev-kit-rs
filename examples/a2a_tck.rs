@@ -2,7 +2,7 @@
 
 use std::io::{Write, stderr};
 
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::{
     A2aServer, LabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks, SourceId,
     TaskDefinition, TaskId, bind_local,
 };

@@ -12,7 +12,7 @@ use a2a_types::{
 };
 use futures_util::StreamExt;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
@@ -32,7 +32,7 @@ pub struct A2aClient {
 
 impl A2aClient {
     /// Creates a client for an agent origin such as `http://127.0.0.1:8080`.
-    pub fn new(base_url: &str) -> Result<Self, SdkError> {
+    pub fn new(base_url: &str) -> Result<Self, A2aLabError> {
         let http = a2a_client::default_reqwest_client(None).map_err(wire::sdk_error)?;
         Ok(Self {
             inner: A2AClient::new(RestTransport::new(http, base_url.to_owned())),
@@ -45,7 +45,7 @@ impl A2aClient {
     pub async fn list_log_sources(
         &self,
         request: ListLogSourcesRequest,
-    ) -> Result<Page<LogSource>, SdkError> {
+    ) -> Result<Page<LogSource>, A2aLabError> {
         self.result(LabCommand::ListLogSources(request), |result| match result {
             LabResult::ListLogSources(page) => Some(page),
             _ => None,
@@ -54,7 +54,10 @@ impl A2aClient {
     }
 
     /// Queries logs.
-    pub async fn query_logs(&self, request: QueryLogsRequest) -> Result<Page<LogRecord>, SdkError> {
+    pub async fn query_logs(
+        &self,
+        request: QueryLogsRequest,
+    ) -> Result<Page<LogRecord>, A2aLabError> {
         self.result(LabCommand::QueryLogs(request), |result| match result {
             LabResult::QueryLogs(page) => Some(page),
             _ => None,
@@ -66,7 +69,7 @@ impl A2aClient {
     pub async fn list_metrics(
         &self,
         request: ListMetricsRequest,
-    ) -> Result<Page<MetricDescriptor>, SdkError> {
+    ) -> Result<Page<MetricDescriptor>, A2aLabError> {
         self.result(LabCommand::ListMetrics(request), |result| match result {
             LabResult::ListMetrics(page) => Some(page),
             _ => None,
@@ -78,7 +81,7 @@ impl A2aClient {
     pub async fn query_metric(
         &self,
         request: QueryMetricRequest,
-    ) -> Result<Page<MetricPoint>, SdkError> {
+    ) -> Result<Page<MetricPoint>, A2aLabError> {
         self.result(LabCommand::QueryMetric(request), |result| match result {
             LabResult::QueryMetric(page) => Some(page),
             _ => None,
@@ -90,7 +93,7 @@ impl A2aClient {
     pub async fn list_tasks(
         &self,
         request: ListTasksRequest,
-    ) -> Result<Page<TaskDefinition>, SdkError> {
+    ) -> Result<Page<TaskDefinition>, A2aLabError> {
         self.result(LabCommand::ListTasks(request), |result| match result {
             LabResult::ListTasks(page) => Some(page),
             _ => None,
@@ -99,7 +102,7 @@ impl A2aClient {
     }
 
     /// Starts a lab task and returns the A2A task that wraps the run.
-    pub async fn start_task(&self, request: StartTaskRequest) -> Result<TaskSnapshot, SdkError> {
+    pub async fn start_task(&self, request: StartTaskRequest) -> Result<TaskSnapshot, A2aLabError> {
         let wait = request.wait;
         let snapshot = self
             .invoke(
@@ -116,7 +119,7 @@ impl A2aClient {
     }
 
     /// Reads a started lab run through the `get_task_status` skill.
-    pub async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+    pub async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
         self.result(LabCommand::GetTaskStatus(request), |result| match result {
             LabResult::GetTaskStatus(run) => Some(run),
             _ => None,
@@ -125,7 +128,7 @@ impl A2aClient {
     }
 
     /// Fetches an A2A task.
-    pub async fn task(&self, task_id: &str) -> Result<TaskSnapshot, SdkError> {
+    pub async fn task(&self, task_id: &str) -> Result<TaskSnapshot, A2aLabError> {
         let task = self
             .inner
             .get_task(&GetTaskRequest {
@@ -139,7 +142,7 @@ impl A2aClient {
     }
 
     /// Fetches the raw A2A task resource.
-    pub async fn get_a2a_task(&self, task_id: &str) -> Result<Task, SdkError> {
+    pub async fn get_a2a_task(&self, task_id: &str) -> Result<Task, A2aLabError> {
         self.inner
             .get_task(&GetTaskRequest {
                 id: task_id.to_owned(),
@@ -154,7 +157,7 @@ impl A2aClient {
     pub async fn list_a2a_tasks(
         &self,
         context_id: Option<&str>,
-    ) -> Result<ListTasksResponse, SdkError> {
+    ) -> Result<ListTasksResponse, A2aLabError> {
         self.inner
             .list_tasks(&a2a_types::ListTasksRequest {
                 context_id: context_id.map(ToOwned::to_owned),
@@ -171,7 +174,7 @@ impl A2aClient {
     }
 
     /// Cancels an A2A task.
-    pub async fn cancel(&self, task_id: &str) -> Result<Task, SdkError> {
+    pub async fn cancel(&self, task_id: &str) -> Result<Task, A2aLabError> {
         self.inner
             .cancel_task(&CancelTaskRequest {
                 id: task_id.to_owned(),
@@ -183,7 +186,7 @@ impl A2aClient {
     }
 
     /// Collects SSE events until the stream ends.
-    pub async fn subscribe(&self, task_id: &str) -> Result<Vec<StreamResponse>, SdkError> {
+    pub async fn subscribe(&self, task_id: &str) -> Result<Vec<StreamResponse>, A2aLabError> {
         let mut stream = self
             .inner
             .subscribe_to_task(&SubscribeToTaskRequest {
@@ -200,7 +203,10 @@ impl A2aClient {
     }
 
     /// Sends a streaming message.
-    pub async fn send_stream(&self, command: LabCommand) -> Result<Vec<StreamResponse>, SdkError> {
+    pub async fn send_stream(
+        &self,
+        command: LabCommand,
+    ) -> Result<Vec<StreamResponse>, A2aLabError> {
         let request = self.send_request(&command, None)?;
         let mut stream = self
             .inner
@@ -218,7 +224,7 @@ impl A2aClient {
     pub async fn create_push_config(
         &self,
         config: TaskPushNotificationConfig,
-    ) -> Result<TaskPushNotificationConfig, SdkError> {
+    ) -> Result<TaskPushNotificationConfig, A2aLabError> {
         self.inner
             .create_push_config(&config)
             .await
@@ -226,7 +232,11 @@ impl A2aClient {
     }
 
     /// Deletes a push notification config.
-    pub async fn delete_push_config(&self, task_id: &str, config_id: &str) -> Result<(), SdkError> {
+    pub async fn delete_push_config(
+        &self,
+        task_id: &str,
+        config_id: &str,
+    ) -> Result<(), A2aLabError> {
         self.inner
             .delete_push_config(&DeleteTaskPushNotificationConfigRequest {
                 task_id: task_id.to_owned(),
@@ -242,7 +252,7 @@ impl A2aClient {
         &self,
         task_id: &str,
         config_id: &str,
-    ) -> Result<TaskPushNotificationConfig, SdkError> {
+    ) -> Result<TaskPushNotificationConfig, A2aLabError> {
         self.inner
             .get_push_config(&GetTaskPushNotificationConfigRequest {
                 task_id: task_id.to_owned(),
@@ -257,7 +267,7 @@ impl A2aClient {
     pub async fn list_push_configs(
         &self,
         task_id: &str,
-    ) -> Result<a2a_types::ListTaskPushNotificationConfigsResponse, SdkError> {
+    ) -> Result<a2a_types::ListTaskPushNotificationConfigsResponse, A2aLabError> {
         self.inner
             .list_push_configs(&ListTaskPushNotificationConfigsRequest {
                 task_id: task_id.to_owned(),
@@ -270,7 +280,7 @@ impl A2aClient {
     }
 
     /// Fetches the well-known Agent Card.
-    pub async fn agent_card(&self) -> Result<AgentCard, SdkError> {
+    pub async fn agent_card(&self) -> Result<AgentCard, A2aLabError> {
         a2a_client::agent_card::AgentCardResolver::new(None)
             .resolve(&self.base)
             .await
@@ -278,7 +288,7 @@ impl A2aClient {
     }
 
     /// Fetches the extended Agent Card.
-    pub async fn extended_agent_card(&self) -> Result<AgentCard, SdkError> {
+    pub async fn extended_agent_card(&self) -> Result<AgentCard, A2aLabError> {
         self.inner
             .get_extended_agent_card(&a2a_types::GetExtendedAgentCardRequest { tenant: None })
             .await
@@ -289,16 +299,16 @@ impl A2aClient {
         &self,
         command: LabCommand,
         pick: impl FnOnce(LabResult) -> Option<T>,
-    ) -> Result<T, SdkError> {
+    ) -> Result<T, A2aLabError> {
         let snapshot = self.invoke(command, None).await?;
-        pick(snapshot.result).ok_or_else(|| SdkError::protocol("unexpected result variant"))
+        pick(snapshot.result).ok_or_else(|| A2aLabError::protocol("unexpected result variant"))
     }
 
     async fn invoke(
         &self,
         command: LabCommand,
         configuration: Option<SendMessageConfiguration>,
-    ) -> Result<TaskSnapshot, SdkError> {
+    ) -> Result<TaskSnapshot, A2aLabError> {
         let request = self.send_request(&command, configuration)?;
         match self
             .inner
@@ -307,7 +317,7 @@ impl A2aClient {
             .map_err(wire::sdk_error)?
         {
             SendMessageResponse::Task(task) => wire::snapshot_from_task(&task),
-            SendMessageResponse::Message(_) => Err(SdkError::protocol(
+            SendMessageResponse::Message(_) => Err(A2aLabError::protocol(
                 "send returned a message instead of a task",
             )),
         }
@@ -317,10 +327,10 @@ impl A2aClient {
         &self,
         command: &LabCommand,
         configuration: Option<SendMessageConfiguration>,
-    ) -> Result<SendMessageRequest, SdkError> {
+    ) -> Result<SendMessageRequest, A2aLabError> {
         let number = self.messages.fetch_add(1, Ordering::Relaxed) + 1;
-        let data =
-            serde_json::to_value(command).map_err(|error| SdkError::protocol(error.to_string()))?;
+        let data = serde_json::to_value(command)
+            .map_err(|error| A2aLabError::protocol(error.to_string()))?;
         let mut message = Message::new(
             Role::User,
             vec![Part::data(data).with_media_type(LAB_MEDIA_TYPE)],
@@ -338,10 +348,10 @@ impl A2aClient {
 fn expect_variant(
     snapshot: TaskSnapshot,
     matches_result: impl FnOnce(&LabResult) -> bool,
-) -> Result<TaskSnapshot, SdkError> {
+) -> Result<TaskSnapshot, A2aLabError> {
     if matches_result(&snapshot.result) {
         Ok(snapshot)
     } else {
-        Err(SdkError::protocol("unexpected result variant"))
+        Err(A2aLabError::protocol("unexpected result variant"))
     }
 }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::catalog::Endpoint;
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::industrial::LiveRun;
 use crate::industrial::LiveSource;
 use crate::json_object::JsonObject;
@@ -48,12 +48,12 @@ impl ScriptedLive {
     }
 
     /// Changes a run state.
-    pub async fn transition(&self, run_id: &str, state: TaskState) -> Result<(), SdkError> {
+    pub async fn transition(&self, run_id: &str, state: TaskState) -> Result<(), A2aLabError> {
         let mut script = self.inner.lock().await;
         let run = script
             .runs
             .get_mut(run_id)
-            .ok_or_else(|| SdkError::not_found("task run", run_id))?;
+            .ok_or_else(|| A2aLabError::not_found("task run", run_id))?;
         run.state = state;
         Ok(())
     }
@@ -65,7 +65,7 @@ impl LiveSource for ScriptedLive {
         _endpoint: &Endpoint,
         range: TimeRange,
         page: PageRequest,
-    ) -> Result<Page<LogRecord>, SdkError> {
+    ) -> Result<Page<LogRecord>, A2aLabError> {
         let script = self.inner.lock().await;
         let records: Vec<_> = script
             .logs
@@ -81,7 +81,7 @@ impl LiveSource for ScriptedLive {
         _endpoint: &Endpoint,
         range: TimeRange,
         page: PageRequest,
-    ) -> Result<Page<MetricPoint>, SdkError> {
+    ) -> Result<Page<MetricPoint>, A2aLabError> {
         let script = self.inner.lock().await;
         let points: Vec<_> = script
             .metrics
@@ -97,7 +97,7 @@ impl LiveSource for ScriptedLive {
         _endpoint: &Endpoint,
         task_id: &str,
         _input: JsonObject,
-    ) -> Result<LiveRun, SdkError> {
+    ) -> Result<LiveRun, A2aLabError> {
         let mut script = self.inner.lock().await;
         script.next += 1;
         let run = LiveRun {
@@ -110,13 +110,13 @@ impl LiveSource for ScriptedLive {
         Ok(run)
     }
 
-    async fn status(&self, run_id: &str) -> Result<LiveRun, SdkError> {
+    async fn status(&self, run_id: &str) -> Result<LiveRun, A2aLabError> {
         self.inner
             .lock()
             .await
             .runs
             .get(run_id)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("task run", run_id))
+            .ok_or_else(|| A2aLabError::not_found("task run", run_id))
     }
 }

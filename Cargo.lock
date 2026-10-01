@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "a2a-lab-sdk"
+name = "a2a-lab-dev-kit"
 version = "0.1.0"
 dependencies = [
  "a2a-client-lf",

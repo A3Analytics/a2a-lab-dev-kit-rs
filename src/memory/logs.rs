@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::logs::{ListLogSourcesRequest, LogProvider, LogRecord, LogSource, QueryLogsRequest};
 use crate::page::{Page, slice_page};
 
@@ -34,14 +34,14 @@ impl MemoryLogs {
     }
 
     /// Adds a record for an existing source.
-    pub async fn insert_record(&self, record: LogRecord) -> Result<(), SdkError> {
+    pub async fn insert_record(&self, record: LogRecord) -> Result<(), A2aLabError> {
         let mut state = self.inner.lock().await;
         if !state
             .sources
             .iter()
             .any(|source| source.id == record.source_id)
         {
-            return Err(SdkError::not_found(
+            return Err(A2aLabError::not_found(
                 "log source",
                 record.source_id.to_string(),
             ));
@@ -65,7 +65,7 @@ impl LogProvider for MemoryLogs {
     async fn list_sources(
         &self,
         request: ListLogSourcesRequest,
-    ) -> Result<Page<LogSource>, SdkError> {
+    ) -> Result<Page<LogSource>, A2aLabError> {
         let state = self.inner.lock().await;
         fail_if_unavailable(state.unavailable.as_deref())?;
         let mut sources = state.sources.clone();
@@ -73,7 +73,7 @@ impl LogProvider for MemoryLogs {
         slice_page(&sources, &request.page)
     }
 
-    async fn query(&self, request: QueryLogsRequest) -> Result<Page<LogRecord>, SdkError> {
+    async fn query(&self, request: QueryLogsRequest) -> Result<Page<LogRecord>, A2aLabError> {
         request.range.check()?;
         let state = self.inner.lock().await;
         fail_if_unavailable(state.unavailable.as_deref())?;
@@ -82,7 +82,7 @@ impl LogProvider for MemoryLogs {
             .iter()
             .any(|source| source.id == request.source_id)
         {
-            return Err(SdkError::not_found(
+            return Err(A2aLabError::not_found(
                 "log source",
                 request.source_id.to_string(),
             ));
@@ -104,9 +104,9 @@ impl LogProvider for MemoryLogs {
     }
 }
 
-fn fail_if_unavailable(message: Option<&str>) -> Result<(), SdkError> {
+fn fail_if_unavailable(message: Option<&str>) -> Result<(), A2aLabError> {
     match message {
-        Some(message) => Err(SdkError::unavailable(message)),
+        Some(message) => Err(A2aLabError::unavailable(message)),
         None => Ok(()),
     }
 }

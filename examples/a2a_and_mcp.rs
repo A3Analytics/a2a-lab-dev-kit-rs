@@ -6,9 +6,10 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use a2a_lab_sdk::{
-    A2aClient, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource, McpLab, McpServer,
-    MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SdkError, SourceId, bind_local,
+use a2a_lab_dev_kit::{
+    A2aClient, A2aLabError, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource,
+    McpLab, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
+    bind_local,
 };
 use rmcp::ServiceExt;
 use rmcp::model::{
@@ -69,10 +70,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     Ok(())
 }
 
-fn spawn_a2a(service: Arc<dyn LabApi>, listener: TcpListener) -> JoinHandle<Result<(), SdkError>> {
+fn spawn_a2a(
+    service: Arc<dyn LabApi>,
+    listener: TcpListener,
+) -> JoinHandle<Result<(), A2aLabError>> {
     tokio::spawn(async move { A2aServer::new(&service).listen(listener).await })
 }
 
-fn spawn_mcp(service: Arc<dyn LabApi>, listener: TcpListener) -> JoinHandle<Result<(), SdkError>> {
+fn spawn_mcp(
+    service: Arc<dyn LabApi>,
+    listener: TcpListener,
+) -> JoinHandle<Result<(), A2aLabError>> {
     tokio::spawn(async move { McpServer::new(&service).serve_http(listener).await })
 }

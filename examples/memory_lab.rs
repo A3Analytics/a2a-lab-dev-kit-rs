@@ -3,23 +3,23 @@
 //! Lists log sources one at a time, then queries a half-open UTC range
 //! `[start, end)`.
 
-use a2a_lab_sdk::{
-    GetTaskStatusRequest, JsonObject, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest,
-    LogLevel, LogProvider, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
-    MetricDescriptor, MetricId, MetricPoint, MetricProvider, PageRequest, QueryLogsRequest,
-    QueryMetricRequest, SdkError, SourceId, StartTaskRequest, TaskDefinition, TaskId, TaskProvider,
-    TaskState, TimeRange, UtcTimestamp,
+use a2a_lab_dev_kit::{
+    A2aLabError, GetTaskStatusRequest, JsonObject, ListLogSourcesRequest, ListMetricsRequest,
+    ListTasksRequest, LogLevel, LogProvider, LogRecord, LogSource, MemoryLogs, MemoryMetrics,
+    MemoryTasks, MetricDescriptor, MetricId, MetricPoint, MetricProvider, PageRequest,
+    QueryLogsRequest, QueryMetricRequest, SourceId, StartTaskRequest, TaskDefinition, TaskId,
+    TaskProvider, TaskState, TimeRange, UtcTimestamp,
 };
 
 #[tokio::main]
-async fn main() -> Result<(), SdkError> {
+async fn main() -> Result<(), A2aLabError> {
     demonstrate_logs().await?;
     demonstrate_metrics().await?;
     demonstrate_tasks().await?;
     Ok(())
 }
 
-async fn demonstrate_logs() -> Result<(), SdkError> {
+async fn demonstrate_logs() -> Result<(), A2aLabError> {
     let logs = MemoryLogs::new();
     logs.insert_source(source("beta")).await;
     logs.insert_source(source("alpha")).await;
@@ -80,7 +80,7 @@ async fn demonstrate_logs() -> Result<(), SdkError> {
     Ok(())
 }
 
-async fn demonstrate_metrics() -> Result<(), SdkError> {
+async fn demonstrate_metrics() -> Result<(), A2aLabError> {
     let metrics = MemoryMetrics::new();
     let metric_id = MetricId::new("latency")?;
     metrics
@@ -122,7 +122,7 @@ async fn demonstrate_metrics() -> Result<(), SdkError> {
     Ok(())
 }
 
-async fn demonstrate_tasks() -> Result<(), SdkError> {
+async fn demonstrate_tasks() -> Result<(), A2aLabError> {
     let tasks = MemoryTasks::new();
     let task_id = TaskId::new("build")?;
     tasks

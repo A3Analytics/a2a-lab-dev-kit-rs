@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };
@@ -40,10 +40,10 @@ impl MemoryMetrics {
         &self,
         metric_id: crate::id::MetricId,
         point: MetricPoint,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), A2aLabError> {
         let mut state = self.inner.lock().await;
         if !state.metrics.iter().any(|metric| metric.id == metric_id) {
-            return Err(SdkError::not_found("metric", metric_id.to_string()));
+            return Err(A2aLabError::not_found("metric", metric_id.to_string()));
         }
         state.points.push((metric_id, point));
         Ok(())
@@ -64,7 +64,7 @@ impl MetricProvider for MemoryMetrics {
     async fn list_metrics(
         &self,
         request: ListMetricsRequest,
-    ) -> Result<Page<MetricDescriptor>, SdkError> {
+    ) -> Result<Page<MetricDescriptor>, A2aLabError> {
         let state = self.inner.lock().await;
         unavailable(state.unavailable.as_deref())?;
         let mut metrics = state.metrics.clone();
@@ -72,7 +72,7 @@ impl MetricProvider for MemoryMetrics {
         slice_page(&metrics, &request.page)
     }
 
-    async fn query(&self, request: QueryMetricRequest) -> Result<Page<MetricPoint>, SdkError> {
+    async fn query(&self, request: QueryMetricRequest) -> Result<Page<MetricPoint>, A2aLabError> {
         request.range.check()?;
         let state = self.inner.lock().await;
         unavailable(state.unavailable.as_deref())?;
@@ -81,7 +81,10 @@ impl MetricProvider for MemoryMetrics {
             .iter()
             .any(|metric| metric.id == request.metric_id)
         {
-            return Err(SdkError::not_found("metric", request.metric_id.to_string()));
+            return Err(A2aLabError::not_found(
+                "metric",
+                request.metric_id.to_string(),
+            ));
         }
         let mut points: Vec<_> = state
             .points
@@ -100,9 +103,9 @@ impl MetricProvider for MemoryMetrics {
     }
 }
 
-fn unavailable(message: Option<&str>) -> Result<(), SdkError> {
+fn unavailable(message: Option<&str>) -> Result<(), A2aLabError> {
     match message {
-        Some(message) => Err(SdkError::unavailable(message)),
+        Some(message) => Err(A2aLabError::unavailable(message)),
         None => Ok(()),
     }
 }

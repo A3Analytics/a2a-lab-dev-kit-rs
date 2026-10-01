@@ -3,13 +3,13 @@
 //! `MemoryRos2` does not speak DDS or RCL. The example advertises an action,
 //! starts it, then records an executing and a succeeded goal.
 
-use a2a_lab_sdk::{
-    GetTaskStatusRequest, JsonObject, ListTasksRequest, MemoryRos2, PageRequest, Ros2Action,
-    Ros2GoalStatus, Ros2Tasks, SdkError, StartTaskRequest, TaskId, TaskProvider,
+use a2a_lab_dev_kit::{
+    A2aLabError, GetTaskStatusRequest, JsonObject, ListTasksRequest, MemoryRos2, PageRequest,
+    Ros2Action, Ros2GoalStatus, Ros2Tasks, StartTaskRequest, TaskId, TaskProvider,
 };
 
 #[tokio::main]
-async fn main() -> Result<(), SdkError> {
+async fn main() -> Result<(), A2aLabError> {
     let graph = MemoryRos2::new();
     graph
         .advertise(Ros2Action {
@@ -40,7 +40,7 @@ async fn main() -> Result<(), SdkError> {
         .id
         .as_str()
         .strip_prefix("ros2-")
-        .ok_or_else(|| SdkError::protocol("run id is missing the ros2 prefix"))?
+        .ok_or_else(|| A2aLabError::protocol("run id is missing the ros2 prefix"))?
         .to_owned();
     println!("started {} {:?}", started.id, started.state);
 

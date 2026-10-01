@@ -1,6 +1,6 @@
 //! ROS 2 actions exposed as lab tasks.
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::{RunId, TaskId};
 use crate::page::{Page, slice_page};
 use crate::ros2::{Ros2Action, Ros2Graph};
@@ -31,7 +31,7 @@ impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
     async fn list_tasks(
         &self,
         request: ListTasksRequest,
-    ) -> Result<Page<TaskDefinition>, SdkError> {
+    ) -> Result<Page<TaskDefinition>, A2aLabError> {
         let mut actions = self.graph.actions().await?;
         actions.sort_by(|left, right| left.name.cmp(&right.name));
         let mut tasks = Vec::new();
@@ -41,7 +41,7 @@ impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
         slice_page(&tasks, &request.page)
     }
 
-    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, SdkError> {
+    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, A2aLabError> {
         let action_name = action_name(request.task_id.as_str());
         let goal = self
             .graph
@@ -56,7 +56,7 @@ impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
         })
     }
 
-    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
         let goal = self.graph.goal(&goal_name(request.id.as_str())).await?;
         Ok(TaskRun {
             id: request.id,
@@ -68,7 +68,7 @@ impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
     }
 }
 
-fn definition(action: &Ros2Action) -> Result<TaskDefinition, SdkError> {
+fn definition(action: &Ros2Action) -> Result<TaskDefinition, A2aLabError> {
     Ok(TaskDefinition {
         id: TaskId::new(action_token(&action.name))?,
         name: action.name.clone(),

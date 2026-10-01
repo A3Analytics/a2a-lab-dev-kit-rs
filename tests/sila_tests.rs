@@ -1,7 +1,7 @@
 #![cfg(feature = "sila2")]
 
-use a2a_lab_sdk::TaskState;
-use a2a_lab_sdk::sila::{
+use a2a_lab_dev_kit::TaskState;
+use a2a_lab_dev_kit::sila::{
     MAX_CHUNK, certificate_accepted, chunk_binary, execution_state, parse_discovery,
 };
 

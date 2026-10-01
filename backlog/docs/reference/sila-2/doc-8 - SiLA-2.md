@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # SiLA 2
 
-## Role in this SDK
+## Role in this dev kit
 
 SiLA 2 is an outbound helper surface for one checked-in lab service, not an agent-facing protocol. Catalog bindings may store an `Endpoint::Sila2` feature member. `IndustrialTasks` starts commands only through `LiveSource`. Nothing in `src/sila` implements `LiveSource`.
 
@@ -42,7 +42,7 @@ With the `sila2` feature, use `sila::MAX_CHUNK`, `sila::SilaEndpoint`, `sila::ex
 
 ## Related
 
-- [Lab SDK overview](<../../overview/doc-10 - Lab-SDK-overview.md>)
+- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
 - [Industrial equipment connectors](<../../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)

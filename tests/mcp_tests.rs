@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::{
     A2aClient, A2aServer, JsonObject, LabService, ListLogSourcesRequest, LogSource, McpLab,
     McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
     StartTaskRequest, TaskDefinition, TaskId, bind_local,
@@ -23,7 +23,7 @@ fn arguments(value: &serde_json::Value) -> serde_json::Map<String, serde_json::V
     value.as_object().expect("object").clone()
 }
 
-async fn service() -> Arc<dyn a2a_lab_sdk::LabApi> {
+async fn service() -> Arc<dyn a2a_lab_dev_kit::LabApi> {
     let logs = MemoryLogs::new();
     logs.insert_source(LogSource {
         id: SourceId::new("app").unwrap(),

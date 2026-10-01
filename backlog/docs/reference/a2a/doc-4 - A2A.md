@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # A2A
 
-## Role in this SDK
+## Role in this dev kit
 
 A2A is one of the two agent-facing protocols. `A2aServer` and `A2aClient` speak A2A 1.0 HTTP+JSON through the official `a2a-lf`, `a2a-server-lf`, and `a2a-client-lf` crates. The default agent runs lab commands by calling the MCP tools on `http://127.0.0.1:31001/mcp` (`McpLab`). `A2aServer::new` still accepts any `LabApi`, including `LabService` for tests.
 
@@ -61,7 +61,7 @@ Re-exported from the crate root:
 
 ## Related
 
-- [Lab SDK overview](<../../overview/doc-10 - Lab-SDK-overview.md>)
+- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [MCP](<../mcp/doc-5 - MCP.md>)
-- [Lab SDK architecture](<../../technical/architecture/doc-1 - Lab-SDK-architecture.md>)
+- [Lab dev kit architecture](<../../technical/architecture/doc-1 - Lab-dev-kit-architecture.md>)
 - [A2A and MCP protocols](<../../technical/protocol/doc-2 - A2A-and-MCP-protocols.md>)

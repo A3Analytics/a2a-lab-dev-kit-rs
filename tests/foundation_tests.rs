@@ -1,5 +1,5 @@
-use a2a_lab_sdk::{
-    JsonObject, MAX_PAGE_LIMIT, MetricPoint, PageRequest, SdkError, SourceId, TimeRange,
+use a2a_lab_dev_kit::{
+    A2aLabError, JsonObject, MAX_PAGE_LIMIT, MetricPoint, PageRequest, SourceId, TimeRange,
     UtcTimestamp, version,
 };
 
@@ -81,10 +81,10 @@ fn rejects_non_finite_metric_values() {
 
 #[test]
 fn error_codes_round_trip() {
-    let error = SdkError::not_found("log source", "app");
+    let error = A2aLabError::not_found("log source", "app");
     assert_eq!(error.code(), "not_found");
     assert_eq!(
-        SdkError::from_code(error.code(), error.to_string()).code(),
+        A2aLabError::from_code(error.code(), error.to_string()).code(),
         "not_found"
     );
 }

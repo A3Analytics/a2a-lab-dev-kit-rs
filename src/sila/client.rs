@@ -1,6 +1,6 @@
 //! SiLA 2 discovery, TLS identity, command status, and binary transfer.
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::sila::proto;
 use crate::tasks::TaskState;
 
@@ -19,13 +19,13 @@ pub struct SilaEndpoint {
 }
 
 /// Maps a SiLA execution status code onto a lab run state.
-pub fn execution_state(status: u32) -> Result<TaskState, SdkError> {
+pub fn execution_state(status: u32) -> Result<TaskState, A2aLabError> {
     match status {
         0 => Ok(TaskState::Submitted),
         1 => Ok(TaskState::Working),
         2 => Ok(TaskState::Completed),
         3 => Ok(TaskState::Failed),
-        _ => Err(SdkError::protocol(format!(
+        _ => Err(A2aLabError::protocol(format!(
             "unknown SiLA execution status {status}"
         ))),
     }
@@ -46,12 +46,12 @@ pub fn parse_discovery(
     host: &str,
     port: u16,
     server_uuid: &str,
-) -> Result<SilaEndpoint, SdkError> {
+) -> Result<SilaEndpoint, A2aLabError> {
     if service_type != "_sila._tcp.local." {
-        return Err(SdkError::protocol("service is not a SiLA 2 server"));
+        return Err(A2aLabError::protocol("service is not a SiLA 2 server"));
     }
     if host.is_empty() || port == 0 || server_uuid.is_empty() {
-        return Err(SdkError::invalid(
+        return Err(A2aLabError::invalid(
             "sila_endpoint",
             "host, port, and UUID are required",
         ));
@@ -68,14 +68,14 @@ pub fn certificate_accepted(
     common_name: &str,
     advertised_uuid: &str,
     certificate_uuid: &str,
-) -> Result<(), SdkError> {
+) -> Result<(), A2aLabError> {
     if common_name != "SiLA2" {
-        return Err(SdkError::protocol(
+        return Err(A2aLabError::protocol(
             "SiLA certificate common name must be SiLA2",
         ));
     }
     if advertised_uuid != certificate_uuid {
-        return Err(SdkError::protocol(
+        return Err(A2aLabError::protocol(
             "SiLA server UUID does not match the certificate",
         ));
     }
@@ -88,7 +88,7 @@ pub async fn start_task(
     task_id: &str,
     input_json: &str,
     run_id: &str,
-) -> Result<(String, TaskState), SdkError> {
+) -> Result<(String, TaskState), A2aLabError> {
     let confirmation = client
         .start_task(proto::StartTaskRequest {
             task_id: task_id.to_owned(),
@@ -97,10 +97,10 @@ pub async fn start_task(
             wait: false,
         })
         .await
-        .map_err(|error| SdkError::transport(error.to_string()))?
+        .map_err(|error| A2aLabError::transport(error.to_string()))?
         .into_inner();
     if confirmation.command_execution_uuid.is_empty() {
-        return Err(SdkError::protocol(
+        return Err(A2aLabError::protocol(
             "SiLA confirmation is missing an execution UUID",
         ));
     }
@@ -109,13 +109,13 @@ pub async fn start_task(
             command_execution_uuid: confirmation.command_execution_uuid.clone(),
         })
         .await
-        .map_err(|error| SdkError::transport(error.to_string()))?
+        .map_err(|error| A2aLabError::transport(error.to_string()))?
         .into_inner();
     let status = info
         .message()
         .await
-        .map_err(|error| SdkError::transport(error.to_string()))?
-        .ok_or_else(|| SdkError::protocol("SiLA execution stream ended before a status"))?;
+        .map_err(|error| A2aLabError::transport(error.to_string()))?
+        .ok_or_else(|| A2aLabError::protocol("SiLA execution stream ended before a status"))?;
     Ok((
         confirmation.command_execution_uuid,
         execution_state(status.command_status)?,

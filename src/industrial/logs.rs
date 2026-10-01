@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::catalog::{AssetCatalogProvider, BindingRole, ListBindingsRequest};
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::SourceId;
 use crate::industrial::LiveSource;
 use crate::logs::{ListLogSourcesRequest, LogProvider, LogRecord, LogSource, QueryLogsRequest};
@@ -31,7 +31,7 @@ where
     async fn list_sources(
         &self,
         request: ListLogSourcesRequest,
-    ) -> Result<Page<LogSource>, SdkError> {
+    ) -> Result<Page<LogSource>, A2aLabError> {
         let bindings = self
             .catalog
             .list_bindings(ListBindingsRequest {
@@ -54,7 +54,7 @@ where
         crate::page::slice_page(&sources, &request.page)
     }
 
-    async fn query(&self, request: QueryLogsRequest) -> Result<Page<LogRecord>, SdkError> {
+    async fn query(&self, request: QueryLogsRequest) -> Result<Page<LogRecord>, A2aLabError> {
         let binding = find_binding(
             &*self.catalog,
             request.source_id.as_str(),
@@ -71,7 +71,7 @@ pub(crate) async fn find_binding<C: AssetCatalogProvider>(
     catalog: &C,
     lab_id: &str,
     role: BindingRole,
-) -> Result<crate::catalog::Binding, SdkError> {
+) -> Result<crate::catalog::Binding, A2aLabError> {
     let bindings = catalog
         .list_bindings(ListBindingsRequest {
             page: PageRequest::new(None, crate::page::MAX_PAGE_LIMIT)?,
@@ -82,5 +82,5 @@ pub(crate) async fn find_binding<C: AssetCatalogProvider>(
         .iter()
         .find(|binding| binding.lab_id() == lab_id && binding.role() == role)
         .cloned()
-        .ok_or_else(|| SdkError::not_found("binding", lab_id))
+        .ok_or_else(|| A2aLabError::not_found("binding", lab_id))
 }

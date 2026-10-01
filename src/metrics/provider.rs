@@ -1,6 +1,6 @@
 //! Metric provider interface.
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
 
@@ -10,11 +10,11 @@ pub trait MetricProvider: Send + Sync {
     fn list_metrics(
         &self,
         request: ListMetricsRequest,
-    ) -> impl Future<Output = Result<Page<MetricDescriptor>, SdkError>> + Send;
+    ) -> impl Future<Output = Result<Page<MetricDescriptor>, A2aLabError>> + Send;
 
     /// Returns samples for one metric in the requested interval.
     fn query(
         &self,
         request: QueryMetricRequest,
-    ) -> impl Future<Output = Result<Page<MetricPoint>, SdkError>> + Send;
+    ) -> impl Future<Output = Result<Page<MetricPoint>, A2aLabError>> + Send;
 }

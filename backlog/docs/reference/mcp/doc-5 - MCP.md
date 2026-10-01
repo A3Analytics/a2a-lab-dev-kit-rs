@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # MCP
 
-## Role in this SDK
+## Role in this dev kit
 
 MCP is the other agent-facing protocol. `McpServer` registers the seven lab operations as tools on `LabApi`. `A2aServer` in the default serve path calls those tools through `McpLab` at `http://127.0.0.1:31001/mcp`. Tests and the TCK can still inject `LabService` into `A2aServer::new`.
 
@@ -38,11 +38,11 @@ The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, 
 
 ## Entry points
 
-`McpServer` is re-exported from the crate root. Construct it with `McpServer::new` and serve with `serve_stdio` or `serve_http`. `McpLab::connect` / `McpLab::connect_default` implement `LabApi` over Streamable HTTP so `A2aServer` can call the same tools. Error payloads include the `SdkError` `code` so A2A keeps `invalid` / `not_found` / `unavailable`.
+`McpServer` is re-exported from the crate root. Construct it with `McpServer::new` and serve with `serve_stdio` or `serve_http`. `McpLab::connect` / `McpLab::connect_default` implement `LabApi` over Streamable HTTP so `A2aServer` can call the same tools. Error payloads include the `A2aLabError` `code` so A2A keeps `invalid` / `not_found` / `unavailable`.
 
 ## Related
 
-- [Lab SDK overview](<../../overview/doc-10 - Lab-SDK-overview.md>)
+- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A](<../a2a/doc-4 - A2A.md>)
-- [Lab SDK architecture](<../../technical/architecture/doc-1 - Lab-SDK-architecture.md>)
+- [Lab dev kit architecture](<../../technical/architecture/doc-1 - Lab-dev-kit-architecture.md>)
 - [A2A and MCP protocols](<../../technical/protocol/doc-2 - A2A-and-MCP-protocols.md>)

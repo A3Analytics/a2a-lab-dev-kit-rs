@@ -1,4 +1,4 @@
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::{
     GetTaskStatusRequest, JsonObject, ListTasksRequest, MemoryRos2, PageRequest, Ros2Action,
     Ros2GoalStatus, Ros2Tasks, TaskId, TaskProvider, TaskState,
 };
@@ -32,7 +32,7 @@ async fn lists_actions_and_maps_goal_status() {
     );
 
     let started = tasks
-        .start(a2a_lab_sdk::StartTaskRequest::new(
+        .start(a2a_lab_dev_kit::StartTaskRequest::new(
             TaskId::new("navigate_to_pose").unwrap(),
             JsonObject::parse(r#"{"pose":"dock"}"#).unwrap(),
         ))
@@ -70,7 +70,7 @@ async fn lists_actions_and_maps_goal_status() {
     assert_eq!(finished.state, TaskState::Completed);
 
     let missing = tasks
-        .start(a2a_lab_sdk::StartTaskRequest::new(
+        .start(a2a_lab_dev_kit::StartTaskRequest::new(
             TaskId::new("missing").unwrap(),
             JsonObject::empty(),
         ))

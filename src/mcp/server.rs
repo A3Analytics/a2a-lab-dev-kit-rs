@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31001";
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
@@ -43,16 +43,16 @@ impl McpServer {
     /// Serves newline-delimited JSON-RPC on standard input and output.
     ///
     /// Diagnostics must stay on stderr so stdout remains protocol-clean.
-    pub async fn serve_stdio(self) -> Result<(), SdkError> {
+    pub async fn serve_stdio(self) -> Result<(), A2aLabError> {
         let running = self
             .serve(rmcp::transport::stdio())
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         running
             .waiting()
             .await
             .map(|_| ())
-            .map_err(|error| SdkError::transport(error.to_string()))
+            .map_err(|error| A2aLabError::transport(error.to_string()))
     }
 
     /// Serves MCP Streamable HTTP at `/mcp`.
@@ -63,12 +63,12 @@ impl McpServer {
     pub async fn serve_http(
         self,
         listener: impl Into<Option<TcpListener>>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), A2aLabError> {
         let listener = match listener.into() {
             Some(listener) => listener,
             None => TcpListener::bind(DEFAULT_ADDRESS)
                 .await
-                .map_err(|error| SdkError::transport(error.to_string()))?,
+                .map_err(|error| A2aLabError::transport(error.to_string()))?,
         };
         let service = StreamableHttpService::new(
             move || Ok(self.clone()),
@@ -83,7 +83,7 @@ impl McpServer {
         let router = axum::Router::new().nest_service("/mcp", service);
         axum::serve(listener, router)
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))
+            .map_err(|error| A2aLabError::transport(error.to_string()))
     }
 
     async fn take<T>(
@@ -224,14 +224,14 @@ impl ServerHandler for McpServer {
     }
 }
 
-fn mcp_error(error: &SdkError) -> ErrorData {
+fn mcp_error(error: &A2aLabError) -> ErrorData {
     let message = error.to_string();
     let data = Some(serde_json::json!({ "code": error.code() }));
     match error {
-        SdkError::Invalid { .. } | SdkError::Protocol { .. } | SdkError::NotFound { .. } => {
-            ErrorData::invalid_params(message, data)
-        }
-        SdkError::Unavailable { .. } | SdkError::Transport { .. } => {
+        A2aLabError::Invalid { .. }
+        | A2aLabError::Protocol { .. }
+        | A2aLabError::NotFound { .. } => ErrorData::invalid_params(message, data),
+        A2aLabError::Unavailable { .. } | A2aLabError::Transport { .. } => {
             ErrorData::internal_error(message, data)
         }
     }

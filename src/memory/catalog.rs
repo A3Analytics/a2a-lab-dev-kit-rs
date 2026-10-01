@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use crate::catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, ListAssetsRequest, ListBindingsRequest,
 };
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::page::{Page, slice_page};
 
 #[derive(Default)]
@@ -44,14 +44,14 @@ impl MemoryCatalog {
 }
 
 impl AssetCatalogProvider for MemoryCatalog {
-    async fn list_assets(&self, request: ListAssetsRequest) -> Result<Page<Asset>, SdkError> {
+    async fn list_assets(&self, request: ListAssetsRequest) -> Result<Page<Asset>, A2aLabError> {
         let state = self.inner.lock().await;
         let mut assets = state.assets.clone();
         assets.sort_by(|left, right| left.key().as_str().cmp(right.key().as_str()));
         slice_page(&assets, &request.page)
     }
 
-    async fn get_asset(&self, key: &AssetKey) -> Result<Asset, SdkError> {
+    async fn get_asset(&self, key: &AssetKey) -> Result<Asset, A2aLabError> {
         self.inner
             .lock()
             .await
@@ -59,10 +59,13 @@ impl AssetCatalogProvider for MemoryCatalog {
             .iter()
             .find(|asset| asset.key() == key)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("asset", key.to_string()))
+            .ok_or_else(|| A2aLabError::not_found("asset", key.to_string()))
     }
 
-    async fn list_bindings(&self, request: ListBindingsRequest) -> Result<Page<Binding>, SdkError> {
+    async fn list_bindings(
+        &self,
+        request: ListBindingsRequest,
+    ) -> Result<Page<Binding>, A2aLabError> {
         let state = self.inner.lock().await;
         let mut bindings: Vec<_> = state
             .assets

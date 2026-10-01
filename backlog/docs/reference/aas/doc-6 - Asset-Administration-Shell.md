@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # Asset Administration Shell
 
-## Role in this SDK
+## Role in this dev kit
 
 The Asset Administration Shell HTTP repository is the outbound asset catalog. `AasClient` implements `AssetCatalogProvider`. Industrial log, metric, and task providers read bindings from that catalog. AAS is not one of the seven agent-facing operations.
 
@@ -28,7 +28,7 @@ sequenceDiagram
 
 ## What this crate implements
 
-The `aas` feature is on by default and compiles `a2a_lab_sdk::aas`. `AasClient::new` takes a base URL and an `AccessTokenSource`. `StaticToken::new(None)` sends no `Authorization` header. A token is sent as a bearer credential.
+The `aas` feature is on by default and compiles `a2a_lab_dev_kit::aas`. `AasClient::new` takes a base URL and an `AccessTokenSource`. `StaticToken::new(None)` sends no `Authorization` header. A token is sent as a bearer credential.
 
 `list_assets` loads the catalog once and caches it. The client `GET`s `description`, then `shells`, then `submodels/{id}` for each submodel key. The submodel path segment is unpadded base64url of the identifier. `description.profiles` must contain a string that includes both `3.2` and `AssetAdministrationShellRepositoryServiceSpecification`. Shells are the `result` array. Each asset key is the shell `id`; `assetInformation.globalAssetId` is optional.
 
@@ -49,7 +49,7 @@ With the `aas` feature:
 
 ## Related
 
-- [Lab SDK overview](<../../overview/doc-10 - Lab-SDK-overview.md>)
+- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
 - [SiLA 2](<../sila-2/doc-8 - SiLA-2.md>)
 - [Industrial equipment connectors](<../../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)

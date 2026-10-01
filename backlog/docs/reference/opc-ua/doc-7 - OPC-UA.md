@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # OPC UA
 
-## Role in this SDK
+## Role in this dev kit
 
 OPC UA is an outbound history client, not an agent-facing protocol. Catalog bindings may point a lab token at an `Endpoint::OpcUa` node. `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` read history only through `LiveSource`. `OpcUaClient` is not a `LiveSource`.
 
@@ -25,7 +25,7 @@ flowchart TD
 
 ## What this crate implements
 
-The `opcua` feature is on by default and compiles `a2a_lab_sdk::opcua` against `async-opcua-client` 0.19. The public surface is `OpcUaClient`, `OpcUaClient::read_history`, `namespace_index`, and `filter_half_open`.
+The `opcua` feature is on by default and compiles `a2a_lab_dev_kit::opcua` against `async-opcua-client` 0.19. The public surface is `OpcUaClient`, `OpcUaClient::read_history`, `namespace_index`, and `filter_half_open`.
 
 `OpcUaClient::new` stores a PKI directory, username, and password. `read_history` requires an OPC UA endpoint. It rejects a `security_policy` that contains `None`. The session disables automatic server trust (`trust_server_certs(false)`), enables certificate verification (`verify_server_certs(true)`), does not create a sample key pair, and authenticates with a username token. The namespace index comes from the server namespace array for `namespace_uri`. The node id is `ns={index};{node_id}`.
 
@@ -37,7 +37,7 @@ With the `opcua` feature, use `opcua::OpcUaClient::read_history`, `opcua::namesp
 
 ## Related
 
-- [Lab SDK overview](<../../overview/doc-10 - Lab-SDK-overview.md>)
+- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [SiLA 2](<../sila-2/doc-8 - SiLA-2.md>)
 - [Industrial equipment connectors](<../../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)

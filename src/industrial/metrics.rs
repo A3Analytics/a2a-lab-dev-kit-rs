@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::catalog::{AssetCatalogProvider, BindingRole, ListBindingsRequest};
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::MetricId;
 use crate::industrial::LiveSource;
 use crate::industrial::logs::find_binding;
@@ -34,7 +34,7 @@ where
     async fn list_metrics(
         &self,
         request: ListMetricsRequest,
-    ) -> Result<Page<MetricDescriptor>, SdkError> {
+    ) -> Result<Page<MetricDescriptor>, A2aLabError> {
         let bindings = self
             .catalog
             .list_bindings(ListBindingsRequest {
@@ -58,7 +58,7 @@ where
         crate::page::slice_page(&metrics, &request.page)
     }
 
-    async fn query(&self, request: QueryMetricRequest) -> Result<Page<MetricPoint>, SdkError> {
+    async fn query(&self, request: QueryMetricRequest) -> Result<Page<MetricPoint>, A2aLabError> {
         let binding = find_binding(
             &*self.catalog,
             request.metric_id.as_str(),

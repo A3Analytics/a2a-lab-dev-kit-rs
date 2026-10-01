@@ -8,7 +8,7 @@ use crate::catalog::{
     Asset, AssetKey, Binding, BindingRole, Endpoint, OpcUaIdentityKind, SecurityMode, SemanticId,
     SemanticKind,
 };
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
 pub(crate) const BINDING_SEMANTIC: &str = "https://a2a-lab.example/LabBindings/1/0";
 
@@ -58,10 +58,10 @@ pub(crate) fn shells(document: &Value) -> Vec<Value> {
 pub(crate) fn assets_from_shells(
     shells: &[Value],
     submodels: &[Value],
-) -> Result<Vec<Asset>, SdkError> {
+) -> Result<Vec<Asset>, A2aLabError> {
     let mut assets = Vec::new();
     for shell in shells {
-        let id = text(shell, "id").ok_or_else(|| SdkError::protocol("shell is missing id"))?;
+        let id = text(shell, "id").ok_or_else(|| A2aLabError::protocol("shell is missing id"))?;
         let key = AssetKey::new(id)?;
         let global = shell
             .pointer("/assetInformation/globalAssetId")
@@ -99,7 +99,7 @@ fn is_binding_submodel(submodel: &Value) -> bool {
     semantic_value(submodel) == Some(BINDING_SEMANTIC)
 }
 
-fn bindings_from_submodel(asset: &AssetKey, submodel: &Value) -> Result<Vec<Binding>, SdkError> {
+fn bindings_from_submodel(asset: &AssetKey, submodel: &Value) -> Result<Vec<Binding>, A2aLabError> {
     let Some(elements) = submodel.get("submodelElements").and_then(Value::as_array) else {
         return Ok(Vec::new());
     };
@@ -109,7 +109,7 @@ fn bindings_from_submodel(asset: &AssetKey, submodel: &Value) -> Result<Vec<Bind
         .collect()
 }
 
-fn binding_from_element(asset: &AssetKey, element: &Value) -> Result<Binding, SdkError> {
+fn binding_from_element(asset: &AssetKey, element: &Value) -> Result<Binding, A2aLabError> {
     let fields = properties(element);
     let lab_id = field(&fields, "labId")?;
     let role = match field(&fields, "role")? {
@@ -117,7 +117,7 @@ fn binding_from_element(asset: &AssetKey, element: &Value) -> Result<Binding, Sd
         "metric" => BindingRole::Metric,
         "task" => BindingRole::Task,
         other => {
-            return Err(SdkError::protocol(format!(
+            return Err(A2aLabError::protocol(format!(
                 "unknown binding role `{other}`"
             )));
         }
@@ -140,12 +140,12 @@ fn binding_from_element(asset: &AssetKey, element: &Value) -> Result<Binding, Sd
             host: field(&fields, "host")?.to_owned(),
             port: field(&fields, "port")?
                 .parse()
-                .map_err(|_| SdkError::protocol("SiLA port is not a number"))?,
+                .map_err(|_| A2aLabError::protocol("SiLA port is not a number"))?,
             feature: field(&fields, "feature")?.to_owned(),
             member: field(&fields, "member")?.to_owned(),
             version: field(&fields, "version")?.to_owned(),
         },
-        other => return Err(SdkError::protocol(format!("unknown protocol `{other}`"))),
+        other => return Err(A2aLabError::protocol(format!("unknown protocol `{other}`"))),
     };
     Binding::new(lab_id, asset.clone(), semantic, role, endpoint)
 }
@@ -162,26 +162,26 @@ fn properties(element: &Value) -> BTreeMap<String, String> {
     fields
 }
 
-fn field<'a>(fields: &'a BTreeMap<String, String>, name: &str) -> Result<&'a str, SdkError> {
+fn field<'a>(fields: &'a BTreeMap<String, String>, name: &str) -> Result<&'a str, A2aLabError> {
     fields
         .get(name)
         .map(String::as_str)
-        .ok_or_else(|| SdkError::protocol(format!("binding is missing `{name}`")))
+        .ok_or_else(|| A2aLabError::protocol(format!("binding is missing `{name}`")))
 }
 
-fn security_mode(value: &str) -> Result<SecurityMode, SdkError> {
+fn security_mode(value: &str) -> Result<SecurityMode, A2aLabError> {
     match value {
         "sign" => Ok(SecurityMode::Sign),
         "sign_and_encrypt" => Ok(SecurityMode::SignAndEncrypt),
-        _ => Err(SdkError::protocol("unsupported OPC UA security mode")),
+        _ => Err(A2aLabError::protocol("unsupported OPC UA security mode")),
     }
 }
 
-fn identity(value: &str) -> Result<OpcUaIdentityKind, SdkError> {
+fn identity(value: &str) -> Result<OpcUaIdentityKind, A2aLabError> {
     match value {
         "username" => Ok(OpcUaIdentityKind::Username),
         "certificate" => Ok(OpcUaIdentityKind::Certificate),
-        _ => Err(SdkError::protocol("unsupported OPC UA identity")),
+        _ => Err(A2aLabError::protocol("unsupported OPC UA identity")),
     }
 }
 

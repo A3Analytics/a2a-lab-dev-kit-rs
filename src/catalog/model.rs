@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::id::{AssetKey, SemanticId};
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id;
 use crate::page::PageRequest;
 
@@ -97,7 +97,7 @@ impl Endpoint {
     }
 
     /// Rejects empty addresses and unsecured OPC UA sessions.
-    pub fn check(&self) -> Result<(), SdkError> {
+    pub fn check(&self) -> Result<(), A2aLabError> {
         match self {
             Self::OpcUa {
                 url,
@@ -111,7 +111,7 @@ impl Endpoint {
                 required("node_id", node_id)?;
                 required("namespace_uri", namespace_uri)?;
                 if security_policy.contains("None") {
-                    return Err(SdkError::invalid(
+                    return Err(A2aLabError::invalid(
                         "security_policy",
                         "unsecured OPC UA sessions are rejected",
                     ));
@@ -126,7 +126,7 @@ impl Endpoint {
             } => {
                 required("sila_host", host)?;
                 if *port == 0 {
-                    return Err(SdkError::invalid("sila_port", "must be non-zero"));
+                    return Err(A2aLabError::invalid("sila_port", "must be non-zero"));
                 }
                 required("sila_feature", feature)?;
                 required("sila_member", member)?;
@@ -137,9 +137,9 @@ impl Endpoint {
     }
 }
 
-fn required(field: &'static str, value: &str) -> Result<(), SdkError> {
+fn required(field: &'static str, value: &str) -> Result<(), A2aLabError> {
     if value.is_empty() {
-        return Err(SdkError::invalid(field, "must not be empty"));
+        return Err(A2aLabError::invalid(field, "must not be empty"));
     }
     Ok(())
 }
@@ -162,7 +162,7 @@ impl Binding {
         semantic_id: SemanticId,
         role: BindingRole,
         endpoint: Endpoint,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, A2aLabError> {
         let lab_id = lab_id.into();
         id::parse_public(&lab_id)?;
         endpoint.check()?;

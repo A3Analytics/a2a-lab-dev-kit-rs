@@ -1,4 +1,4 @@
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
     ListBindingsRequest, MemoryCatalog, MetricDescriptor, MetricId, OpcUaIdentityKind, PageRequest,
     SecurityMode, SemanticId, SemanticKind,

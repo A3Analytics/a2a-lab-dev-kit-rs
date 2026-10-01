@@ -6,7 +6,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
 /// A JSON object. Arrays and scalars are rejected.
 #[derive(Debug, Clone, PartialEq)]
@@ -20,17 +20,17 @@ impl JsonObject {
     }
 
     /// Accepts a JSON object value.
-    pub fn try_from_value(value: Value) -> Result<Self, SdkError> {
+    pub fn try_from_value(value: Value) -> Result<Self, A2aLabError> {
         match value {
             Value::Object(map) => Ok(Self(map)),
-            _ => Err(SdkError::invalid("input", "must be a JSON object")),
+            _ => Err(A2aLabError::invalid("input", "must be a JSON object")),
         }
     }
 
     /// Parses a JSON object document.
-    pub fn parse(document: &str) -> Result<Self, SdkError> {
+    pub fn parse(document: &str) -> Result<Self, A2aLabError> {
         let value = serde_json::from_str(document)
-            .map_err(|_| SdkError::invalid("input", "must be valid JSON"))?;
+            .map_err(|_| A2aLabError::invalid("input", "must be valid JSON"))?;
         Self::try_from_value(value)
     }
 

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::{
     A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, GetTaskStatusRequest,
     HttpAuthSecurityScheme, JsonObject, LAB_MEDIA_TYPE, LabApi, LabCommand, LabResult, LabService,
     ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel, LogRecord, LogSource,

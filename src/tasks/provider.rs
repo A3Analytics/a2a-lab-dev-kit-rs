@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::RunId;
 use crate::page::Page;
 use crate::tasks::{
@@ -18,26 +18,26 @@ pub trait TaskProvider: Send + Sync {
     fn list_tasks(
         &self,
         request: ListTasksRequest,
-    ) -> impl Future<Output = Result<Page<TaskDefinition>, SdkError>> + Send;
+    ) -> impl Future<Output = Result<Page<TaskDefinition>, A2aLabError>> + Send;
 
     /// Starts a task and returns the A2A task (run id is the task id).
     fn start(
         &self,
         request: StartTaskRequest,
-    ) -> impl Future<Output = Result<TaskRun, SdkError>> + Send;
+    ) -> impl Future<Output = Result<TaskRun, A2aLabError>> + Send;
 
     /// Returns the current A2A task status.
     fn status(
         &self,
         request: GetTaskStatusRequest,
-    ) -> impl Future<Output = Result<TaskRun, SdkError>> + Send;
+    ) -> impl Future<Output = Result<TaskRun, A2aLabError>> + Send;
 
     /// Cancels a started run. Providers that cannot cancel return an error.
     fn cancel(
         &self,
         _request: GetTaskStatusRequest,
-    ) -> impl Future<Output = Result<TaskRun, SdkError>> + Send {
-        async { Err(SdkError::unavailable("task is not cancelable")) }
+    ) -> impl Future<Output = Result<TaskRun, A2aLabError>> + Send {
+        async { Err(A2aLabError::unavailable("task is not cancelable")) }
     }
 }
 
@@ -45,7 +45,7 @@ pub trait TaskProvider: Send + Sync {
 pub async fn start_run<P: TaskProvider>(
     provider: &P,
     request: StartTaskRequest,
-) -> Result<TaskRun, SdkError> {
+) -> Result<TaskRun, A2aLabError> {
     let wait = request.wait;
     let timeout = wait_timeout(&request)?;
     let run = provider.start(request).await?;
@@ -56,13 +56,16 @@ pub async fn start_run<P: TaskProvider>(
     }
 }
 
-fn wait_timeout(request: &StartTaskRequest) -> Result<Duration, SdkError> {
+fn wait_timeout(request: &StartTaskRequest) -> Result<Duration, A2aLabError> {
     if !request.wait {
         return Ok(DEFAULT_WAIT_TIMEOUT);
     }
     match request.timeout_seconds {
         None => Ok(DEFAULT_WAIT_TIMEOUT),
-        Some(0) => Err(SdkError::invalid("timeout_seconds", "must be at least 1")),
+        Some(0) => Err(A2aLabError::invalid(
+            "timeout_seconds",
+            "must be at least 1",
+        )),
         Some(seconds) => Ok(Duration::from_secs(u64::from(seconds))),
     }
 }
@@ -71,7 +74,7 @@ async fn wait_for_run<P: TaskProvider>(
     provider: &P,
     id: &RunId,
     timeout: Duration,
-) -> Result<TaskRun, SdkError> {
+) -> Result<TaskRun, A2aLabError> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let run = provider
@@ -82,7 +85,7 @@ async fn wait_for_run<P: TaskProvider>(
         }
         let now = tokio::time::Instant::now();
         if now >= deadline {
-            return Err(SdkError::unavailable("start_task wait timed out"));
+            return Err(A2aLabError::unavailable("start_task wait timed out"));
         }
         tokio::time::sleep((deadline - now).min(WAIT_POLL)).await;
     }

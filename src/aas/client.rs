@@ -10,7 +10,7 @@ use crate::aas::token::AccessTokenSource;
 use crate::catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, ListAssetsRequest, ListBindingsRequest,
 };
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::page::{Page, slice_page};
 
 /// Client for an AAS repository, registry descriptors, and submodel repository.
@@ -23,12 +23,12 @@ pub struct AasClient<T> {
 
 impl<T: AccessTokenSource> AasClient<T> {
     /// Creates a client for `base_url`.
-    pub fn new(base_url: &str, tokens: T) -> Result<Self, SdkError> {
+    pub fn new(base_url: &str, tokens: T) -> Result<Self, A2aLabError> {
         let base =
-            Url::parse(base_url).map_err(|error| SdkError::invalid("url", error.to_string()))?;
+            Url::parse(base_url).map_err(|error| A2aLabError::invalid("url", error.to_string()))?;
         let http = reqwest::Client::builder()
             .build()
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         Ok(Self {
             http,
             base,
@@ -37,13 +37,13 @@ impl<T: AccessTokenSource> AasClient<T> {
         })
     }
 
-    async fn assets(&self) -> Result<Arc<[Asset]>, SdkError> {
+    async fn assets(&self) -> Result<Arc<[Asset]>, A2aLabError> {
         if let Some(assets) = self.cache.lock().await.clone() {
             return Ok(assets);
         }
         let description = self.get_json("description").await?;
         if !supports_repository(&description) {
-            return Err(SdkError::protocol(
+            return Err(A2aLabError::protocol(
                 "AAS repository does not advertise the 3.2 shell repository profile",
             ));
         }
@@ -61,7 +61,7 @@ impl<T: AccessTokenSource> AasClient<T> {
         Ok(assets)
     }
 
-    async fn get_json(&self, path: &str) -> Result<serde_json::Value, SdkError> {
+    async fn get_json(&self, path: &str) -> Result<serde_json::Value, A2aLabError> {
         let mut request = self.http.get(self.url(path)?);
         if let Some(token) = self.tokens.bearer_token().await? {
             request = request.bearer_auth(token);
@@ -69,18 +69,18 @@ impl<T: AccessTokenSource> AasClient<T> {
         let response = request
             .send()
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         let status = response.status();
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(SdkError::protocol(
+            return Err(A2aLabError::protocol(
                 "AAS repository rejected the access token",
             ));
         }
         if status.as_u16() == 404 {
-            return Err(SdkError::not_found("aas resource", path));
+            return Err(A2aLabError::not_found("aas resource", path));
         }
         if !status.is_success() {
-            return Err(SdkError::unavailable(format!(
+            return Err(A2aLabError::unavailable(format!(
                 "AAS repository returned {}",
                 status.as_u16()
             )));
@@ -88,31 +88,34 @@ impl<T: AccessTokenSource> AasClient<T> {
         response
             .json()
             .await
-            .map_err(|error| SdkError::protocol(error.to_string()))
+            .map_err(|error| A2aLabError::protocol(error.to_string()))
     }
 
-    fn url(&self, path: &str) -> Result<Url, SdkError> {
+    fn url(&self, path: &str) -> Result<Url, A2aLabError> {
         self.base
             .join(path)
-            .map_err(|error| SdkError::invalid("url", error.to_string()))
+            .map_err(|error| A2aLabError::invalid("url", error.to_string()))
     }
 }
 
 impl<T: AccessTokenSource> AssetCatalogProvider for AasClient<T> {
-    async fn list_assets(&self, request: ListAssetsRequest) -> Result<Page<Asset>, SdkError> {
+    async fn list_assets(&self, request: ListAssetsRequest) -> Result<Page<Asset>, A2aLabError> {
         slice_page(&self.assets().await?, &request.page)
     }
 
-    async fn get_asset(&self, key: &AssetKey) -> Result<Asset, SdkError> {
+    async fn get_asset(&self, key: &AssetKey) -> Result<Asset, A2aLabError> {
         self.assets()
             .await?
             .iter()
             .find(|asset| asset.key() == key)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("asset", key.to_string()))
+            .ok_or_else(|| A2aLabError::not_found("asset", key.to_string()))
     }
 
-    async fn list_bindings(&self, request: ListBindingsRequest) -> Result<Page<Binding>, SdkError> {
+    async fn list_bindings(
+        &self,
+        request: ListBindingsRequest,
+    ) -> Result<Page<Binding>, A2aLabError> {
         let assets = self.assets().await?;
         let bindings: Vec<_> = assets
             .iter()

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::sync::Mutex;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::RunId;
 use crate::page::{Page, slice_page};
 use crate::tasks::{
@@ -45,13 +45,13 @@ impl MemoryTasks {
         run_id: &RunId,
         state: TaskState,
         message: Option<String>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), A2aLabError> {
         let mut data = self.inner.lock().await;
         let run = data
             .runs
             .iter_mut()
             .find(|run| &run.id == run_id)
-            .ok_or_else(|| SdkError::not_found("task run", run_id.to_string()))?;
+            .ok_or_else(|| A2aLabError::not_found("task run", run_id.to_string()))?;
         run.state = state;
         run.message = message;
         Ok(())
@@ -72,27 +72,27 @@ impl TaskProvider for MemoryTasks {
     async fn list_tasks(
         &self,
         request: ListTasksRequest,
-    ) -> Result<Page<TaskDefinition>, SdkError> {
+    ) -> Result<Page<TaskDefinition>, A2aLabError> {
         let state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
-            return Err(SdkError::unavailable(message.clone()));
+            return Err(A2aLabError::unavailable(message.clone()));
         }
         let mut definitions = state.definitions.clone();
         definitions.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         slice_page(&definitions, &request.page)
     }
 
-    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, SdkError> {
+    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, A2aLabError> {
         let mut state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
-            return Err(SdkError::unavailable(message.clone()));
+            return Err(A2aLabError::unavailable(message.clone()));
         }
         if !state
             .definitions
             .iter()
             .any(|definition| definition.id == request.task_id)
         {
-            return Err(SdkError::not_found("task", request.task_id.to_string()));
+            return Err(A2aLabError::not_found("task", request.task_id.to_string()));
         }
         let number = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
         let run = TaskRun {
@@ -106,31 +106,31 @@ impl TaskProvider for MemoryTasks {
         Ok(run)
     }
 
-    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
         let state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
-            return Err(SdkError::unavailable(message.clone()));
+            return Err(A2aLabError::unavailable(message.clone()));
         }
         state
             .runs
             .iter()
             .find(|run| run.id == request.id)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("task run", request.id.to_string()))
+            .ok_or_else(|| A2aLabError::not_found("task run", request.id.to_string()))
     }
 
-    async fn cancel(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+    async fn cancel(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
         let mut state = self.inner.lock().await;
         if let Some(message) = &state.unavailable {
-            return Err(SdkError::unavailable(message.clone()));
+            return Err(A2aLabError::unavailable(message.clone()));
         }
         let run = state
             .runs
             .iter_mut()
             .find(|run| run.id == request.id)
-            .ok_or_else(|| SdkError::not_found("task run", request.id.to_string()))?;
+            .ok_or_else(|| A2aLabError::not_found("task run", request.id.to_string()))?;
         if run.state.is_terminal() {
-            return Err(SdkError::unavailable("task is not cancelable"));
+            return Err(A2aLabError::unavailable("task is not cancelable"));
         }
         run.state = TaskState::Canceled;
         run.message = Some("canceled".to_owned());

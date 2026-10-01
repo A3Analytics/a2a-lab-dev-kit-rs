@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
 /// Largest page a caller may request.
 pub const MAX_PAGE_LIMIT: u32 = 1_000;
@@ -23,16 +23,16 @@ pub struct PageRequest {
 
 impl PageRequest {
     /// Creates a request after checking the cursor and limit.
-    pub fn new(cursor: Option<String>, limit: u32) -> Result<Self, SdkError> {
+    pub fn new(cursor: Option<String>, limit: u32) -> Result<Self, A2aLabError> {
         let request = Self { cursor, limit };
         request.check()?;
         Ok(request)
     }
 
     /// Rejects an empty cursor, a non-numeric cursor, or a limit outside `1..=MAX_PAGE_LIMIT`.
-    pub fn check(&self) -> Result<(), SdkError> {
+    pub fn check(&self) -> Result<(), A2aLabError> {
         if self.limit == 0 || self.limit > MAX_PAGE_LIMIT {
-            return Err(SdkError::invalid(
+            return Err(A2aLabError::invalid(
                 "limit",
                 format!("must be 1..={MAX_PAGE_LIMIT}"),
             ));
@@ -40,7 +40,7 @@ impl PageRequest {
         if let Some(cursor) = &self.cursor
             && (cursor.is_empty() || !cursor.bytes().all(|byte| byte.is_ascii_digit()))
         {
-            return Err(SdkError::invalid("cursor", "is not a valid page cursor"));
+            return Err(A2aLabError::invalid("cursor", "is not a valid page cursor"));
         }
         Ok(())
     }
@@ -57,14 +57,14 @@ impl PageRequest {
         self.limit
     }
 
-    pub(crate) fn offset(&self) -> Result<usize, SdkError> {
+    pub(crate) fn offset(&self) -> Result<usize, A2aLabError> {
         self.check()?;
         let Some(cursor) = &self.cursor else {
             return Ok(0);
         };
         cursor
             .parse()
-            .map_err(|_| SdkError::invalid("cursor", "is not a valid page cursor"))
+            .map_err(|_| A2aLabError::invalid("cursor", "is not a valid page cursor"))
     }
 }
 
@@ -108,10 +108,10 @@ impl<T> Page<T> {
 pub(crate) fn slice_page<T: Clone>(
     items: &[T],
     request: &PageRequest,
-) -> Result<Page<T>, SdkError> {
+) -> Result<Page<T>, A2aLabError> {
     let start = request.offset()?;
     if start > items.len() {
-        return Err(SdkError::invalid("cursor", "is past the end"));
+        return Err(A2aLabError::invalid("cursor", "is past the end"));
     }
     let end = start.saturating_add(usize::try_from(request.limit()).unwrap_or(usize::MAX));
     let end = end.min(items.len());

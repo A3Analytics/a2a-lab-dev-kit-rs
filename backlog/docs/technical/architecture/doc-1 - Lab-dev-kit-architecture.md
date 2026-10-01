@@ -1,16 +1,16 @@
 ---
 id: doc-1
-title: Lab SDK architecture
+title: Lab dev kit architecture
 type: technical
 audience: technical
 created_date: "2026-09-29 23:40"
 ---
 
-# Lab SDK architecture
+# Lab dev kit architecture
 
 ## Purpose
 
-`a2a-lab-sdk` gives an automated lab agent one Rust API for logs, metrics, and tasks. Protocol adapters call that API. They do not own the data.
+`a2a-lab-dev-kit` gives an automated lab agent one Rust API for logs, metrics, and tasks. Protocol adapters call that API. They do not own the data.
 
 ## Providers
 
@@ -24,7 +24,7 @@ Implement three traits:
 
 ## Shared values
 
-Identifiers are non-empty ASCII tokens. Timestamps are UTC. `TimeRange` is half-open: the start is included and the end is excluded. Pages use an opaque numeric cursor and a limit from 1 to 1000. Task input is a JSON object. `SdkError` uses the stable codes `invalid`, `not_found`, `unavailable`, `transport`, and `protocol`.
+Identifiers are non-empty ASCII tokens. Timestamps are UTC. `TimeRange` is half-open: the start is included and the end is excluded. Pages use an opaque numeric cursor and a limit from 1 to 1000. Task input is a JSON object. `A2aLabError` uses the stable codes `invalid`, `not_found`, `unavailable`, `transport`, and `protocol`.
 
 ## Adapters
 

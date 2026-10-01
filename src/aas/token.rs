@@ -1,11 +1,11 @@
 //! Bearer tokens for the AAS HTTP API.
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
 /// Supplies an AAS access token. An empty token means the request is anonymous.
 pub trait AccessTokenSource: Send + Sync {
     /// Returns the current bearer token.
-    fn bearer_token(&self) -> impl Future<Output = Result<Option<String>, SdkError>> + Send;
+    fn bearer_token(&self) -> impl Future<Output = Result<Option<String>, A2aLabError>> + Send;
 }
 
 /// A token that does not change.
@@ -24,7 +24,7 @@ impl StaticToken {
 
 impl AccessTokenSource for StaticToken {
     #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
-    async fn bearer_token(&self) -> Result<Option<String>, SdkError> {
+    async fn bearer_token(&self) -> Result<Option<String>, A2aLabError> {
         Ok(self.token.clone())
     }
 }

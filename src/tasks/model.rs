@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::{RunId, TaskId};
 use crate::json_object::JsonObject;
 use crate::page::PageRequest;
@@ -44,14 +44,16 @@ impl TaskState {
     }
 
     /// Parses an A2A 1.0 protocol state name.
-    pub fn from_protocol(value: &str) -> Result<Self, SdkError> {
+    pub fn from_protocol(value: &str) -> Result<Self, A2aLabError> {
         match value {
             "TASK_STATE_SUBMITTED" => Ok(Self::Submitted),
             "TASK_STATE_WORKING" => Ok(Self::Working),
             "TASK_STATE_COMPLETED" => Ok(Self::Completed),
             "TASK_STATE_FAILED" => Ok(Self::Failed),
             "TASK_STATE_CANCELED" => Ok(Self::Canceled),
-            _ => Err(SdkError::protocol(format!("unknown task state `{value}`"))),
+            _ => Err(A2aLabError::protocol(format!(
+                "unknown task state `{value}`"
+            ))),
         }
     }
 }

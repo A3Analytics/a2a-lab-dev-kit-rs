@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::catalog::{AssetCatalogProvider, BindingRole, ListBindingsRequest};
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::{RunId, TaskId};
 use crate::industrial::LiveSource;
 use crate::industrial::logs::find_binding;
@@ -35,7 +35,7 @@ where
     async fn list_tasks(
         &self,
         request: ListTasksRequest,
-    ) -> Result<Page<TaskDefinition>, SdkError> {
+    ) -> Result<Page<TaskDefinition>, A2aLabError> {
         let bindings = self
             .catalog
             .list_bindings(ListBindingsRequest {
@@ -58,7 +58,7 @@ where
         crate::page::slice_page(&tasks, &request.page)
     }
 
-    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, SdkError> {
+    async fn start(&self, request: StartTaskRequest) -> Result<TaskRun, A2aLabError> {
         let binding =
             find_binding(&*self.catalog, request.task_id.as_str(), BindingRole::Task).await?;
         let run = self
@@ -78,7 +78,7 @@ where
         })
     }
 
-    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+    async fn status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
         let run = self.live.status(request.id.as_str()).await?;
         Ok(TaskRun {
             id: request.id,

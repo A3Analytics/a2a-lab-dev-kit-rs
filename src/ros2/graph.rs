@@ -1,6 +1,6 @@
 //! ROS 2 action graph used by the task provider.
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::json_object::JsonObject;
 use crate::tasks::TaskState;
 
@@ -60,15 +60,15 @@ pub struct Ros2Goal {
 /// Live view of ROS 2 action servers and goals.
 pub trait Ros2Graph: Send + Sync {
     /// Returns the action servers currently advertised.
-    fn actions(&self) -> impl Future<Output = Result<Vec<Ros2Action>, SdkError>> + Send;
+    fn actions(&self) -> impl Future<Output = Result<Vec<Ros2Action>, A2aLabError>> + Send;
 
     /// Sends a JSON goal to an action.
     fn send_goal(
         &self,
         action_name: &str,
         goal: JsonObject,
-    ) -> impl Future<Output = Result<Ros2Goal, SdkError>> + Send;
+    ) -> impl Future<Output = Result<Ros2Goal, A2aLabError>> + Send;
 
     /// Returns the current status of a goal.
-    fn goal(&self, goal_id: &str) -> impl Future<Output = Result<Ros2Goal, SdkError>> + Send;
+    fn goal(&self, goal_id: &str) -> impl Future<Output = Result<Ros2Goal, A2aLabError>> + Send;
 }

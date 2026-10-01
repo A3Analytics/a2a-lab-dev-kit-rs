@@ -1,4 +1,4 @@
-//! Rust SDK for lab logs, metrics, and tasks.
+//! Rust dev kit for lab logs, metrics, and tasks.
 //!
 //! Provider traits are the source of truth. The A2A HTTP+JSON adapter and the
 //! MCP adapter expose the same seven operations over those traits.
@@ -35,7 +35,7 @@ pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
 };
-pub use error::SdkError;
+pub use error::A2aLabError;
 pub use id::{MetricId, RunId, SourceId, TaskId};
 pub use industrial::{
     IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialTasks, ScriptedLive,
@@ -58,7 +58,7 @@ pub use tasks::{
 };
 pub use time::{TimeRange, UtcTimestamp};
 
-/// Returns the SDK package version.
+/// Returns the crate version.
 #[must_use]
 pub const fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

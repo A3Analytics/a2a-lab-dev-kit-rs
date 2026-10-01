@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::{
     A2aClient, A2aServer, Asset, AssetKey, Binding, BindingRole, Endpoint, IndustrialLabBuilder,
     JsonObject, LabService, ListMetricsRequest, MemoryCatalog, MetricPoint, OpcUaIdentityKind,
     PageRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind, StartTaskRequest, TaskId,
@@ -88,8 +88,8 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_tasks() {
         Some("https://example.com/semantic/temperature")
     );
     let points = client
-        .query_metric(a2a_lab_sdk::QueryMetricRequest {
-            metric_id: a2a_lab_sdk::MetricId::new("temperature").unwrap(),
+        .query_metric(a2a_lab_dev_kit::QueryMetricRequest {
+            metric_id: a2a_lab_dev_kit::MetricId::new("temperature").unwrap(),
             range: TimeRange::new(
                 timestamp("2024-01-01T00:00:00Z"),
                 timestamp("2024-01-01T01:00:00Z"),
@@ -110,6 +110,6 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_tasks() {
         )
         .await
         .unwrap();
-    assert_eq!(started.state, a2a_lab_sdk::TaskState::Submitted);
+    assert_eq!(started.state, a2a_lab_dev_kit::TaskState::Submitted);
     let _ = Arc::new(client);
 }

@@ -1,16 +1,16 @@
 ---
 id: doc-10
-title: Lab SDK overview
+title: Lab dev kit overview
 type: overview
 audience: public
 created_date: "2026-09-30 17:38"
 ---
 
-# Lab SDK overview
+# Lab dev kit overview
 
-## Role in this SDK
+## Role in this dev kit
 
-`a2a-lab-sdk` is a Rust library for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `TaskProvider`, and stores an A2A task snapshot. MCP tools call that service. The default A2A agent calls those MCP tools through `McpLab`.
+`a2a-lab-dev-kit` is a Rust library for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `TaskProvider`, and stores an A2A task snapshot. MCP tools call that service. The default A2A agent calls those MCP tools through `McpLab`.
 
 An agent call enters through A2A or MCP. `LabService` fans out to the three provider traits. Each trait is backed by one implementation chosen when the service is built.
 
@@ -57,7 +57,7 @@ flowchart TD
 
 Query requests carry a `TimeRange`. The range is half-open UTC: `TimeRange` documents `[start, end)`, `start` must be strictly before `end`, and `contains` is true when the timestamp is greater than or equal to `start` and strictly less than `end`. `UtcTimestamp` accepts RFC 3339 text whose offset is `Z`, `+00:00`, or `-00:00`.
 
-List and query requests also carry a `PageRequest`. The limit must be from 1 to `MAX_PAGE_LIMIT` (1000). The default limit is 100. A cursor is an optional string of ASCII digits. Identifiers such as `SourceId`, `MetricId`, `TaskId`, and `RunId` are 1 to 128 characters of ASCII letters, digits, or `.` `_` `:` `-`. `SdkError::code` is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`.
+List and query requests also carry a `PageRequest`. The limit must be from 1 to `MAX_PAGE_LIMIT` (1000). The default limit is 100. A cursor is an optional string of ASCII digits. Identifiers such as `SourceId`, `MetricId`, `TaskId`, and `RunId` are 1 to 128 characters of ASCII letters, digits, or `.` `_` `:` `-`. `A2aLabError::code` is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`.
 
 In-memory providers are `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryCatalog`. `IndustrialLabBuilder` can share one catalog and one `LiveSource` across `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks`. `ScriptedLive` is the `LiveSource` implemented in this crate.
 
@@ -85,6 +85,6 @@ The repository [README](../../../README.md) shows `LabService` with the memory p
 - [OPC UA](<../reference/opc-ua/doc-7 - OPC-UA.md>)
 - [SiLA 2](<../reference/sila-2/doc-8 - SiLA-2.md>)
 - [ROS 2](<../reference/ros-2/doc-9 - ROS-2.md>)
-- [Lab SDK architecture](<../technical/architecture/doc-1 - Lab-SDK-architecture.md>)
+- [Lab dev kit architecture](<../technical/architecture/doc-1 - Lab-dev-kit-architecture.md>)
 - [A2A and MCP protocols](<../technical/protocol/doc-2 - A2A-and-MCP-protocols.md>)
 - [Industrial equipment connectors](<../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)

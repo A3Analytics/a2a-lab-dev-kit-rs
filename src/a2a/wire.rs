@@ -5,7 +5,7 @@ use a2a_types::{
     TaskStatus, TaskStatusUpdateEvent, error_code,
 };
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::page::Page;
 use crate::service::{LabCommand, LabResult, TaskSnapshot};
 use crate::tasks::TaskState;
@@ -13,7 +13,7 @@ use crate::tasks::TaskState;
 /// Media type of lab command and result data parts.
 pub const LAB_MEDIA_TYPE: &str = "application/vnd.a2a-lab.v1+json";
 
-/// A2A protocol version advertised by this SDK.
+/// A2A protocol version advertised by this dev kit.
 pub const A2A_PROTOCOL_VERSION: &str = a2a_types::VERSION;
 
 pub(crate) fn command_from_message(message: &Message) -> Result<Option<LabCommand>, A2AError> {
@@ -181,7 +181,7 @@ pub(crate) fn artifact_update(
     }))
 }
 
-pub(crate) fn result_from_task(task: &Task) -> Result<LabResult, SdkError> {
+pub(crate) fn result_from_task(task: &Task) -> Result<LabResult, A2aLabError> {
     let results: Vec<LabResult> = task
         .artifacts
         .as_ref()
@@ -196,9 +196,11 @@ pub(crate) fn result_from_task(task: &Task) -> Result<LabResult, SdkError> {
     merge_results(results)
 }
 
-fn merge_results(results: Vec<LabResult>) -> Result<LabResult, SdkError> {
+fn merge_results(results: Vec<LabResult>) -> Result<LabResult, A2aLabError> {
     match results.as_slice() {
-        [] => Err(SdkError::protocol("task artifact is missing a lab result")),
+        [] => Err(A2aLabError::protocol(
+            "task artifact is missing a lab result",
+        )),
         [LabResult::QueryLogs(_), ..] => {
             let mut items = Vec::new();
             let mut next = None;
@@ -225,7 +227,7 @@ fn merge_results(results: Vec<LabResult>) -> Result<LabResult, SdkError> {
     }
 }
 
-pub(crate) fn snapshot_from_task(task: &Task) -> Result<TaskSnapshot, SdkError> {
+pub(crate) fn snapshot_from_task(task: &Task) -> Result<TaskSnapshot, A2aLabError> {
     Ok(TaskSnapshot {
         id: task.id.clone(),
         context_id: task.context_id.clone(),
@@ -234,31 +236,31 @@ pub(crate) fn snapshot_from_task(task: &Task) -> Result<TaskSnapshot, SdkError> 
     })
 }
 
-pub(crate) fn sdk_error(error: A2AError) -> SdkError {
+pub(crate) fn sdk_error(error: A2AError) -> A2aLabError {
     match error.code {
-        error_code::TASK_NOT_FOUND => SdkError::not_found("task", error.message),
+        error_code::TASK_NOT_FOUND => A2aLabError::not_found("task", error.message),
         error_code::INVALID_PARAMS
         | error_code::INVALID_REQUEST
         | error_code::PARSE_ERROR
-        | error_code::CONTENT_TYPE_NOT_SUPPORTED => SdkError::invalid("request", error.message),
-        error_code::INTERNAL_ERROR => SdkError::unavailable(error.message),
-        _ => SdkError::protocol(error.message),
+        | error_code::CONTENT_TYPE_NOT_SUPPORTED => A2aLabError::invalid("request", error.message),
+        error_code::INTERNAL_ERROR => A2aLabError::unavailable(error.message),
+        _ => A2aLabError::protocol(error.message),
     }
 }
 
-pub(crate) fn a2a_error(error: &SdkError) -> A2AError {
+pub(crate) fn a2a_error(error: &A2aLabError) -> A2AError {
     match error {
-        SdkError::Invalid { .. } => A2AError::invalid_params(error.to_string()),
-        SdkError::NotFound { id, .. } => A2AError::task_not_found(id),
-        SdkError::Unavailable { message } if message.contains("not cancelable") => {
+        A2aLabError::Invalid { .. } => A2AError::invalid_params(error.to_string()),
+        A2aLabError::NotFound { id, .. } => A2AError::task_not_found(id),
+        A2aLabError::Unavailable { message } if message.contains("not cancelable") => {
             A2AError::task_not_cancelable("task")
         }
-        SdkError::Unavailable { message } | SdkError::Transport { message } => {
+        A2aLabError::Unavailable { message } | A2aLabError::Transport { message } => {
             A2AError::internal(message.clone())
         }
-        SdkError::Protocol { message } if message.contains("media type") => {
+        A2aLabError::Protocol { message } if message.contains("media type") => {
             A2AError::content_type_not_supported()
         }
-        SdkError::Protocol { message } => A2AError::invalid_request(message.clone()),
+        A2aLabError::Protocol { message } => A2AError::invalid_request(message.clone()),
     }
 }

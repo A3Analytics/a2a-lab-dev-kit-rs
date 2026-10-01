@@ -1,7 +1,7 @@
 //! Live reads and commands shared by OPC UA and SiLA clients.
 
 use crate::catalog::Endpoint;
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::json_object::JsonObject;
 use crate::logs::LogRecord;
 use crate::metrics::MetricPoint;
@@ -30,7 +30,7 @@ pub trait LiveSource: Send + Sync {
         endpoint: &Endpoint,
         range: TimeRange,
         page: PageRequest,
-    ) -> impl Future<Output = Result<Page<LogRecord>, SdkError>> + Send;
+    ) -> impl Future<Output = Result<Page<LogRecord>, A2aLabError>> + Send;
 
     /// Returns metric samples inside the half-open range.
     fn query_metrics(
@@ -38,7 +38,7 @@ pub trait LiveSource: Send + Sync {
         endpoint: &Endpoint,
         range: TimeRange,
         page: PageRequest,
-    ) -> impl Future<Output = Result<Page<MetricPoint>, SdkError>> + Send;
+    ) -> impl Future<Output = Result<Page<MetricPoint>, A2aLabError>> + Send;
 
     /// Starts a command.
     fn start(
@@ -46,8 +46,8 @@ pub trait LiveSource: Send + Sync {
         endpoint: &Endpoint,
         task_id: &str,
         input: JsonObject,
-    ) -> impl Future<Output = Result<LiveRun, SdkError>> + Send;
+    ) -> impl Future<Output = Result<LiveRun, A2aLabError>> + Send;
 
     /// Returns the status of a previously started command.
-    fn status(&self, run_id: &str) -> impl Future<Output = Result<LiveRun, SdkError>> + Send;
+    fn status(&self, run_id: &str) -> impl Future<Output = Result<LiveRun, A2aLabError>> + Send;
 }

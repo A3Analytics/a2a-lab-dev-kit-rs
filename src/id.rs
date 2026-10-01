@@ -5,20 +5,20 @@ use std::fmt;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
 const MAX_LEN: usize = 128;
 
-pub(crate) fn parse_public(value: &str) -> Result<String, SdkError> {
+pub(crate) fn parse_public(value: &str) -> Result<String, A2aLabError> {
     validate(value)
 }
 
-pub(crate) fn validate(value: &str) -> Result<String, SdkError> {
+pub(crate) fn validate(value: &str) -> Result<String, A2aLabError> {
     let allowed = value.chars().all(|character| {
         character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | ':' | '-')
     });
     if value.is_empty() || value.len() > MAX_LEN || !allowed {
-        return Err(SdkError::invalid(
+        return Err(A2aLabError::invalid(
             "id",
             format!("must be 1..={MAX_LEN} ASCII letters, digits, or . _ : -"),
         ));
@@ -34,7 +34,7 @@ macro_rules! id_type {
 
         impl $name {
             /// Validates and creates an identifier.
-            pub fn new(value: impl AsRef<str>) -> Result<Self, SdkError> {
+            pub fn new(value: impl AsRef<str>) -> Result<Self, A2aLabError> {
                 validate(value.as_ref()).map(Self)
             }
 

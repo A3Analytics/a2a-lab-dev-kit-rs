@@ -1,9 +1,9 @@
 [package]
-name = "a2a-lab-sdk"
+name = "a2a-lab-dev-kit"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98.1"
-description = "Rust SDK for lab logs, metrics, and tasks over A2A and MCP"
+description = "Rust dev kit for lab logs, metrics, and tasks over A2A and MCP"
 publish = false
 
 [lints.clippy]

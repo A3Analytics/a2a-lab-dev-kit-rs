@@ -1,4 +1,4 @@
-project_name: "a2a-lab-sdk"
+project_name: "a2a-lab-dev-kit"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
 labels: []

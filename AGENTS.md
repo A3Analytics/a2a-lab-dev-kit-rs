@@ -4,7 +4,7 @@ Operating guide for AI agents working in this repository.
 
 ## What this repo is
 
-`a2a-lab-sdk` — a Rust SDK managed with **mise** (tooling + tasks), **Backlog.md** (task + doc management), and **Cursor** (agent skills). The library crate lives at the repository root. Human setup and the local quality commands live in `README.md`.
+`a2a-lab-dev-kit` — a Rust lab dev kit managed with **mise** (tooling + tasks), **Backlog.md** (task + doc management), and **Cursor** (agent skills). The library crate lives at the repository root. Human setup and the local quality commands live in `README.md`.
 
 ## Tooling
 
@@ -26,7 +26,7 @@ Repo-specific agent skills live in `.cursor/skills/`:
 - `doc` — author backlog docs
 - `work` — implement a task to done
 
-The skills include examples referencing a downstream app (`apps/web`, TanStack Start, shadcn). Ignore those paths. This repository is the Rust SDK, and its quality gate is `mise run quality`.
+The skills include examples referencing a downstream app (`apps/web`, TanStack Start, shadcn). Ignore those paths. This repository is the Rust lab dev kit, and its quality gate is `mise run quality`.
 
 ## Documentation policy
 

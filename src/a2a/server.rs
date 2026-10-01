@@ -17,7 +17,7 @@ use axum::middleware::{Next, from_fn};
 use axum::response::Response;
 use tokio::net::TcpListener;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::service::LabApi;
 
 use super::card::agent_card;
@@ -95,34 +95,34 @@ impl A2aServer {
     /// Serves the Agent Card and the A2A 1.0 HTTP+JSON routes.
     ///
     /// `listener` defaults to `127.0.0.1:31000` when it is `None`.
-    pub async fn listen(self, listener: impl Into<Option<TcpListener>>) -> Result<(), SdkError> {
+    pub async fn listen(self, listener: impl Into<Option<TcpListener>>) -> Result<(), A2aLabError> {
         let listener = match listener.into() {
             Some(listener) => listener,
             None => TcpListener::bind(DEFAULT_ADDRESS)
                 .await
-                .map_err(|error| SdkError::transport(error.to_string()))?,
+                .map_err(|error| A2aLabError::transport(error.to_string()))?,
         };
         let address = listener
             .local_addr()
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         let public_url = self
             .public_url
             .clone()
             .unwrap_or_else(|| format!("http://{address}"));
         axum::serve(listener, router(&self, &public_url))
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))
+            .map_err(|error| A2aLabError::transport(error.to_string()))
     }
 }
 
 /// Returns the socket address selected for `127.0.0.1:0`.
-pub async fn bind_local() -> Result<(TcpListener, SocketAddr), SdkError> {
+pub async fn bind_local() -> Result<(TcpListener, SocketAddr), A2aLabError> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|error| SdkError::transport(error.to_string()))?;
+        .map_err(|error| A2aLabError::transport(error.to_string()))?;
     let address = listener
         .local_addr()
-        .map_err(|error| SdkError::transport(error.to_string()))?;
+        .map_err(|error| A2aLabError::transport(error.to_string()))?;
     Ok((listener, address))
 }
 

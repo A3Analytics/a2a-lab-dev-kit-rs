@@ -56,4 +56,4 @@ This crate depends on `a2a-lf` 0.4.1, `a2a-server-lf` 0.5.1, and `a2a-client-lf`
 
 Provider failures become MCP invalid-params or internal errors. The same failures become A2A `google.rpc.Status` mappings (`invalid_params`, `task_not_found`, or `internal`).
 
-The architecture is described in [Lab SDK architecture](<../architecture/doc-1 - Lab-SDK-architecture.md>).
+The architecture is described in [Lab dev kit architecture](<../architecture/doc-1 - Lab-dev-kit-architecture.md>).

@@ -1,7 +1,7 @@
 #![cfg(feature = "opcua")]
 
-use a2a_lab_sdk::opcua::{filter_half_open, namespace_index};
-use a2a_lab_sdk::{MetricPoint, TimeRange, UtcTimestamp};
+use a2a_lab_dev_kit::opcua::{filter_half_open, namespace_index};
+use a2a_lab_dev_kit::{MetricPoint, TimeRange, UtcTimestamp};
 
 fn timestamp(value: &str) -> UtcTimestamp {
     UtcTimestamp::parse(value).unwrap()

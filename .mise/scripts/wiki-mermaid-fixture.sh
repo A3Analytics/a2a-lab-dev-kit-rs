@@ -38,14 +38,14 @@ created_date: "2026-09-30"
 
 # Fixture Home
 
-## Role in this SDK
+## Role in this dev kit
 
 Caption for the fixture diagram.
 
 ```mermaid
 flowchart TD
   # this heading is inside the fence
-  nodeA["See [Lab SDK overview](<../overview/doc-1 - Fixture-Home.md>)"]
+  nodeA["See [Lab dev kit overview](<../overview/doc-1 - Fixture-Home.md>)"]
   nodeA --> nodeB[Next]
 ```
 
@@ -66,7 +66,7 @@ created_date: "2026-09-30"
 
 # Fixture A2A
 
-## Role in this SDK
+## Role in this dev kit
 
 ```mermaid
 flowchart LR
@@ -99,7 +99,7 @@ created_date: "2026-09-30"
 
 # Open Fence
 
-## Role in this SDK
+## Role in this dev kit
 
 ```mermaid
 flowchart TD
@@ -167,9 +167,9 @@ fi
 grep -q 'https://mermaid.ink/svg/' "$home" \
   || fail "staged Wiki is missing a mermaid.ink image"
 
-grep -q '\[README\](https://github.com/A3Analytics/a2a-lab-sdk-rs/blob/main/README.md)' "$home" \
+grep -q '\[README\](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/blob/main/README.md)' "$home" \
   || fail "README link after mermaid was not rewritten"
-grep -q '\[A2A\](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/A2A)' "$home" \
+grep -q '\[A2A\](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)' "$home" \
   || fail "sibling Wiki link after mermaid was not rewritten"
 grep -q 'GET /tasks/{id}' "$home" \
   || fail "curly braces after mermaid were rewritten"

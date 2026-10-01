@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use a2a_lab_sdk::aas::{AasClient, StaticToken};
-use a2a_lab_sdk::{
+use a2a_lab_dev_kit::aas::{AasClient, StaticToken};
+use a2a_lab_dev_kit::{
     AssetCatalogProvider, AssetKey, BindingRole, ListAssetsRequest, PageRequest, ProtocolKind,
 };
 use axum::extract::Path;

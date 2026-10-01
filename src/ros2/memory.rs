@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::json_object::JsonObject;
 use crate::ros2::{Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph};
 
@@ -49,12 +49,12 @@ impl MemoryRos2 {
         goal_id: &str,
         status: Ros2GoalStatus,
         message: Option<String>,
-    ) -> Result<(), SdkError> {
+    ) -> Result<(), A2aLabError> {
         let mut state = self.inner.lock().await;
         let goal = state
             .goals
             .get_mut(goal_id)
-            .ok_or_else(|| SdkError::not_found("ros2 goal", goal_id))?;
+            .ok_or_else(|| A2aLabError::not_found("ros2 goal", goal_id))?;
         goal.status = status;
         goal.message = message;
         Ok(())
@@ -62,18 +62,22 @@ impl MemoryRos2 {
 }
 
 impl Ros2Graph for MemoryRos2 {
-    async fn actions(&self) -> Result<Vec<Ros2Action>, SdkError> {
+    async fn actions(&self) -> Result<Vec<Ros2Action>, A2aLabError> {
         Ok(self.inner.lock().await.actions.clone())
     }
 
-    async fn send_goal(&self, action_name: &str, _goal: JsonObject) -> Result<Ros2Goal, SdkError> {
+    async fn send_goal(
+        &self,
+        action_name: &str,
+        _goal: JsonObject,
+    ) -> Result<Ros2Goal, A2aLabError> {
         let mut state = self.inner.lock().await;
         if !state
             .actions
             .iter()
             .any(|action| action.name == action_name)
         {
-            return Err(SdkError::not_found("ros2 action", action_name));
+            return Err(A2aLabError::not_found("ros2 action", action_name));
         }
         state.next += 1;
         let goal = Ros2Goal {
@@ -86,13 +90,13 @@ impl Ros2Graph for MemoryRos2 {
         Ok(goal)
     }
 
-    async fn goal(&self, goal_id: &str) -> Result<Ros2Goal, SdkError> {
+    async fn goal(&self, goal_id: &str) -> Result<Ros2Goal, A2aLabError> {
         self.inner
             .lock()
             .await
             .goals
             .get(goal_id)
             .cloned()
-            .ok_or_else(|| SdkError::not_found("ros2 goal", goal_id))
+            .ok_or_else(|| A2aLabError::not_found("ros2 goal", goal_id))
     }
 }

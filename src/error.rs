@@ -1,8 +1,8 @@
 //! Stable errors returned by lab providers and protocol adapters.
 
-/// Failure returned by the lab SDK.
+/// Failure returned by the lab dev kit.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SdkError {
+pub enum A2aLabError {
     /// A caller-supplied value failed validation.
     #[error("invalid {field}: {message}")]
     Invalid {
@@ -39,7 +39,7 @@ pub enum SdkError {
     },
 }
 
-impl SdkError {
+impl A2aLabError {
     /// Creates an input-validation error.
     #[must_use]
     pub fn invalid(field: &'static str, message: impl Into<String>) -> Self {

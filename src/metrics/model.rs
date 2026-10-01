@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::id::MetricId;
 use crate::page::PageRequest;
 use crate::time::{TimeRange, UtcTimestamp};
@@ -51,9 +51,9 @@ impl<'de> Deserialize<'de> for MetricPoint {
 
 impl MetricPoint {
     /// Creates a sample when `value` is finite.
-    pub fn new(timestamp: UtcTimestamp, value: f64) -> Result<Self, SdkError> {
+    pub fn new(timestamp: UtcTimestamp, value: f64) -> Result<Self, A2aLabError> {
         if !value.is_finite() {
-            return Err(SdkError::invalid("value", "must be finite"));
+            return Err(A2aLabError::invalid("value", "must be finite"));
         }
         Ok(Self { timestamp, value })
     }

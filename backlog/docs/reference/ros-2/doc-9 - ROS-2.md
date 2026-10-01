@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # ROS 2
 
-## Role in this SDK
+## Role in this dev kit
 
 ROS 2 action servers are exposed as lab tasks. `Ros2Tasks` implements `TaskProvider`. It does not implement `LogProvider` or `MetricProvider`, and it is not an A2A or MCP adapter.
 
@@ -52,7 +52,7 @@ Pass `Ros2Tasks` to `LabService::new` as the task provider.
 
 ## Related
 
-- [Lab SDK overview](<../../overview/doc-10 - Lab-SDK-overview.md>)
+- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A](<../a2a/doc-4 - A2A.md>)
 - [MCP](<../mcp/doc-5 - MCP.md>)
-- [Lab SDK architecture](<../../technical/architecture/doc-1 - Lab-SDK-architecture.md>)
+- [Lab dev kit architecture](<../../technical/architecture/doc-1 - Lab-dev-kit-architecture.md>)

@@ -1,8 +1,8 @@
-# a2a-lab-sdk
+# a2a-lab-dev-kit
 
-Rust SDK for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` runs seven operations, and A2A HTTP+JSON and MCP both call that service.
+Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` runs seven operations, and A2A HTTP+JSON and MCP both call that service.
 
-[Wiki Home](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/Home)
+[Wiki Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
 
 ## Operations
 
@@ -56,13 +56,13 @@ A2A publishes `/.well-known/agent-card.json` and accepts `POST /message:send` (A
 
 | Topic                      | Wiki                                                                |
 | -------------------------- | ------------------------------------------------------------------- |
-| Lab SDK overview           | [Home](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/Home)     |
-| A2A                        | [A2A](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/A2A)       |
-| MCP                        | [MCP](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/MCP)       |
-| Asset Administration Shell | [AAS](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/AAS)       |
-| OPC UA                     | [OPC-UA](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/OPC-UA) |
-| SiLA 2                     | [SiLA-2](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/SiLA-2) |
-| ROS 2                      | [ROS-2](https://github.com/A3Analytics/a2a-lab-sdk-rs/wiki/ROS-2)   |
+| Lab dev kit overview           | [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)     |
+| A2A                        | [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)       |
+| MCP                        | [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP)       |
+| Asset Administration Shell | [AAS](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS)       |
+| OPC UA                     | [OPC-UA](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/OPC-UA) |
+| SiLA 2                     | [SiLA-2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/SiLA-2) |
+| ROS 2                      | [ROS-2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/ROS-2)   |
 
 ## Features
 

@@ -3,14 +3,15 @@
 //! The endpoint stored on the binding is catalog data. Samples come from the
 //! scripted live source.
 
-use a2a_lab_sdk::{
-    Asset, AssetKey, Binding, BindingRole, Endpoint, IndustrialLabBuilder, MemoryCatalog, MetricId,
-    MetricPoint, MetricProvider, OpcUaIdentityKind, PageRequest, QueryMetricRequest, ScriptedLive,
-    SdkError, SecurityMode, SemanticId, SemanticKind, TimeRange, UtcTimestamp,
+use a2a_lab_dev_kit::{
+    A2aLabError, Asset, AssetKey, Binding, BindingRole, Endpoint, IndustrialLabBuilder,
+    MemoryCatalog, MetricId, MetricPoint, MetricProvider, OpcUaIdentityKind, PageRequest,
+    QueryMetricRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind, TimeRange,
+    UtcTimestamp,
 };
 
 #[tokio::main]
-async fn main() -> Result<(), SdkError> {
+async fn main() -> Result<(), A2aLabError> {
     let asset = AssetKey::new("https://example.com/aas/pump")?;
     let catalog = MemoryCatalog::new();
     catalog

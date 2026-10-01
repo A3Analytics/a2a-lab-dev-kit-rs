@@ -10,17 +10,17 @@ use opcua_types::{
 };
 
 use crate::catalog::Endpoint;
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 use crate::metrics::MetricPoint;
 use crate::time::{TimeRange, UtcTimestamp};
 
 /// Returns the namespace index for `namespace_uri`.
-pub fn namespace_index(namespaces: &[String], namespace_uri: &str) -> Result<u16, SdkError> {
+pub fn namespace_index(namespaces: &[String], namespace_uri: &str) -> Result<u16, A2aLabError> {
     namespaces
         .iter()
         .position(|namespace| namespace == namespace_uri)
         .map(|index| u16::try_from(index).unwrap_or(u16::MAX))
-        .ok_or_else(|| SdkError::not_found("opcua namespace", namespace_uri))
+        .ok_or_else(|| A2aLabError::not_found("opcua namespace", namespace_uri))
 }
 
 /// Drops samples that fall on the exclusive end of a lab time range.
@@ -62,7 +62,7 @@ impl OpcUaClient {
         &self,
         endpoint: &Endpoint,
         range: TimeRange,
-    ) -> Result<Vec<MetricPoint>, SdkError> {
+    ) -> Result<Vec<MetricPoint>, A2aLabError> {
         let (session, node) = self.session(endpoint).await?;
         let details = ReadRawModifiedDetails {
             is_read_modified: false,
@@ -85,9 +85,11 @@ impl OpcUaClient {
                 &nodes,
             )
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         let Some(result) = results.into_iter().next() else {
-            return Err(SdkError::unavailable("OPC UA history returned no result"));
+            return Err(A2aLabError::unavailable(
+                "OPC UA history returned no result",
+            ));
         };
         if result.status_code.is_bad() {
             return Err(history_error(result.status_code));
@@ -101,7 +103,7 @@ impl OpcUaClient {
     async fn session(
         &self,
         endpoint: &Endpoint,
-    ) -> Result<(std::sync::Arc<Session>, NodeId), SdkError> {
+    ) -> Result<(std::sync::Arc<Session>, NodeId), A2aLabError> {
         let Endpoint::OpcUa {
             url,
             security_policy,
@@ -110,10 +112,10 @@ impl OpcUaClient {
             ..
         } = endpoint
         else {
-            return Err(SdkError::protocol("expected an OPC UA endpoint"));
+            return Err(A2aLabError::protocol("expected an OPC UA endpoint"));
         };
         if security_policy.contains("None") {
-            return Err(SdkError::invalid(
+            return Err(A2aLabError::invalid(
                 "security_policy",
                 "unsecured OPC UA sessions are rejected",
             ));
@@ -127,51 +129,51 @@ impl OpcUaClient {
             .verify_server_certs(true)
             .create_sample_keypair(false)
             .client()
-            .map_err(|errors| SdkError::invalid("opcua", errors.join(", ")))?;
+            .map_err(|errors| A2aLabError::invalid("opcua", errors.join(", ")))?;
         let (session, event_loop) = client
             .connect_to_matching_endpoint(
                 url.as_str(),
                 IdentityToken::new_user_name(self.username.clone(), self.password.clone()),
             )
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         tokio::spawn(async move {
             let _ = event_loop.run().await;
         });
         let namespaces = session
             .read_namespace_array()
             .await
-            .map_err(|error| SdkError::transport(error.to_string()))?;
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
         let index = namespaces
             .get_index(namespace_uri)
-            .ok_or_else(|| SdkError::not_found("opcua namespace", namespace_uri.clone()))?;
+            .ok_or_else(|| A2aLabError::not_found("opcua namespace", namespace_uri.clone()))?;
         let node = NodeId::from_str(&format!("ns={index};{node_id}"))
-            .map_err(|error| SdkError::protocol(error.to_string()))?;
+            .map_err(|error| A2aLabError::protocol(error.to_string()))?;
         Ok((session, node))
     }
 }
 
-fn encode_time(timestamp: UtcTimestamp) -> Result<DateTime, SdkError> {
+fn encode_time(timestamp: UtcTimestamp) -> Result<DateTime, A2aLabError> {
     DateTime::from_str(&timestamp.to_rfc3339())
-        .map_err(|error| SdkError::protocol(error.to_string()))
+        .map_err(|error| A2aLabError::protocol(error.to_string()))
 }
 
-fn history_error(status: StatusCode) -> SdkError {
+fn history_error(status: StatusCode) -> A2aLabError {
     if status == StatusCode::BadHistoryOperationUnsupported {
-        SdkError::unavailable("OPC UA server does not support history reads")
+        A2aLabError::unavailable("OPC UA server does not support history reads")
     } else {
-        SdkError::protocol(status.to_string())
+        A2aLabError::protocol(status.to_string())
     }
 }
 
 fn points_from_history(
     result: &HistoryReadResult,
     range: &TimeRange,
-) -> Result<Vec<MetricPoint>, SdkError> {
+) -> Result<Vec<MetricPoint>, A2aLabError> {
     let HistoryData { data_values, .. } = result
         .history_data
         .inner_as::<HistoryData>()
-        .ok_or_else(|| SdkError::protocol("OPC UA history payload was not HistoryData"))?;
+        .ok_or_else(|| A2aLabError::protocol("OPC UA history payload was not HistoryData"))?;
     let mut points = Vec::new();
     for value in data_values.clone().unwrap_or_default() {
         let Some(source) = value.source_timestamp else {
@@ -181,7 +183,7 @@ fn points_from_history(
             continue;
         };
         let Variant::Double(sample) = variant else {
-            return Err(SdkError::invalid(
+            return Err(A2aLabError::invalid(
                 "value",
                 "OPC UA history value is not a double",
             ));

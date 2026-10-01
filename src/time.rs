@@ -7,7 +7,7 @@ use jiff::Timestamp;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::error::SdkError;
+use crate::error::A2aLabError;
 
 /// An absolute UTC timestamp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -15,12 +15,12 @@ pub struct UtcTimestamp(Timestamp);
 
 impl UtcTimestamp {
     /// Parses an RFC 3339 timestamp whose offset is UTC.
-    pub fn parse(value: &str) -> Result<Self, SdkError> {
+    pub fn parse(value: &str) -> Result<Self, A2aLabError> {
         let timestamp = Timestamp::from_str(value)
-            .map_err(|_| SdkError::invalid("timestamp", "must be an RFC 3339 UTC timestamp"))?;
+            .map_err(|_| A2aLabError::invalid("timestamp", "must be an RFC 3339 UTC timestamp"))?;
         let utc = value.ends_with('Z') || value.ends_with("+00:00") || value.ends_with("-00:00");
         if !utc {
-            return Err(SdkError::invalid("timestamp", "must use a UTC offset"));
+            return Err(A2aLabError::invalid("timestamp", "must use a UTC offset"));
         }
         Ok(Self(timestamp))
     }
@@ -73,16 +73,16 @@ pub struct TimeRange {
 
 impl TimeRange {
     /// Creates a range when `start` is strictly before `end`.
-    pub fn new(start: UtcTimestamp, end: UtcTimestamp) -> Result<Self, SdkError> {
+    pub fn new(start: UtcTimestamp, end: UtcTimestamp) -> Result<Self, A2aLabError> {
         let range = Self { start, end };
         range.check()?;
         Ok(range)
     }
 
     /// Rejects an empty or reversed range.
-    pub fn check(self) -> Result<(), SdkError> {
+    pub fn check(self) -> Result<(), A2aLabError> {
         if self.start >= self.end {
-            return Err(SdkError::invalid("range", "start must be before end"));
+            return Err(A2aLabError::invalid("range", "start must be before end"));
         }
         Ok(())
     }

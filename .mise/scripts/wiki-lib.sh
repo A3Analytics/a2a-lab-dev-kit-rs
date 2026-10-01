@@ -8,7 +8,7 @@ fi
 
 : "${root:?repo root is not set}"
 
-WIKI_REPO="A3Analytics/a2a-lab-sdk-rs"
+WIKI_REPO="A3Analytics/a2a-lab-dev-kit-rs"
 WIKI_GIT_URL="https://github.com/${WIKI_REPO}.wiki.git"
 WIKI_PAGE_BASE="https://github.com/${WIKI_REPO}/wiki"
 WIKI_BLOB_BASE="https://github.com/${WIKI_REPO}/blob/main"
