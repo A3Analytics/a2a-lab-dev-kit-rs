@@ -10,7 +10,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this SDK
 
-`a2a-lab-sdk` is a Rust library for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `TaskProvider`, and stores an A2A task snapshot. A2A and MCP both call that service.
+`a2a-lab-sdk` is a Rust library for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `TaskProvider`, and stores an A2A task snapshot. MCP tools call that service. The default A2A agent calls those MCP tools through `McpLab`.
 
 An agent call enters through A2A or MCP. `LabService` fans out to the three provider traits. Each trait is backed by one implementation chosen when the service is built.
 
@@ -18,8 +18,9 @@ An agent call enters through A2A or MCP. `LabService` fans out to the three prov
 flowchart TD
   agent["Agent"] --> a2a["A2aServer"]
   agent --> mcp["McpServer"]
-  a2a --> lab["LabService"]
-  mcp --> lab
+  a2a --> mcpLab["McpLab"]
+  mcpLab --> mcp
+  mcp --> lab["LabService"]
   lab --> logs["LogProvider"]
   lab --> metrics["MetricProvider"]
   lab --> tasks["TaskProvider"]
@@ -62,7 +63,7 @@ In-memory providers are `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `Memor
 
 ## Entry points
 
-`LabService::new` takes the three providers. `LabService::share` returns `Arc<dyn LabApi>` for `A2aServer` and `McpServer`. `version` returns the package version.
+`LabService::new` takes the three providers. `LabService::share` returns `Arc<dyn LabApi>` for `McpServer`. `McpLab::connect_default` returns `Arc<dyn LabApi>` for `A2aServer`. `version` returns the package version.
 
 Protocol and equipment pages:
 

@@ -10,50 +10,54 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this SDK
 
-A2A is one of the two agent-facing protocols. `A2aServer` and `A2aClient` speak HTTP+JSON to `LabApi`. `LabService` runs the same seven operations it exposes over MCP.
+A2A is one of the two agent-facing protocols. `A2aServer` and `A2aClient` speak A2A 1.0 HTTP+JSON through the official `a2a-lf`, `a2a-server-lf`, and `a2a-client-lf` crates. The default agent runs lab commands by calling the MCP tools on `http://127.0.0.1:31001/mcp` (`McpLab`). `A2aServer::new` still accepts any `LabApi`, including `LabService` for tests.
 
-A message data part is a `LabCommand`. A started task keeps the run id as the task id. The other six commands finish as `task-n`. Subscribe emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`.
+The seven lab operations are an A2A data-part profile. A message data part with media type `application/vnd.a2a-lab.v1+json` (`LAB_MEDIA_TYPE`) is a `LabCommand`. The matching artifact data part is a `LabResult`. Protocol task ids are A2A UUIDs. A started lab run keeps its own `run-*` id inside the `start_task` result. `GET /tasks/{id}` is the protocol task, not `list_tasks` / `get_task_status`.
 
 ```mermaid
 flowchart TD
-  card["GET agent-card.json"] --> send["POST message send"]
+  card["GET agent-card.json"] --> send["POST message send or stream"]
   send --> command["LabCommand data part"]
-  command --> exec["LabService.execute"]
+  command --> exec["LabExecutor"]
   exec --> kind["LabCommand"]
-  kind -->|start_task| runTask["Task id is the run id"]
-  kind -->|other six| doneTask["Task id is task-n"]
-  runTask --> reload["GET tasks id reloads the run"]
-  reload --> mapped["TaskState is the A2A task state"]
-  runTask --> sse["GET tasks id subscribe"]
+  kind --> mcpLab["McpLab tool call"]
+  mcpLab --> tools["MCP list_log_sources query_logs list_metrics query_metric list_tasks start_task get_task_status"]
+  tools -->|start_task| runTask["Protocol task wraps the lab run"]
+  tools -->|other six| doneTask["Protocol task completes with a result artifact"]
+  runTask --> reload["GET tasks id is the protocol task"]
+  reload --> mapped["Lab TaskState maps onto A2A TaskState"]
+  runTask --> sse["POST tasks id subscribe"]
   doneTask --> sse
-  sse --> events["SSE task, statusUpdate, artifactUpdate"]
+  sse --> events["SSE StreamResponse frames"]
 ```
 
 ## What this crate implements
 
-The adapter lives in `src/a2a` and uses Axum and reqwest. `A2A_PROTOCOL_VERSION` is `"1.0"`. Cargo.toml does not depend on a separate A2A crate.
+The adapter lives in `src/a2a`. `A2A_PROTOCOL_VERSION` is `"1.0"`. Canonical routes are `POST /message:send`, `POST /message:stream`, `GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}:cancel`, `POST /tasks/{id}:subscribe`, push-config CRUD, `GET /extendedAgentCard`, and `GET /.well-known/agent-card.json`.
 
-`GET /.well-known/agent-card.json` returns a card named `a2a-lab`. The card sets `protocolVersion` and the `HTTP+JSON` interface to `1.0`, `streaming` to true, and `pushNotifications` to false. Its skills are `list-log-sources`, `query-logs`, `list-metrics`, `query-metric`, `list-tasks`, `start-task`, and `get-task-status`. Input and output modes are `application/vnd.a2a-lab.v1+json` (`LAB_MEDIA_TYPE`).
+Requests use `A2A-Version: 1.0` and `application/a2a+json`. Success bodies are ProtoJSON envelopes. Failures are `google.rpc.Status` with `ErrorInfo`. SSE frames are `StreamResponse` objects (`task`, `statusUpdate`, `artifactUpdate`, `message`).
 
-`POST /message:send` and `POST /message/send` accept a message whose data part deserializes as `LabCommand`. A present `mediaType` must equal `LAB_MEDIA_TYPE`. A success body is a task: `id`, `contextId`, `status.state`, and one artifact data part of type `LabResult`. Protocol state names are `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and `TASK_STATE_CANCELED`.
+`GET /.well-known/agent-card.json` returns a card named `a2a-lab`. Protocol version sits on the `HTTP+JSON` interface, not the card root. `streaming` is true. `pushNotifications` and `extendedAgentCard` are true only when those features are configured. Skills are `list-log-sources`, `query-logs`, `list-metrics`, `query-metric`, `list-tasks`, `start-task`, and `get-task-status`. Skill input and output modes are `LAB_MEDIA_TYPE`.
 
-A started task stores the run id as the A2A task id. `GET /tasks/{id}` reloads that task from `TaskProvider` and uses `TaskState`. Other commands allocate `task-{n}` and finish in `TASK_STATE_COMPLETED`. `start_task` waits until the run is terminal unless `wait` is false.
+A present data-part `mediaType` other than `LAB_MEDIA_TYPE` returns the standard content-type error. Text parts without a lab command complete with a help artifact. Query-log and query-metric pages become one artifact chunk per item. Later chunks set `append`; the last chunk sets `lastChunk`.
 
-`GET /tasks/{id}/subscribe` emits SSE events named `task`, `statusUpdate`, and `artifactUpdate`. Query-log and query-metric pages become one artifact chunk per item. Later chunks set `append`; the last chunk sets `lastChunk`. Other results are a single chunk. `statusUpdate` sets `final` when the task state is terminal.
+`start_task` waits until the run is terminal unless `wait` is false. The A2A executor always starts the run without blocking the protocol request, then publishes status while it polls. `A2aServer::with_public_url` sets the advertised interface URL. `with_push_notifications` / `with_loopback_push`, `with_extended_card`, and `with_security` opt into optional capabilities. Disabled push and extended-card routes return the standard unsupported-operation errors.
 
-Failures return `{ "code", "message" }`. `invalid` and `protocol` are HTTP 400, `not_found` is 404, `unavailable` is 503, and `transport` is 502.
+Providers that cannot cancel a run return `TASK_NOT_CANCELABLE` rather than changing state. `MemoryTasks` can cancel a non-terminal run.
 
 With no listener, `A2aServer::listen` binds `127.0.0.1:31000`.
+
+Core HTTP+JSON conformance is what the official TCK mandatory tests cover, including advertised streaming. Optional capabilities are advertised only when they are implemented and configured. The pinned TCK still asserts success `Content-Type: application/json` (`HTTP_JSON-SVC-001`); this crate follows A2A 1.0 and the official SDK (`application/a2a+json`). The TCK task deselects that content-type assertion and keeps the schema half of the requirement. Error responses keep AIP-193 `google.rpc.Status` bodies; `TASK_NOT_CANCELABLE` maps to HTTP 409 and `CONTENT_TYPE_NOT_SUPPORTED` maps to HTTP 415.
 
 ## Entry points
 
 Re-exported from the crate root:
 
-- `A2aServer::new` and `A2aServer::listen`
-- `A2aClient::new`, `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, `task_status`, `task`, and `subscribe`
-- `bind_local`, `A2A_PROTOCOL_VERSION`, `LAB_MEDIA_TYPE`, and `StreamEvent`
+- `A2aServer::new`, `listen`, `with_public_url`, `with_push_notifications`, `with_loopback_push`, `with_extended_card`, and `with_security`
+- `A2aClient::new`, the seven lab methods, `task`, `get_a2a_task`, `list_a2a_tasks`, `cancel`, `subscribe`, `send_stream`, push-config CRUD, `agent_card`, and `extended_agent_card`
+- `bind_local`, `A2A_PROTOCOL_VERSION`, `LAB_MEDIA_TYPE`, `AgentCard`, `StreamResponse`, and `Task`
 
-`A2aClient` posts to `message:send` with role `ROLE_USER`. `subscribe` reads the SSE body after the HTTP response completes.
+`A2aClient` sends to `POST /message:send` with role `ROLE_USER`. `subscribe` reads live `StreamResponse` frames until the stream ends.
 
 ## Related
 

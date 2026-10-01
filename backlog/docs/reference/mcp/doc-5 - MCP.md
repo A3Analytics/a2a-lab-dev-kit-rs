@@ -10,14 +10,16 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this SDK
 
-MCP is the other agent-facing protocol. `McpServer` registers the seven lab operations as tools on the same `LabApi` that `A2aServer` uses.
+MCP is the other agent-facing protocol. `McpServer` registers the seven lab operations as tools on `LabApi`. `A2aServer` in the default serve path calls those tools through `McpLab` at `http://127.0.0.1:31001/mcp`. Tests and the TCK can still inject `LabService` into `A2aServer::new`.
 
 Both transports hit the same seven tools. Each tool calls `LabService.execute` and returns the unwrapped page or `TaskRun`.
 
 ```mermaid
 flowchart LR
+  a2a["A2aServer"] --> mcpLab["McpLab"]
+  mcpLab --> http["serve_http at mcp"]
   client["MCP client"] --> stdio["serve_stdio JSON-RPC"]
-  client --> http["serve_http at mcp"]
+  client --> http
   stdio --> tools["Seven McpServer tools"]
   http --> tools
   tools --> lab["LabService.execute"]
@@ -36,7 +38,7 @@ The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, 
 
 ## Entry points
 
-`McpServer` is re-exported from the crate root. Construct it with `McpServer::new` and serve with `serve_stdio` or `serve_http`.
+`McpServer` is re-exported from the crate root. Construct it with `McpServer::new` and serve with `serve_stdio` or `serve_http`. `McpLab::connect` / `McpLab::connect_default` implement `LabApi` over Streamable HTTP so `A2aServer` can call the same tools. Error payloads include the `SdkError` `code` so A2A keeps `invalid` / `not_found` / `unavailable`.
 
 ## Related
 

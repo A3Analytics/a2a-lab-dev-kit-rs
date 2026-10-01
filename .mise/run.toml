@@ -52,6 +52,10 @@ run = "bash .mise/scripts/wiki-publish.sh"
 description = "Compare the Wiki stage with the remote Wiki without pushing"
 run = "bash .mise/scripts/wiki-drift.sh"
 
+[tck]
+description = "Run the official A2A HTTP+JSON TCK against a local memory lab"
+run = "bash .mise/scripts/a2a-tck.sh"
+
 [quality]
-description = "Run formatting, Wiki, complexity, duplication, compile, clippy, and test checks"
+description = "Run formatting, Wiki, complexity, duplication, compile, clippy, test, and TCK checks"
 run = "bash .mise/scripts/quality.sh"

@@ -92,6 +92,12 @@ pub trait LabApi: Send + Sync {
 
     /// Returns the current snapshot of a previously created task.
     fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, SdkError>>;
+
+    /// Cancels a started lab run. Snapshot commands are not cancelable.
+    fn cancel(
+        &self,
+        request: GetTaskStatusRequest,
+    ) -> LabFuture<'_, Result<TaskSnapshot, SdkError>>;
 }
 
 #[derive(Clone)]
@@ -156,6 +162,17 @@ where
             LabCommand::GetTaskStatus(request) => self.task_status(request).await?,
         };
         Ok(LabOutcome { task })
+    }
+
+    /// Cancels a started lab run.
+    pub async fn cancel(&self, request: GetTaskStatusRequest) -> Result<TaskSnapshot, SdkError> {
+        let run = self.tasks.cancel(request).await?;
+        Ok(TaskSnapshot {
+            id: run.id.as_str().to_owned(),
+            context_id: context_id(run.id.as_str()),
+            state: run.state,
+            result: LabResult::StartTask(run),
+        })
     }
 
     /// Returns a task, refreshing task runs from the provider.
@@ -272,6 +289,13 @@ where
     fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, SdkError>> {
         let task_id = task_id.to_owned();
         Box::pin(async move { LabService::task(self, &task_id).await })
+    }
+
+    fn cancel(
+        &self,
+        request: GetTaskStatusRequest,
+    ) -> LabFuture<'_, Result<TaskSnapshot, SdkError>> {
+        Box::pin(LabService::cancel(self, request))
     }
 }
 

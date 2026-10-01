@@ -1,52 +1,98 @@
 //! A2A HTTP+JSON server.
 
-use std::convert::Infallible;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
-use axum::Json;
+use a2a_server::{
+    DefaultRequestHandler, HttpPushSender, HttpPushSenderConfig, InMemoryPushConfigStore,
+    InMemoryTaskStore, RequestAuthorizer, ServiceParams, StaticAgentCard,
+};
+use a2a_types::{A2AError, AgentCapabilities, AgentCard, SecurityRequirement, SecurityScheme};
 use axum::Router;
-use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, State};
+use axum::extract::Request;
 use axum::http::StatusCode;
-use axum::response::sse::{Event, Sse};
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use futures_util::stream;
+use axum::http::header::{CONTENT_TYPE, HeaderValue};
+use axum::middleware::{Next, from_fn};
+use axum::response::Response;
 use tokio::net::TcpListener;
 
 use crate::error::SdkError;
-use crate::service::{LabApi, LabOutcome, TaskSnapshot};
+use crate::service::LabApi;
 
 use super::card::agent_card;
-use super::wire::{self, ApiErrorBody, SendRequest};
+use super::executor::LabExecutor;
 
-const POLL: Duration = Duration::from_millis(25);
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31000";
-
-struct App {
-    lab: Arc<dyn LabApi>,
-    public_url: String,
-}
 
 /// HTTP+JSON A2A server for a lab service.
 pub struct A2aServer {
     lab: Arc<dyn LabApi>,
+    public_url: Option<String>,
+    push_notifications: bool,
+    loopback_push: bool,
+    extended_card: Option<AgentCard>,
+    security_schemes: Option<HashMap<String, SecurityScheme>>,
+    security_requirements: Option<Vec<SecurityRequirement>>,
 }
 
 impl A2aServer {
     /// Creates a server that dispatches to `lab`.
-    ///
-    /// The server stores its own handle to the same service.
     #[must_use]
     pub fn new(lab: &Arc<dyn LabApi>) -> Self {
         Self {
             lab: Arc::clone(lab),
+            public_url: None,
+            push_notifications: false,
+            loopback_push: false,
+            extended_card: None,
+            security_schemes: None,
+            security_requirements: None,
         }
     }
 
-    /// Serves the Agent Card, message send, task lookup, and task subscription routes.
+    /// Overrides the Agent Card interface URL.
+    #[must_use]
+    pub fn with_public_url(mut self, url: impl Into<String>) -> Self {
+        self.public_url = Some(url.into());
+        self
+    }
+
+    /// Advertises and serves push notification config routes.
+    #[must_use]
+    pub fn with_push_notifications(mut self) -> Self {
+        self.push_notifications = true;
+        self
+    }
+
+    /// Allows push webhooks on loopback addresses. For tests.
+    #[must_use]
+    pub fn with_loopback_push(mut self) -> Self {
+        self.push_notifications = true;
+        self.loopback_push = true;
+        self
+    }
+
+    /// Serves `card` at `GET /extendedAgentCard`.
+    #[must_use]
+    pub fn with_extended_card(mut self, card: AgentCard) -> Self {
+        self.extended_card = Some(card);
+        self
+    }
+
+    /// Declares Agent Card security schemes and requirements.
+    #[must_use]
+    pub fn with_security(
+        mut self,
+        schemes: HashMap<String, SecurityScheme>,
+        requirements: Vec<SecurityRequirement>,
+    ) -> Self {
+        self.security_schemes = Some(schemes);
+        self.security_requirements = Some(requirements);
+        self
+    }
+
+    /// Serves the Agent Card and the A2A 1.0 HTTP+JSON routes.
     ///
     /// `listener` defaults to `127.0.0.1:31000` when it is `None`.
     pub async fn listen(self, listener: impl Into<Option<TcpListener>>) -> Result<(), SdkError> {
@@ -59,11 +105,11 @@ impl A2aServer {
         let address = listener
             .local_addr()
             .map_err(|error| SdkError::transport(error.to_string()))?;
-        let app = router(App {
-            lab: self.lab,
-            public_url: format!("http://{address}"),
-        });
-        axum::serve(listener, app)
+        let public_url = self
+            .public_url
+            .clone()
+            .unwrap_or_else(|| format!("http://{address}"));
+        axum::serve(listener, router(&self, &public_url))
             .await
             .map_err(|error| SdkError::transport(error.to_string()))
     }
@@ -80,133 +126,146 @@ pub async fn bind_local() -> Result<(TcpListener, SocketAddr), SdkError> {
     Ok((listener, address))
 }
 
-fn router(app: App) -> Router {
-    let state = Arc::new(app);
+fn router(server: &A2aServer, public_url: &str) -> Router {
+    let extended = server.extended_card.is_some();
+    let card = agent_card(
+        public_url,
+        server.push_notifications,
+        extended,
+        server.security_schemes.clone(),
+        server.security_requirements.clone(),
+    );
+    let capabilities = AgentCapabilities {
+        streaming: Some(true),
+        push_notifications: Some(server.push_notifications),
+        extensions: None,
+        extended_agent_card: Some(extended),
+    };
+    let mut handler = DefaultRequestHandler::new(
+        LabExecutor::new(Arc::clone(&server.lab)),
+        InMemoryTaskStore::new(),
+    )
+    .with_authorizer(VersionAuthorizer);
+    if server.push_notifications {
+        handler = if server.loopback_push {
+            handler.with_push_notifications(
+                InMemoryPushConfigStore::new(),
+                HttpPushSender::new(Some(HttpPushSenderConfig {
+                    validate_urls: false,
+                    ..HttpPushSenderConfig::default()
+                })),
+            )
+        } else {
+            handler.with_push_config_store(InMemoryPushConfigStore::new())
+        };
+    }
+    if let Some(extended_card) = server.extended_card.clone() {
+        handler = handler.with_extended_agent_card(extended_card);
+    }
+    handler = handler.with_capabilities(capabilities);
     Router::new()
-        .route("/.well-known/agent-card.json", get(card))
-        .route("/message:send", post(send))
-        .route("/message/send", post(send))
-        .route("/tasks/{id}", get(task))
-        .route("/tasks/{id}/subscribe", get(subscribe))
-        .with_state(state)
+        .merge(a2a_server::agent_card::agent_card_router(Arc::new(
+            StaticAgentCard::new(card),
+        )))
+        .merge(a2a_server::rest::rest_router(Arc::new(handler)))
+        .layer(from_fn(normalize_a2a_json))
 }
 
-async fn card(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
-    Json(agent_card(&app.public_url))
-}
+struct VersionAuthorizer;
 
-async fn send(
-    State(app): State<Arc<App>>,
-    body: Result<Json<SendRequest>, JsonRejection>,
-) -> Response {
-    let request = match body {
-        Ok(Json(request)) => request,
-        Err(error) => return error_response(&SdkError::protocol(error.to_string())),
-    };
-    let command = match wire::command_from_request(request) {
-        Ok(command) => command,
-        Err(error) => return error_response(&error),
-    };
-    match app.lab.execute(command).await {
-        Ok(outcome) => task_response(&outcome),
-        Err(error) => error_response(&error),
-    }
-}
-
-async fn task(State(app): State<Arc<App>>, Path(id): Path<String>) -> Response {
-    if let Some(task_id) = id.strip_suffix(":subscribe") {
-        return subscribe(State(app), Path(task_id.to_owned())).await;
-    }
-    match app.lab.task(&id).await {
-        Ok(snapshot) => task_response(&LabOutcome { task: snapshot }),
-        Err(error) => error_response(&error),
-    }
-}
-
-async fn subscribe(State(app): State<Arc<App>>, Path(id): Path<String>) -> Response {
-    let snapshot = match app.lab.task(&id).await {
-        Ok(snapshot) => snapshot,
-        Err(error) => return error_response(&error),
-    };
-    let lab = Arc::clone(&app.lab);
-    let stream = stream::unfold(Loop::Start(snapshot), move |state| {
-        let lab = Arc::clone(&lab);
-        async move { next_event(lab, state).await }
-    });
-    Sse::new(stream).into_response()
-}
-
-enum Loop {
-    Start(TaskSnapshot),
-    Status(TaskSnapshot),
-    Artifacts(TaskSnapshot, usize),
-    Poll(TaskSnapshot),
-}
-
-async fn next_event(
-    lab: Arc<dyn LabApi>,
-    state: Loop,
-) -> Option<(Result<Event, Infallible>, Loop)> {
-    // Axum's SSE stream expects each item to be a result. Serialization here cannot fail.
-    match state {
-        Loop::Start(snapshot) => Some((
-            Ok(sse("task", &wire::task_response(&snapshot).ok()?)),
-            Loop::Status(snapshot),
-        )),
-        Loop::Status(snapshot) => Some((
-            Ok(sse("statusUpdate", &wire::status_event(&snapshot))),
-            Loop::Artifacts(snapshot, 0),
-        )),
-        Loop::Artifacts(snapshot, index) => {
-            let events = wire::artifact_events(&snapshot).ok()?;
-            if index >= events.len() {
-                return if snapshot.state.is_terminal() {
-                    None
-                } else {
-                    Some((
-                        Ok(sse("statusUpdate", &wire::status_event(&snapshot))),
-                        Loop::Poll(snapshot),
-                    ))
-                };
+impl RequestAuthorizer for VersionAuthorizer {
+    fn authorize(&self, params: &ServiceParams, _task_id: Option<&str>) -> Result<(), A2AError> {
+        let requested = params
+            .get("a2a-version")
+            .and_then(|values| values.first())
+            .map(String::as_str);
+        match requested {
+            None => Ok(()),
+            Some(version)
+                if version
+                    .trim()
+                    .split('.')
+                    .next()
+                    .and_then(|part| part.parse::<u32>().ok())
+                    == Some(1) =>
+            {
+                Ok(())
             }
-            let event = Ok(sse("artifactUpdate", &events[index]));
-            Some((event, Loop::Artifacts(snapshot, index + 1)))
-        }
-        Loop::Poll(previous) => {
-            tokio::time::sleep(POLL).await;
-            let snapshot = lab.task(&previous.id).await.ok()?;
-            if snapshot.state == previous.state {
-                return Some((
-                    Ok(sse("statusUpdate", &wire::status_event(&snapshot))),
-                    Loop::Poll(snapshot),
-                ));
-            }
-            Some((
-                Ok(sse("statusUpdate", &wire::status_event(&snapshot))),
-                Loop::Artifacts(snapshot, 0),
-            ))
+            Some(version) => Err(A2AError::version_not_supported(version)),
         }
     }
 }
 
-fn sse(event: &str, value: &impl serde::Serialize) -> Event {
-    let data = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_owned());
-    Event::default().event(event).data(data)
-}
-
-fn task_response(outcome: &LabOutcome) -> Response {
-    match wire::task_response(&outcome.task) {
-        Ok(body) => Json(body).into_response(),
-        Err(error) => error_response(&error),
+async fn normalize_a2a_json(mut request: Request, next: Next) -> Response {
+    if let Some(value) = request.headers().get(CONTENT_TYPE)
+        && value
+            .to_str()
+            .is_ok_and(|content_type| content_type.starts_with("application/a2a+json"))
+    {
+        request
+            .headers_mut()
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     }
+    if request.headers().get("a2a-version").is_none()
+        && let Some(version) = query_version(request.uri().query())
+        && let Ok(header) = HeaderValue::from_str(&version)
+    {
+        request.headers_mut().insert("a2a-version", header);
+    }
+    remap_rest_error(next.run(request).await).await
 }
 
-fn error_response(error: &SdkError) -> Response {
-    let status = match error {
-        SdkError::Invalid { .. } | SdkError::Protocol { .. } => StatusCode::BAD_REQUEST,
-        SdkError::NotFound { .. } => StatusCode::NOT_FOUND,
-        SdkError::Unavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
-        SdkError::Transport { .. } => StatusCode::BAD_GATEWAY,
+async fn remap_rest_error(response: Response) -> Response {
+    if response.status().is_success() {
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, 1_048_576).await else {
+        return Response::from_parts(parts, axum::body::Body::empty());
     };
-    (status, Json(ApiErrorBody::new(error))).into_response()
+    let mut bytes = bytes.to_vec();
+    if let Some((status, patched)) = rest_error_patch(&bytes) {
+        parts.status = status;
+        bytes = patched;
+    }
+    if parts
+        .headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|content_type| content_type.starts_with("application/problem+json"))
+    {
+        parts
+            .headers
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    }
+    Response::from_parts(parts, axum::body::Body::from(bytes))
+}
+
+fn rest_error_patch(bytes: &[u8]) -> Option<(StatusCode, Vec<u8>)> {
+    let mut body: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let reason = body
+        .pointer("/error/details")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|details| details.last())
+        .and_then(|detail| detail.get("reason"))
+        .and_then(serde_json::Value::as_str)?;
+    let status = match reason {
+        "TASK_NOT_CANCELABLE" => StatusCode::CONFLICT,
+        "CONTENT_TYPE_NOT_SUPPORTED" => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        _ => return None,
+    };
+    if let Some(code) = body.pointer_mut("/error/code") {
+        *code = serde_json::json!(status.as_u16());
+    }
+    Some((status, serde_json::to_vec(&body).ok()?))
+}
+
+fn query_version(query: Option<&str>) -> Option<String> {
+    query.and_then(|query| {
+        query.split('&').find_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            key.eq_ignore_ascii_case("A2A-Version")
+                .then(|| value.replace("%2E", "."))
+        })
+    })
 }

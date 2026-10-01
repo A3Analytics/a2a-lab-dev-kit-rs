@@ -226,12 +226,13 @@ impl ServerHandler for McpServer {
 
 fn mcp_error(error: &SdkError) -> ErrorData {
     let message = error.to_string();
+    let data = Some(serde_json::json!({ "code": error.code() }));
     match error {
         SdkError::Invalid { .. } | SdkError::Protocol { .. } | SdkError::NotFound { .. } => {
-            ErrorData::invalid_params(message, None)
+            ErrorData::invalid_params(message, data)
         }
         SdkError::Unavailable { .. } | SdkError::Transport { .. } => {
-            ErrorData::internal_error(message, None)
+            ErrorData::internal_error(message, data)
         }
     }
 }

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use a2a_lab_sdk::{
-    LabService, LogSource, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, SourceId,
-    TaskDefinition, TaskId, bind_local,
+    A2aClient, A2aServer, JsonObject, LabService, ListLogSourcesRequest, LogSource, McpLab,
+    McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
+    StartTaskRequest, TaskDefinition, TaskId, bind_local,
 };
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation, ProtocolVersion,
@@ -199,4 +200,36 @@ async fn stdio_transport_lists_and_calls_tools() {
         .await
         .expect("stdio client");
     assert_lab_tools(&client).await;
+}
+
+#[tokio::test]
+async fn a2a_calls_mcp_http_tools() {
+    let lab = service().await;
+    let (mcp_listener, mcp_address) = bind_local().await.unwrap();
+    let server = McpServer::new(&lab);
+    tokio::spawn(async move {
+        server.serve_http(mcp_listener).await.unwrap();
+    });
+    let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp"))
+        .await
+        .unwrap();
+    let (a2a_listener, a2a_address) = bind_local().await.unwrap();
+    tokio::spawn(async move {
+        A2aServer::new(&mcp_lab).listen(a2a_listener).await.unwrap();
+    });
+    let client = A2aClient::new(&format!("http://{a2a_address}")).unwrap();
+    let page = client
+        .list_log_sources(ListLogSourcesRequest {
+            page: PageRequest::new(None, 10).unwrap(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(page.items()[0].id.as_str(), "app");
+    let missing = client
+        .start_task(
+            StartTaskRequest::new(TaskId::new("missing").unwrap(), JsonObject::empty()).immediate(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.code(), "not_found");
 }

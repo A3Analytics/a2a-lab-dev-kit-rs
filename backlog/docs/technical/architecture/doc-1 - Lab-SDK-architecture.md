@@ -28,6 +28,6 @@ Identifiers are non-empty ASCII tokens. Timestamps are UTC. `TimeRange` is half-
 
 ## Adapters
 
-`A2aServer` and `A2aClient` speak A2A HTTP+JSON. `McpServer` registers the same operations as MCP tools and can serve stdio or Streamable HTTP. Both adapters take `Arc<dyn LabApi>`, so one provider implementation can be exposed on both protocols.
+`A2aServer` and `A2aClient` speak A2A HTTP+JSON. `McpServer` registers the same operations as MCP tools and can serve stdio or Streamable HTTP. The default A2A agent uses `McpLab` to call that MCP server. Tests can still pass `LabService` straight into `A2aServer::new`.
 
 See [A2A and MCP protocols](<../protocol/doc-2 - A2A-and-MCP-protocols.md>) for the wire contracts and [Industrial equipment connectors](<../industrial/doc-3 - Industrial-equipment-connectors.md>) for the AAS, OPC UA, and SiLA 2 connectors.

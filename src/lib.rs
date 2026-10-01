@@ -28,7 +28,8 @@ pub mod tasks;
 pub mod time;
 
 pub use a2a::{
-    A2A_PROTOCOL_VERSION, A2aClient, A2aServer, LAB_MEDIA_TYPE, StreamEvent, bind_local,
+    A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, HttpAuthSecurityScheme, LAB_MEDIA_TYPE,
+    SecurityScheme, StreamResponse, Task, TaskPushNotificationConfig, bind_local,
 };
 pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
@@ -43,7 +44,7 @@ pub use json_object::JsonObject;
 pub use logs::{
     ListLogSourcesRequest, LogLevel, LogProvider, LogRecord, LogSource, QueryLogsRequest,
 };
-pub use mcp::McpServer;
+pub use mcp::{DEFAULT_MCP_URL, McpLab, McpServer};
 pub use memory::{MemoryCatalog, MemoryLogs, MemoryMetrics, MemoryTasks};
 pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,

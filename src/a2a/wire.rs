@@ -1,10 +1,12 @@
-//! HTTP+JSON bodies for the lab profile of A2A 1.0.
+//! Lab DataPart codec over official A2A 1.0 types.
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use a2a_types::{
+    A2AError, Artifact, Message, Part, PartContent, StreamResponse, Task, TaskArtifactUpdateEvent,
+    TaskStatus, TaskStatusUpdateEvent, error_code,
+};
 
 use crate::error::SdkError;
+use crate::page::Page;
 use crate::service::{LabCommand, LabResult, TaskSnapshot};
 use crate::tasks::TaskState;
 
@@ -12,174 +14,78 @@ use crate::tasks::TaskState;
 pub const LAB_MEDIA_TYPE: &str = "application/vnd.a2a-lab.v1+json";
 
 /// A2A protocol version advertised by this SDK.
-pub const A2A_PROTOCOL_VERSION: &str = "1.0";
+pub const A2A_PROTOCOL_VERSION: &str = a2a_types::VERSION;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SendRequest {
-    message: IncomingMessage,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct IncomingMessage {
-    parts: Vec<IncomingPart>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct IncomingPart {
-    data: Option<Value>,
-    media_type: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SendResponse {
-    id: String,
-    context_id: String,
-    status: StatusBody,
-    artifacts: Vec<ArtifactBody>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StatusBody {
-    state: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ArtifactBody {
-    artifact_id: String,
-    parts: Vec<OutgoingPart>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OutgoingPart {
-    data: Value,
-    media_type: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StatusEvent {
-    task_id: String,
-    status: StatusBody,
-    #[serde(rename = "final")]
-    is_final: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ArtifactEvent {
-    task_id: String,
-    artifact: ArtifactBody,
-    append: bool,
-    last_chunk: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamEvent {
-    /// SSE event name.
-    pub event: String,
-    /// Whether this artifact chunk continues a previous chunk.
-    pub append: bool,
-    /// Whether this is the last artifact chunk.
-    pub last_chunk: bool,
-    /// Task state when the event is a status update.
-    pub state: Option<TaskState>,
-    /// Lab result carried by an artifact chunk.
-    pub result: Option<LabResult>,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct ApiErrorBody {
-    code: &'static str,
-    message: String,
-}
-
-impl ApiErrorBody {
-    pub(crate) fn new(error: &SdkError) -> Self {
-        Self {
-            code: error.code(),
-            message: error.to_string(),
+pub(crate) fn command_from_message(message: &Message) -> Result<Option<LabCommand>, A2AError> {
+    for part in &message.parts {
+        let PartContent::Data(data) = &part.content else {
+            continue;
+        };
+        if let Some(media_type) = part.media_type.as_deref()
+            && !media_type.is_empty()
+            && media_type != LAB_MEDIA_TYPE
+        {
+            return Err(A2AError::content_type_not_supported());
         }
+        return serde_json::from_value(normalize_json(data.clone()))
+            .map(Some)
+            .map_err(|error| A2AError::invalid_params(error.to_string()));
+    }
+    Ok(None)
+}
+
+fn normalize_json(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Number(number) => whole_number(number),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(normalize_json).collect())
+        }
+        serde_json::Value::Object(object) => serde_json::Value::Object(
+            object
+                .into_iter()
+                .map(|(key, value)| (key, normalize_json(value)))
+                .collect(),
+        ),
+        other => other,
     }
 }
 
-pub(crate) fn command_from_request(request: SendRequest) -> Result<LabCommand, SdkError> {
-    let part = request
-        .message
-        .parts
-        .into_iter()
-        .find(|part| part.data.is_some())
-        .ok_or_else(|| SdkError::protocol("message requires a data part"))?;
-    if let Some(media_type) = part.media_type.as_deref()
-        && media_type != LAB_MEDIA_TYPE
-    {
-        return Err(SdkError::protocol(format!(
-            "unsupported media type `{media_type}`"
-        )));
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
+fn whole_number(number: serde_json::Number) -> serde_json::Value {
+    if number.as_u64().is_some() || number.as_i64().is_some() {
+        return serde_json::Value::Number(number);
     }
-    let data = part
-        .data
-        .ok_or_else(|| SdkError::protocol("message requires a data part"))?;
-    serde_json::from_value(data).map_err(|error| SdkError::protocol(error.to_string()))
+    let Some(float) = number.as_f64() else {
+        return serde_json::Value::Number(number);
+    };
+    if !(0.0..=f64::from(u32::MAX)).contains(&float) || float.fract() != 0.0 {
+        return serde_json::Value::Number(number);
+    }
+    serde_json::Value::Number(serde_json::Number::from(float.round() as u32))
 }
 
-pub(crate) fn task_response(snapshot: &TaskSnapshot) -> Result<SendResponse, SdkError> {
-    Ok(SendResponse {
-        id: snapshot.id.clone(),
-        context_id: snapshot.context_id.clone(),
-        status: StatusBody {
-            state: snapshot.state.as_protocol().to_owned(),
-        },
-        artifacts: vec![artifact(&snapshot.id, 0, &snapshot.result)?],
+pub(crate) fn lab_part(result: &LabResult) -> Result<Part, A2AError> {
+    let data =
+        serde_json::to_value(result).map_err(|error| A2AError::internal(error.to_string()))?;
+    Ok(Part::data(data).with_media_type(LAB_MEDIA_TYPE))
+}
+
+pub(crate) fn artifact(result: &LabResult, artifact_id: String) -> Result<Artifact, A2AError> {
+    Ok(Artifact {
+        artifact_id,
+        name: None,
+        description: None,
+        parts: vec![lab_part(result)?],
+        metadata: None,
+        extensions: None,
     })
 }
 
-pub(crate) fn status_event(snapshot: &TaskSnapshot) -> StatusEvent {
-    StatusEvent {
-        task_id: snapshot.id.clone(),
-        status: StatusBody {
-            state: snapshot.state.as_protocol().to_owned(),
-        },
-        is_final: snapshot.state.is_terminal(),
-    }
-}
-
-pub(crate) fn artifact_events(snapshot: &TaskSnapshot) -> Result<Vec<ArtifactEvent>, SdkError> {
-    let chunks = chunks(&snapshot.result);
-    let last = chunks.len().saturating_sub(1);
-    chunks
-        .iter()
-        .enumerate()
-        .map(|(index, result)| {
-            Ok(ArtifactEvent {
-                task_id: snapshot.id.clone(),
-                artifact: artifact(&snapshot.id, index, result)?,
-                append: index > 0,
-                last_chunk: index == last,
-            })
-        })
-        .collect()
-}
-
-fn artifact(task_id: &str, index: usize, result: &LabResult) -> Result<ArtifactBody, SdkError> {
-    Ok(ArtifactBody {
-        artifact_id: format!("artifact-{task_id}-{index}"),
-        parts: vec![OutgoingPart {
-            data: serde_json::to_value(result)
-                .map_err(|error| SdkError::protocol(error.to_string()))?,
-            media_type: LAB_MEDIA_TYPE.to_owned(),
-        }],
-    })
-}
-
-fn chunks(result: &LabResult) -> Vec<LabResult> {
+pub(crate) fn chunks(result: &LabResult) -> Vec<LabResult> {
     match result {
         LabResult::QueryLogs(page) if !page.items().is_empty() => page
             .items()
@@ -211,149 +117,148 @@ fn chunks(result: &LabResult) -> Vec<LabResult> {
     }
 }
 
-fn chunk_page<T>(
-    next_cursor: Option<&str>,
-    len: usize,
-    index: usize,
-    item: T,
-) -> crate::page::Page<T> {
+fn chunk_page<T>(next_cursor: Option<&str>, len: usize, index: usize, item: T) -> Page<T> {
     let next = (index + 1 == len)
         .then(|| next_cursor.map(ToOwned::to_owned))
         .flatten();
-    crate::page::Page::new(vec![item], next)
+    Page::new(vec![item], next)
 }
 
-pub(crate) fn encode_command(command: &LabCommand) -> Result<Value, SdkError> {
-    serde_json::to_value(command).map_err(|error| SdkError::protocol(error.to_string()))
+pub(crate) fn protocol_state(state: TaskState) -> a2a_types::TaskState {
+    match state {
+        TaskState::Submitted => a2a_types::TaskState::Submitted,
+        TaskState::Working => a2a_types::TaskState::Working,
+        TaskState::Completed => a2a_types::TaskState::Completed,
+        TaskState::Failed => a2a_types::TaskState::Failed,
+        TaskState::Canceled => a2a_types::TaskState::Canceled,
+    }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ClientMessage {
-    message_id: String,
-    role: &'static str,
-    parts: Vec<OutgoingPart>,
+pub(crate) fn lab_state(state: &a2a_types::TaskState) -> TaskState {
+    match state {
+        a2a_types::TaskState::Working
+        | a2a_types::TaskState::InputRequired
+        | a2a_types::TaskState::AuthRequired => TaskState::Working,
+        a2a_types::TaskState::Completed => TaskState::Completed,
+        a2a_types::TaskState::Failed | a2a_types::TaskState::Rejected => TaskState::Failed,
+        a2a_types::TaskState::Canceled => TaskState::Canceled,
+        a2a_types::TaskState::Submitted | a2a_types::TaskState::Unspecified => TaskState::Submitted,
+    }
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct ClientSend {
-    message: ClientMessage,
+pub(crate) fn status(state: TaskState) -> TaskStatus {
+    TaskStatus {
+        state: protocol_state(state),
+        message: None,
+        timestamp: None,
+    }
 }
 
-pub(crate) fn client_send(message_id: &str, command: &LabCommand) -> Result<ClientSend, SdkError> {
-    Ok(ClientSend {
-        message: ClientMessage {
-            message_id: message_id.to_owned(),
-            role: "ROLE_USER",
-            parts: vec![OutgoingPart {
-                data: encode_command(command)?,
-                media_type: LAB_MEDIA_TYPE.to_owned(),
-            }],
-        },
+pub(crate) fn status_update(task_id: &str, context_id: &str, state: TaskState) -> StreamResponse {
+    StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+        task_id: task_id.to_owned(),
+        context_id: context_id.to_owned(),
+        status: status(state),
+        metadata: None,
     })
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ClientTask {
-    id: String,
-    context_id: String,
-    status: StatusBody,
-    #[serde(default)]
-    artifacts: Vec<ArtifactBody>,
+pub(crate) fn artifact_update(
+    task_id: &str,
+    context_id: &str,
+    result: &LabResult,
+    artifact_id: String,
+    append: bool,
+    last_chunk: bool,
+) -> Result<StreamResponse, A2AError> {
+    Ok(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+        task_id: task_id.to_owned(),
+        context_id: context_id.to_owned(),
+        artifact: artifact(result, artifact_id)?,
+        append: Some(append),
+        last_chunk: Some(last_chunk),
+        metadata: None,
+    }))
 }
 
-impl ClientTask {
-    pub(crate) fn snapshot(&self) -> Result<TaskSnapshot, SdkError> {
-        let state = TaskState::from_protocol(&self.status.state)?;
-        let result = self
-            .artifacts
-            .first()
-            .and_then(|artifact| artifact.parts.first())
-            .map(|part| serde_json::from_value(part.data.clone()))
-            .transpose()
-            .map_err(|error| SdkError::protocol(error.to_string()))?
-            .ok_or_else(|| SdkError::protocol("task artifact is missing a result"))?;
-        Ok(TaskSnapshot {
-            id: self.id.clone(),
-            context_id: self.context_id.clone(),
-            state,
-            result,
+pub(crate) fn result_from_task(task: &Task) -> Result<LabResult, SdkError> {
+    let results: Vec<LabResult> = task
+        .artifacts
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .flat_map(|artifact| artifact.parts.iter())
+        .filter_map(|part| match &part.content {
+            PartContent::Data(data) => serde_json::from_value(normalize_json(data.clone())).ok(),
+            _ => None,
         })
-    }
+        .collect();
+    merge_results(results)
 }
 
-#[derive(Debug, Deserialize)]
-struct ErrorResponse {
-    code: String,
-    message: String,
-}
-
-pub(crate) fn parse_events(body: &str) -> Result<Vec<StreamEvent>, SdkError> {
-    let mut events = Vec::new();
-    for block in body.split("\n\n") {
-        let mut name = String::from("message");
-        let mut data = String::new();
-        for line in block.lines() {
-            if let Some(value) = line.strip_prefix("event:") {
-                value.trim().clone_into(&mut name);
-            } else if let Some(value) = line.strip_prefix("data:") {
-                if !data.is_empty() {
-                    data.push('\n');
+fn merge_results(results: Vec<LabResult>) -> Result<LabResult, SdkError> {
+    match results.as_slice() {
+        [] => Err(SdkError::protocol("task artifact is missing a lab result")),
+        [LabResult::QueryLogs(_), ..] => {
+            let mut items = Vec::new();
+            let mut next = None;
+            for result in results {
+                if let LabResult::QueryLogs(page) = result {
+                    next = page.next_cursor().map(ToOwned::to_owned);
+                    items.extend(page.items().iter().cloned());
                 }
-                data.push_str(value.trim());
             }
+            Ok(LabResult::QueryLogs(Page::new(items, next)))
         }
-        if !data.is_empty() {
-            events.push(stream_event(&name, &data)?);
+        [LabResult::QueryMetric(_), ..] => {
+            let mut items = Vec::new();
+            let mut next = None;
+            for result in results {
+                if let LabResult::QueryMetric(page) = result {
+                    next = page.next_cursor().map(ToOwned::to_owned);
+                    items.extend(page.items().iter().copied());
+                }
+            }
+            Ok(LabResult::QueryMetric(Page::new(items, next)))
         }
+        [first, ..] => Ok(first.clone()),
     }
-    Ok(events)
 }
 
-fn stream_event(name: &str, data: &str) -> Result<StreamEvent, SdkError> {
-    if name == "artifactUpdate" {
-        let event: ArtifactEvent =
-            serde_json::from_str(data).map_err(|error| SdkError::protocol(error.to_string()))?;
-        let result = event
-            .artifact
-            .parts
-            .first()
-            .map(|part| serde_json::from_value(part.data.clone()))
-            .transpose()
-            .map_err(|error| SdkError::protocol(error.to_string()))?
-            .ok_or_else(|| SdkError::protocol("artifact chunk is missing a result"))?;
-        return Ok(StreamEvent {
-            event: name.to_owned(),
-            append: event.append,
-            last_chunk: event.last_chunk,
-            state: None,
-            result: Some(result),
-        });
-    }
-    let state = if name == "statusUpdate" {
-        let value: serde_json::Value =
-            serde_json::from_str(data).map_err(|error| SdkError::protocol(error.to_string()))?;
-        let raw = value
-            .pointer("/status/state")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| SdkError::protocol("status event is missing a state"))?;
-        Some(TaskState::from_protocol(raw)?)
-    } else {
-        None
-    };
-    Ok(StreamEvent {
-        event: name.to_owned(),
-        append: false,
-        last_chunk: false,
-        state,
-        result: None,
+pub(crate) fn snapshot_from_task(task: &Task) -> Result<TaskSnapshot, SdkError> {
+    Ok(TaskSnapshot {
+        id: task.id.clone(),
+        context_id: task.context_id.clone(),
+        state: lab_state(&task.status.state),
+        result: result_from_task(task)?,
     })
 }
 
-pub(crate) fn error_from_body(body: &str) -> SdkError {
-    serde_json::from_str::<ErrorResponse>(body).map_or_else(
-        |_| SdkError::protocol(body),
-        |error| SdkError::from_code(&error.code, error.message),
-    )
+pub(crate) fn sdk_error(error: A2AError) -> SdkError {
+    match error.code {
+        error_code::TASK_NOT_FOUND => SdkError::not_found("task", error.message),
+        error_code::INVALID_PARAMS
+        | error_code::INVALID_REQUEST
+        | error_code::PARSE_ERROR
+        | error_code::CONTENT_TYPE_NOT_SUPPORTED => SdkError::invalid("request", error.message),
+        error_code::INTERNAL_ERROR => SdkError::unavailable(error.message),
+        _ => SdkError::protocol(error.message),
+    }
+}
+
+pub(crate) fn a2a_error(error: &SdkError) -> A2AError {
+    match error {
+        SdkError::Invalid { .. } => A2AError::invalid_params(error.to_string()),
+        SdkError::NotFound { id, .. } => A2AError::task_not_found(id),
+        SdkError::Unavailable { message } if message.contains("not cancelable") => {
+            A2AError::task_not_cancelable("task")
+        }
+        SdkError::Unavailable { message } | SdkError::Transport { message } => {
+            A2AError::internal(message.clone())
+        }
+        SdkError::Protocol { message } if message.contains("media type") => {
+            A2AError::content_type_not_supported()
+        }
+        SdkError::Protocol { message } => A2AError::invalid_request(message.clone()),
+    }
 }

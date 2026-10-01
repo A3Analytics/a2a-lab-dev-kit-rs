@@ -41,15 +41,16 @@ let queried = logs
     .await?;
 ```
 
-[`examples/a2a_and_mcp.rs`](examples/a2a_and_mcp.rs) shares one service between the two protocols:
+[`examples/a2a_and_mcp.rs`](examples/a2a_and_mcp.rs) serves MCP from `LabService` and points A2A at that MCP server through `McpLab`:
 
 ```rust
 let service = LabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
+let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp")).await?;
 ```
 
-`A2aServer::listen(None)` binds `127.0.0.1:31000`. `McpServer::serve_http(None)` binds `127.0.0.1:31001`. The example passes `TcpListener`s from `bind_local` (`127.0.0.1:0`) and runs both servers until each client call returns. `McpServer::serve_stdio` speaks MCP on standard input and output; keep diagnostics on stderr.
+`A2aServer::listen(None)` binds `127.0.0.1:31000`. `McpServer::serve_http(None)` binds `127.0.0.1:31001`. The default A2A agent calls `http://127.0.0.1:31001/mcp`. The example passes `TcpListener`s from `bind_local` (`127.0.0.1:0`) and runs both servers until each client call returns. `McpServer::serve_stdio` speaks MCP on standard input and output; keep diagnostics on stderr.
 
-A2A publishes `/.well-known/agent-card.json` and accepts `POST /message:send`. MCP Streamable HTTP is mounted at `/mcp`.
+A2A publishes `/.well-known/agent-card.json` and accepts `POST /message:send` (A2A 1.0 HTTP+JSON). MCP Streamable HTTP is mounted at `/mcp`. Optional A2A push notifications, extended Agent Card, and security schemes are off unless configured on `A2aServer`.
 
 ## Standards
 
@@ -89,6 +90,6 @@ mise run test
 mise run quality
 ```
 
-`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, and tests.
+`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, tests, and the official A2A HTTP+JSON TCK.
 
 Wiki pages are generated from public Backlog docs and published by the Wiki GitHub Action. Do not publish from a local checkout. GitHub's `GITHUB_TOKEN` cannot write Wikis, so add a `WIKI_TOKEN` repository secret with Wikis read/write. Create the first GitHub Wiki page once so `.wiki.git` exists, then re-run the Action.

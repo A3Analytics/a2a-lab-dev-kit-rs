@@ -43,6 +43,7 @@ case "$mode" in
     step check check_warnings
     step clippy clippy_warnings
     step nextest cargo nextest run --workspace --all-features
+    step tck bash .mise/scripts/a2a-tck.sh
     ;;
   kiss)
     kiss_check

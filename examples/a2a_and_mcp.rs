@@ -1,4 +1,4 @@
-//! One lab service on A2A HTTP+JSON and MCP Streamable HTTP.
+//! One lab service on MCP Streamable HTTP, with A2A calling that MCP server.
 //!
 //! Both listeners are ephemeral. The process makes one client call on each
 //! protocol, then stops the servers and exits.
@@ -7,7 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use a2a_lab_sdk::{
-    A2aClient, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource, McpServer,
+    A2aClient, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource, McpLab, McpServer,
     MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SdkError, SourceId, bind_local,
 };
 use rmcp::ServiceExt;
@@ -33,8 +33,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let (a2a_listener, a2a_address) = bind_local().await?;
     let (mcp_listener, mcp_address) = bind_local().await?;
-    let a2a = spawn_a2a(Arc::clone(&service), a2a_listener);
-    let mcp = spawn_mcp(service, mcp_listener);
+    let mcp = spawn_mcp(Arc::clone(&service), mcp_listener);
+    let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp")).await?;
+    let a2a = spawn_a2a(mcp_lab, a2a_listener);
 
     let client = A2aClient::new(&format!("http://{a2a_address}"))?;
     let sources = client

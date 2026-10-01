@@ -1,33 +1,52 @@
 //! Agent Card for the seven lab skills.
 
-use serde_json::{Value, json};
+use std::collections::HashMap;
+
+use a2a_types::{
+    AgentCapabilities, AgentCard, AgentInterface, AgentSkill, SecurityRequirement, SecurityScheme,
+    TRANSPORT_PROTOCOL_HTTP_JSON,
+};
 
 use super::wire::{A2A_PROTOCOL_VERSION, LAB_MEDIA_TYPE};
 
 /// Builds the well-known Agent Card for `public_url`.
 #[must_use]
-pub(crate) fn agent_card(public_url: &str) -> Value {
-    json!({
-        "name": "a2a-lab",
-        "description": "Lab logs, metrics, and tasks",
-        "version": env!("CARGO_PKG_VERSION"),
-        "protocolVersion": A2A_PROTOCOL_VERSION,
-        "supportedInterfaces": [{
-            "url": public_url,
-            "protocolBinding": "HTTP+JSON",
-            "protocolVersion": A2A_PROTOCOL_VERSION
+pub(crate) fn agent_card(
+    public_url: &str,
+    push_notifications: bool,
+    extended_agent_card: bool,
+    security_schemes: Option<HashMap<String, SecurityScheme>>,
+    security_requirements: Option<Vec<SecurityRequirement>>,
+) -> AgentCard {
+    AgentCard {
+        name: "a2a-lab".to_owned(),
+        description: "Lab logs, metrics, and tasks".to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        supported_interfaces: vec![AgentInterface {
+            url: public_url.to_owned(),
+            protocol_binding: TRANSPORT_PROTOCOL_HTTP_JSON.to_owned(),
+            protocol_version: A2A_PROTOCOL_VERSION.to_owned(),
+            tenant: None,
         }],
-        "capabilities": {
-            "streaming": true,
-            "pushNotifications": false
+        capabilities: AgentCapabilities {
+            streaming: Some(true),
+            push_notifications: Some(push_notifications),
+            extensions: None,
+            extended_agent_card: Some(extended_agent_card),
         },
-        "defaultInputModes": [LAB_MEDIA_TYPE],
-        "defaultOutputModes": [LAB_MEDIA_TYPE],
-        "skills": skills()
-    })
+        default_input_modes: vec!["text/plain".to_owned(), LAB_MEDIA_TYPE.to_owned()],
+        default_output_modes: vec!["text/plain".to_owned(), LAB_MEDIA_TYPE.to_owned()],
+        skills: skills(),
+        provider: None,
+        documentation_url: None,
+        icon_url: None,
+        security_schemes,
+        security_requirements,
+        signatures: None,
+    }
 }
 
-fn skills() -> Vec<Value> {
+fn skills() -> Vec<AgentSkill> {
     [
         (
             "list-log-sources",
@@ -62,19 +81,19 @@ fn skills() -> Vec<Value> {
         (
             "get-task-status",
             "Get task status",
-            "Read the status of an A2A task",
+            "Read the status of a started lab run",
         ),
     ]
     .into_iter()
-    .map(|(id, name, description)| {
-        json!({
-            "id": id,
-            "name": name,
-            "description": description,
-            "tags": ["lab"],
-            "inputModes": [LAB_MEDIA_TYPE],
-            "outputModes": [LAB_MEDIA_TYPE]
-        })
+    .map(|(id, name, description)| AgentSkill {
+        id: id.to_owned(),
+        name: name.to_owned(),
+        description: description.to_owned(),
+        tags: vec!["lab".to_owned()],
+        examples: None,
+        input_modes: Some(vec![LAB_MEDIA_TYPE.to_owned()]),
+        output_modes: Some(vec![LAB_MEDIA_TYPE.to_owned()]),
+        security_requirements: None,
     })
     .collect()
 }

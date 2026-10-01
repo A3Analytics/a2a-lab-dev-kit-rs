@@ -118,4 +118,22 @@ impl TaskProvider for MemoryTasks {
             .cloned()
             .ok_or_else(|| SdkError::not_found("task run", request.id.to_string()))
     }
+
+    async fn cancel(&self, request: GetTaskStatusRequest) -> Result<TaskRun, SdkError> {
+        let mut state = self.inner.lock().await;
+        if let Some(message) = &state.unavailable {
+            return Err(SdkError::unavailable(message.clone()));
+        }
+        let run = state
+            .runs
+            .iter_mut()
+            .find(|run| run.id == request.id)
+            .ok_or_else(|| SdkError::not_found("task run", request.id.to_string()))?;
+        if run.state.is_terminal() {
+            return Err(SdkError::unavailable("task is not cancelable"));
+        }
+        run.state = TaskState::Canceled;
+        run.message = Some("canceled".to_owned());
+        Ok(run.clone())
+    }
 }

@@ -31,6 +31,14 @@ pub trait TaskProvider: Send + Sync {
         &self,
         request: GetTaskStatusRequest,
     ) -> impl Future<Output = Result<TaskRun, SdkError>> + Send;
+
+    /// Cancels a started run. Providers that cannot cancel return an error.
+    fn cancel(
+        &self,
+        _request: GetTaskStatusRequest,
+    ) -> impl Future<Output = Result<TaskRun, SdkError>> + Send {
+        async { Err(SdkError::unavailable("task is not cancelable")) }
+    }
 }
 
 /// Starts a task. Waits until the run is terminal unless `request.wait` is false.
