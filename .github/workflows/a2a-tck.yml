@@ -28,6 +28,10 @@ jobs:
       - name: Official A2A TCK
         run: bash .mise/scripts/a2a-tck.sh
 
+      - name: Show TCK report
+        if: always()
+        run: bash .mise/scripts/a2a-tck-summary.sh
+
       - name: Publish TCK reports
         if: always()
         uses: actions/upload-artifact@v4
