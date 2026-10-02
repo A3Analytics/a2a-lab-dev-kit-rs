@@ -4,8 +4,9 @@ use std::io::{Write, stderr};
 
 use a2a_lab_dev_kit::{
     A2aServer, LabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks, SourceId,
-    TaskDefinition, TaskId, bind_local,
+    TaskDefinition, TaskId,
 };
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -29,9 +30,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         })
         .await;
     let service = LabService::new(logs, MemoryMetrics::new(), tasks).share();
-    let (listener, address) = bind_local().await?;
-    writeln!(stderr(), "A2A_TCK_SUT=http://{address}")?;
+    let advertise = std::env::var("A2A_TCK_ADVERTISE").ok();
+    let bind = if advertise.is_some() {
+        "0.0.0.0:0"
+    } else {
+        "127.0.0.1:0"
+    };
+    let listener = TcpListener::bind(bind).await?;
+    let port = listener.local_addr()?.port();
+    writeln!(stderr(), "A2A_TCK_SUT=http://127.0.0.1:{port}")?;
+    if let Some(host) = advertise.as_deref() {
+        writeln!(stderr(), "A2A_TCK_DOCKER_SUT=http://{host}:{port}")?;
+    }
     stderr().flush()?;
-    A2aServer::new(&service).listen(listener).await?;
+    let mut server = A2aServer::new(&service);
+    if let Some(host) = advertise {
+        server = server
+            .with_public_url(format!("http://{host}:{port}"))
+            .with_grpc_host(host);
+    }
+    server.listen(listener).await?;
     Ok(())
 }

@@ -42,6 +42,7 @@ const DEFAULT_ADDRESS: &str = "127.0.0.1:31000";
 pub struct A2aServer {
     lab: Arc<dyn LabApi>,
     public_url: Option<String>,
+    grpc_host: Option<String>,
     push_notifications: bool,
     loopback_push: bool,
     extended_card: Option<AgentCard>,
@@ -56,6 +57,7 @@ impl A2aServer {
         Self {
             lab: Arc::clone(lab),
             public_url: None,
+            grpc_host: None,
             push_notifications: false,
             loopback_push: false,
             extended_card: None,
@@ -68,6 +70,15 @@ impl A2aServer {
     #[must_use]
     pub fn with_public_url(mut self, url: impl Into<String>) -> Self {
         self.public_url = Some(url.into());
+        self
+    }
+
+    /// Binds gRPC on `0.0.0.0` and advertises `host` on the Agent Card.
+    ///
+    /// Used when the TCK runs in a container and must dial the host.
+    #[must_use]
+    pub fn with_grpc_host(mut self, host: impl Into<String>) -> Self {
+        self.grpc_host = Some(host.into());
         self
     }
 
@@ -123,7 +134,7 @@ impl A2aServer {
             .public_url
             .clone()
             .unwrap_or_else(|| format!("http://{address}"));
-        let (grpc_listener, grpc_address) = bind_local().await?;
+        let (grpc_listener, grpc_address) = bind_grpc(self.grpc_host.as_deref()).await?;
         let grpc_url = format!("http://{grpc_address}");
         let (app, handler) = router(&self, &public_url, &grpc_url);
         let grpc = tokio::spawn(serve_grpc(grpc_listener, handler));
@@ -139,6 +150,21 @@ impl A2aServer {
             },
         }
     }
+}
+
+async fn bind_grpc(host: Option<&str>) -> Result<(TcpListener, String), A2aLabError> {
+    let Some(host) = host else {
+        let (listener, address) = bind_local().await?;
+        return Ok((listener, address.to_string()));
+    };
+    let listener = TcpListener::bind("0.0.0.0:0")
+        .await
+        .map_err(|error| A2aLabError::transport(error.to_string()))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| A2aLabError::transport(error.to_string()))?
+        .port();
+    Ok((listener, format!("{host}:{port}")))
 }
 
 /// Returns the socket address selected for `127.0.0.1:0`.

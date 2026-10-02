@@ -22,7 +22,7 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust python uv
+          install_args: rust
 
       - name: Official A2A TCK
         run: bash .mise/scripts/a2a-tck.sh

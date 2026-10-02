@@ -7,12 +7,30 @@ cd "$root"
 # Pinned a2aproject/a2a-tck commit (main as of 2026-09-01).
 tck_rev="263b9cfaf16a554bdfb166a7ba5b67716e946349"
 tck_dir="${A2A_TCK_DIR:-$root/target/a2a-tck}"
+image="a2a-tck:${tck_rev}"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is required to run the A2A TCK image" >&2
+  exit 1
+fi
 
 if [ ! -d "$tck_dir/.git" ]; then
   git clone https://github.com/a2aproject/a2a-tck.git "$tck_dir"
 fi
 git -C "$tck_dir" fetch origin
 git -C "$tck_dir" checkout --detach "$tck_rev"
+printf '.git\n.venv\nreports\n' >"$tck_dir/.dockerignore"
+docker build -f "$root/.mise/a2a-tck.Dockerfile" -t "$image" "$tck_dir"
+
+# Linux containers share the host network, so 127.0.0.1 reaches the server.
+# Elsewhere the server advertises host.docker.internal and listens on 0.0.0.0.
+docker_args=(--rm)
+if [ "$(uname -s)" = "Linux" ]; then
+  docker_args+=(--network host)
+else
+  # Docker Desktop already resolves host.docker.internal to the host.
+  export A2A_TCK_ADVERTISE=host.docker.internal
+fi
 
 cargo build --example a2a_tck --quiet
 
@@ -28,8 +46,11 @@ cleanup() {
 trap cleanup EXIT
 
 sut_url=""
+docker_sut=""
 for _ in $(seq 1 50); do
-  if sut_url=$(sed -n 's/^A2A_TCK_SUT=//p' "$server_log" | tail -n 1) && [ -n "$sut_url" ]; then
+  sut_url="$(sed -n 's/^A2A_TCK_SUT=//p' "$server_log" | tail -n 1)"
+  docker_sut="$(sed -n 's/^A2A_TCK_DOCKER_SUT=//p' "$server_log" | tail -n 1)"
+  if [ -n "$sut_url" ]; then
     break
   fi
   sleep 0.2
@@ -39,30 +60,31 @@ if [ -z "$sut_url" ]; then
   cat "$server_log" >&2 || true
   exit 1
 fi
+if [ -z "$docker_sut" ]; then
+  docker_sut="$sut_url"
+fi
 
-python - "$sut_url/.well-known/agent-card.json" <<'PY'
-import sys
-import time
-import urllib.request
+ready=0
+for _ in $(seq 1 50); do
+  if curl -fsS "$sut_url/.well-known/agent-card.json" >/dev/null; then
+    ready=1
+    break
+  fi
+  sleep 0.2
+done
+if [ "$ready" -ne 1 ]; then
+  echo "SUT did not become ready: $sut_url/.well-known/agent-card.json" >&2
+  cat "$server_log" >&2 || true
+  exit 1
+fi
 
-url = sys.argv[1]
-for _ in range(50):
-    try:
-        urllib.request.urlopen(url, timeout=1)
-        raise SystemExit(0)
-    except Exception:
-        time.sleep(0.2)
-raise SystemExit("SUT did not become ready: " + url)
-PY
-
-(
-  cd "$tck_dir"
-  uv sync
-  # HTTP_JSON-SVC-001 still asserts application/json; A2A 1.0 and the official
-  # Rust SDK emit application/a2a+json. Keep the schema half of that requirement.
-  # grpcio is a direct TCK dependency, so uv sync already installs the gRPC client.
-  # No --level filter: MUST, SHOULD, and MAY all run. MUST failures fail
-  # the process. SHOULD and MAY failures fail too when the test asserts.
-  uv run python run_tck.py --sut-host "$sut_url" --transport http_json,jsonrpc,grpc -- \
-    -k "not test_response_content_type"
-)
+mkdir -p "$root/target/a2a-tck-reports"
+# HTTP_JSON-SVC-001 still asserts application/json; A2A 1.0 and the official
+# Rust SDK emit application/a2a+json. Keep the schema half of that requirement.
+docker run "${docker_args[@]}" \
+  -v "$root/target/a2a-tck-reports:/tck/reports" \
+  "$image" \
+  --sut-host "$docker_sut" \
+  --transport http_json,jsonrpc,grpc \
+  -- \
+  -k "not test_response_content_type"
