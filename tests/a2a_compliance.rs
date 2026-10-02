@@ -141,6 +141,7 @@ async fn http_json_agent_card_advertises_three_bindings() {
         .await
         .unwrap();
     assert!(response.status().is_success());
+    assert!(response.headers().get("last-modified").is_some());
     let card: Value = response.json().await.unwrap();
     assert_eq!(card["name"], "a2a-lab");
     assert_eq!(card["capabilities"]["streaming"], true);

@@ -44,7 +44,7 @@ Task states use the protocol names `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`,
 
 `POST /tasks/{id}:subscribe` and `POST /message:stream` emit live `StreamResponse` frames. Query results are split into ordered artifact chunks. The last chunk sets `lastChunk` to true. Subscribe after a terminal task returns `unsupported_operation`.
 
-Core conformance is `tests/a2a_compliance.rs` plus `mise run tck`, which runs the official MUST suite for HTTP+JSON, JSON-RPC, and gRPC, including advertised streaming. Optional push, extended-card, and security declarations are out of that core set until they are configured. The TCK pin still expects success `Content-Type: application/json`; this crate emits `application/a2a+json` and deselects that one content-type assertion.
+Core conformance is `tests/a2a_compliance.rs` plus `mise run tck`, which runs the official MUST, SHOULD, and MAY suite for HTTP+JSON, JSON-RPC, and gRPC, including advertised streaming. MUST failures fail the run. Optional push, extended-card, and security declarations are out of that core set until they are configured. The TCK pin still expects success `Content-Type: application/json`; this crate emits `application/a2a+json` and deselects that one content-type assertion.
 
 This crate depends on `a2a-lf` 0.4.1, `a2a-server-lf` 0.5.1, `a2a-client-lf` 0.2.7, and `a2a-grpc` 0.3.
 

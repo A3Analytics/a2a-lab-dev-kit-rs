@@ -1,7 +1,8 @@
 //! Official TCK messageId-prefix behaviors.
 
 use a2a_types::{
-    Artifact, Message, Part, Role, StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
+    Artifact, Message, Part, Role, StreamResponse, TaskArtifactUpdateEvent, TaskStatus,
+    TaskStatusUpdateEvent,
 };
 use serde_json::json;
 
@@ -15,6 +16,18 @@ pub(crate) fn profile(
     context_id: &str,
 ) -> Option<Vec<StreamResponse>> {
     let id = message.message_id.as_str();
+    if id.starts_with("tck-input-required") {
+        return Some(vec![StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: task_id.to_owned(),
+            context_id: context_id.to_owned(),
+            status: TaskStatus {
+                state: a2a_types::TaskState::InputRequired,
+                message: None,
+                timestamp: None,
+            },
+            metadata: None,
+        })]);
+    }
     if id.starts_with("tck-message-response") {
         return Some(vec![StreamResponse::Message(Message::new(
             Role::Agent,

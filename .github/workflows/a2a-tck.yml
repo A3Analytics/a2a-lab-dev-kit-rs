@@ -2,7 +2,6 @@ name: A2A TCK
 
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,10 +14,15 @@ concurrency:
 jobs:
   tck:
     runs-on: ubuntu-latest
+    env:
+      MISE_AUTO_INSTALL: "0"
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
     steps:
       - uses: actions/checkout@v5
 
       - uses: jdx/mise-action@v2
+        with:
+          install_args: rust python uv
 
-      - name: Official A2A MUST suite
-        run: mise run tck
+      - name: Official A2A TCK
+        run: bash .mise/scripts/a2a-tck.sh

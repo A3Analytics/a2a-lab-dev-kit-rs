@@ -213,17 +213,26 @@ async fn cancel_lab(
     tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
 ) -> Result<(), A2AError> {
     let Some(run_id) = runs.lock().await.get(&ctx.task_id).cloned() else {
-        return Err(A2AError::task_not_cancelable(&ctx.task_id));
+        // The handler already moved a non-terminal protocol task to Canceled
+        // before calling the executor. A lab run is the only extra cancel.
+        return send_canceled(&ctx, tx).await;
     };
     let run_id = RunId::new(run_id).map_err(|e| wire::a2a_error(&e))?;
     lab.cancel(GetTaskStatusRequest { id: run_id })
         .await
         .map_err(|e| wire::a2a_error(&e))?;
+    send_canceled(&ctx, tx).await
+}
+
+async fn send_canceled(
+    ctx: &ExecutorContext,
+    tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
+) -> Result<(), A2AError> {
     send(
         tx,
         StreamResponse::Task(Task {
-            id: ctx.task_id,
-            context_id: ctx.context_id,
+            id: ctx.task_id.clone(),
+            context_id: ctx.context_id.clone(),
             status: TaskStatus {
                 state: a2a_types::TaskState::Canceled,
                 message: Some(Message::new(Role::Agent, vec![Part::text("canceled")])),
@@ -233,7 +242,10 @@ async fn cancel_lab(
                 .stored_task
                 .as_ref()
                 .and_then(|task| task.artifacts.clone()),
-            history: ctx.stored_task.and_then(|task| task.history),
+            history: ctx
+                .stored_task
+                .as_ref()
+                .and_then(|task| task.history.clone()),
             metadata: None,
         }),
     )

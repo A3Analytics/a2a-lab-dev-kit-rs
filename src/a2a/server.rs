@@ -400,7 +400,21 @@ async fn normalize_a2a_json(mut request: Request, next: Next) -> Response {
     {
         request.headers_mut().insert("a2a-version", header);
     }
-    remap_rest_error(next.run(request).await).await
+    let path = request.uri().path().to_owned();
+    let mut response = remap_rest_error(next.run(request).await).await;
+    if path == "/.well-known/agent-card.json"
+        && response.headers().get("last-modified").is_none()
+        && let Ok(value) = HeaderValue::from_str(&http_date())
+    {
+        response.headers_mut().insert("last-modified", value);
+    }
+    response
+}
+
+fn http_date() -> String {
+    jiff::Timestamp::now()
+        .strftime("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string()
 }
 
 async fn remap_rest_error(response: Response) -> Response {
