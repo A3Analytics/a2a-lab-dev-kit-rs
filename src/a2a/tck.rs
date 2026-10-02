@@ -29,10 +29,10 @@ pub(crate) fn profile(
         })]);
     }
     if id.starts_with("tck-message-response") {
-        return Some(vec![StreamResponse::Message(Message::new(
-            Role::Agent,
-            vec![Part::text("Direct message response")],
-        ))]);
+        let mut message = Message::new(Role::Agent, vec![Part::text("Direct message response")]);
+        message.context_id = Some(context_id.to_owned());
+        message.task_id = Some(task_id.to_owned());
+        return Some(vec![StreamResponse::Message(message)]);
     }
     if id.starts_with("tck-artifact-file-url") {
         return Some(complete_artifact(

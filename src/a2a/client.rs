@@ -1,6 +1,6 @@
 //! Typed A2A client for the seven lab operations.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use a2a_client::A2AClient;
 use a2a_client::rest::RestTransport;
@@ -23,11 +23,21 @@ use crate::tasks::{
 
 use super::wire::{self, LAB_MEDIA_TYPE};
 
+/// Plain-text answer from an `agent-message` turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentMessageResponse {
+    /// Assistant text.
+    pub text: String,
+    /// Protocol task for this turn, when the agent returned a task.
+    pub task_id: Option<String>,
+    /// Conversation to send on the next turn.
+    pub context_id: String,
+}
+
 /// Client for a lab agent speaking A2A HTTP+JSON.
 pub struct A2aClient {
     inner: A2AClient<RestTransport>,
     base: String,
-    messages: AtomicU64,
 }
 
 impl A2aClient {
@@ -37,8 +47,19 @@ impl A2aClient {
         Ok(Self {
             inner: A2AClient::new(RestTransport::new(http, base_url.to_owned())),
             base: base_url.trim_end_matches('/').to_owned(),
-            messages: AtomicU64::new(0),
         })
+    }
+
+    /// Sends `Authorization: Bearer <token>` on later protocol calls.
+    #[must_use]
+    pub fn with_bearer_token(self, token: impl Into<String>) -> Self {
+        let Self { inner, base } = self;
+        Self {
+            inner: inner.with_interceptors(vec![Arc::new(
+                a2a_client::auth::AuthInterceptor::bearer(token),
+            )]),
+            base,
+        }
     }
 
     /// Lists log sources.
@@ -207,7 +228,7 @@ impl A2aClient {
         &self,
         command: LabCommand,
     ) -> Result<Vec<StreamResponse>, A2aLabError> {
-        let request = self.send_request(&command, None)?;
+        let request = Self::send_request(&command, None)?;
         let mut stream = self
             .inner
             .send_streaming_message(&request)
@@ -279,6 +300,49 @@ impl A2aClient {
             .map_err(wire::sdk_error)
     }
 
+    /// Sends plain text and returns the agent reply for that conversation.
+    pub async fn agent_message(
+        &self,
+        text: &str,
+        context_id: Option<&str>,
+    ) -> Result<AgentMessageResponse, A2aLabError> {
+        self.agent_message_with_references(text, context_id, &[] as &[&str])
+            .await
+    }
+
+    /// Sends plain text that refines the tasks in `reference_task_ids`.
+    pub async fn agent_message_with_references(
+        &self,
+        text: &str,
+        context_id: Option<&str>,
+        reference_task_ids: &[impl AsRef<str>],
+    ) -> Result<AgentMessageResponse, A2aLabError> {
+        let mut message = Message::new(
+            Role::User,
+            vec![Part::text(text).with_media_type("text/plain")],
+        );
+        message.context_id = context_id.map(ToOwned::to_owned);
+        if !reference_task_ids.is_empty() {
+            message.reference_task_ids = Some(
+                reference_task_ids
+                    .iter()
+                    .map(|id| id.as_ref().to_owned())
+                    .collect(),
+            );
+        }
+        let response = self
+            .inner
+            .send_message(&SendMessageRequest {
+                message,
+                configuration: None,
+                metadata: None,
+                tenant: None,
+            })
+            .await
+            .map_err(wire::sdk_error)?;
+        agent_message_response(response)
+    }
+
     /// Fetches the well-known Agent Card.
     pub async fn agent_card(&self) -> Result<AgentCard, A2aLabError> {
         a2a_client::agent_card::AgentCardResolver::new(None)
@@ -309,7 +373,7 @@ impl A2aClient {
         command: LabCommand,
         configuration: Option<SendMessageConfiguration>,
     ) -> Result<TaskSnapshot, A2aLabError> {
-        let request = self.send_request(&command, configuration)?;
+        let request = Self::send_request(&command, configuration)?;
         match self
             .inner
             .send_message(&request)
@@ -324,24 +388,76 @@ impl A2aClient {
     }
 
     fn send_request(
-        &self,
         command: &LabCommand,
         configuration: Option<SendMessageConfiguration>,
     ) -> Result<SendMessageRequest, A2aLabError> {
-        let number = self.messages.fetch_add(1, Ordering::Relaxed) + 1;
         let data = serde_json::to_value(command)
             .map_err(|error| A2aLabError::protocol(error.to_string()))?;
-        let mut message = Message::new(
+        let message = Message::new(
             Role::User,
             vec![Part::data(data).with_media_type(LAB_MEDIA_TYPE)],
         );
-        message.message_id = format!("msg-{number}");
         Ok(SendMessageRequest {
             message,
             configuration,
             metadata: None,
             tenant: None,
         })
+    }
+}
+
+fn agent_message_response(
+    response: SendMessageResponse,
+) -> Result<AgentMessageResponse, A2aLabError> {
+    match response {
+        SendMessageResponse::Task(task) => {
+            if task.context_id.is_empty() {
+                return Err(A2aLabError::protocol("server task is missing contextId"));
+            }
+            Ok(AgentMessageResponse {
+                text: text_from_task(&task)?,
+                task_id: Some(task.id),
+                context_id: task.context_id,
+            })
+        }
+        SendMessageResponse::Message(message) => {
+            if message.role != Role::Agent {
+                return Err(A2aLabError::protocol(
+                    "server message role must be ROLE_AGENT",
+                ));
+            }
+            let Some(context_id) = message.context_id.filter(|id| !id.is_empty()) else {
+                return Err(A2aLabError::protocol("server message is missing contextId"));
+            };
+            Ok(AgentMessageResponse {
+                text: text_from_parts(message.parts.iter())?,
+                task_id: message.task_id,
+                context_id,
+            })
+        }
+    }
+}
+
+fn text_from_task(task: &Task) -> Result<String, A2aLabError> {
+    text_from_parts(
+        task.artifacts
+            .iter()
+            .flatten()
+            .flat_map(|artifact| artifact.parts.iter()),
+    )
+}
+
+fn text_from_parts<'a>(parts: impl Iterator<Item = &'a Part>) -> Result<String, A2aLabError> {
+    let text = parts
+        .filter_map(Part::as_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.is_empty() {
+        Err(A2aLabError::protocol(
+            "agent message is missing text".to_owned(),
+        ))
+    } else {
+        Ok(text)
     }
 }
 
@@ -353,5 +469,27 @@ fn expect_variant(
         Ok(snapshot)
     } else {
         Err(A2aLabError::protocol("unexpected result variant"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_message_requires_context_id() {
+        let message = Message::new(Role::Agent, vec![Part::text("hi")]);
+        let error = agent_message_response(SendMessageResponse::Message(message)).unwrap_err();
+        assert_eq!(error.code(), "protocol");
+    }
+
+    #[test]
+    fn server_message_keeps_its_context_id() {
+        let mut message = Message::new(Role::Agent, vec![Part::text("hi")]);
+        message.context_id = Some("ctx-1".to_owned());
+        let response = agent_message_response(SendMessageResponse::Message(message)).unwrap();
+        assert_eq!(response.text, "hi");
+        assert_eq!(response.context_id, "ctx-1");
+        assert!(response.task_id.is_none());
     }
 }

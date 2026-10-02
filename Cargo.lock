@@ -60,6 +60,7 @@ dependencies = [
  "a2a-server-lf",
  "async-opcua-client",
  "async-opcua-types",
+ "async-trait",
  "axum",
  "futures-util",
  "http-body",

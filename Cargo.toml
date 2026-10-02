@@ -32,6 +32,7 @@ tonic-prost-build = { version = "0.14.6", optional = true }
 
 [dependencies]
 a2a-types = { version = "0.4.1", package = "a2a-lf" }
+async-trait = "0.1.92"
 a2a-client = { version = "0.2.7", package = "a2a-client-lf" }
 a2a-grpc = "0.3"
 a2a-pb = "0.3"

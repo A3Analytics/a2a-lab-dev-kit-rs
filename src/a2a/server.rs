@@ -8,9 +8,9 @@ use a2a_grpc::server::GrpcHandler;
 use a2a_pb::proto::a2a_service_server::A2aServiceServer;
 use a2a_server::{
     DefaultRequestHandler, HttpPushSender, HttpPushSenderConfig, InMemoryPushConfigStore,
-    InMemoryTaskStore, RequestAuthorizer, ServiceParams, StaticAgentCard,
+    StaticAgentCard,
 };
-use a2a_types::{A2AError, AgentCapabilities, AgentCard, SecurityRequirement, SecurityScheme};
+use a2a_types::{AgentCapabilities, AgentCard, SecurityRequirement, SecurityScheme};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -31,8 +31,10 @@ use tower_service::Service;
 use crate::error::A2aLabError;
 use crate::service::LabApi;
 
-use super::card::agent_card;
+use super::access::{AccessGate, OwnedTaskStore, with_caller};
+use super::card::{accepted_modes, agent_card};
 use super::executor::LabExecutor;
+use super::message::AgentMessageHandler;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31000";
 
@@ -48,6 +50,7 @@ pub struct A2aServer {
     extended_card: Option<AgentCard>,
     security_schemes: Option<HashMap<String, SecurityScheme>>,
     security_requirements: Option<Vec<SecurityRequirement>>,
+    messages: Option<Arc<dyn AgentMessageHandler>>,
 }
 
 impl A2aServer {
@@ -63,7 +66,15 @@ impl A2aServer {
             extended_card: None,
             security_schemes: None,
             security_requirements: None,
+            messages: None,
         }
+    }
+
+    /// Answers plain-text messages with `handler` and advertises `agent-message`.
+    #[must_use]
+    pub fn with_message_handler(mut self, handler: Arc<dyn AgentMessageHandler>) -> Self {
+        self.messages = Some(handler);
+        self
     }
 
     /// Overrides the Agent Card interface URL.
@@ -136,8 +147,8 @@ impl A2aServer {
             .unwrap_or_else(|| format!("http://{address}"));
         let (grpc_listener, grpc_address) = bind_grpc(self.grpc_host.as_deref()).await?;
         let grpc_url = format!("http://{grpc_address}");
-        let (app, handler) = router(&self, &public_url, &grpc_url);
-        let grpc = tokio::spawn(serve_grpc(grpc_listener, handler));
+        let (app, handler, gate) = router(&self, &public_url, &grpc_url);
+        let grpc = tokio::spawn(serve_grpc(grpc_listener, handler, gate));
         tokio::pin!(grpc);
         tokio::select! {
             result = axum::serve(listener, app) => {
@@ -182,8 +193,12 @@ fn router(
     server: &A2aServer,
     public_url: &str,
     grpc_url: &str,
-) -> (Router, Arc<DefaultRequestHandler>) {
+) -> (Router, Arc<DefaultRequestHandler>, AccessGate) {
     let extended = server.extended_card.is_some();
+    let gate = AccessGate::new(
+        server.security_schemes.clone(),
+        server.security_requirements.clone(),
+    );
     let card = agent_card(
         public_url,
         grpc_url,
@@ -191,6 +206,7 @@ fn router(
         extended,
         server.security_schemes.clone(),
         server.security_requirements.clone(),
+        server.messages.is_some(),
     );
     let capabilities = AgentCapabilities {
         streaming: Some(true),
@@ -199,10 +215,10 @@ fn router(
         extended_agent_card: Some(extended),
     };
     let mut handler = DefaultRequestHandler::new(
-        LabExecutor::new(Arc::clone(&server.lab)),
-        InMemoryTaskStore::new(),
+        LabExecutor::new(Arc::clone(&server.lab), server.messages.clone()),
+        OwnedTaskStore::new(gate.enforced()),
     )
-    .with_authorizer(VersionAuthorizer);
+    .with_authorizer(gate.clone());
     if server.push_notifications {
         handler = if server.loopback_push {
             handler.with_push_notifications(
@@ -219,16 +235,25 @@ fn router(
     if let Some(extended_card) = server.extended_card.clone() {
         handler = handler.with_extended_agent_card(extended_card);
     }
-    handler = handler.with_capabilities(capabilities);
+    handler = handler
+        .with_capabilities(capabilities)
+        .with_default_input_modes(accepted_modes());
     let handler = Arc::new(handler);
+    let http_gate = gate.clone();
     let app = Router::new()
         .merge(a2a_server::agent_card::agent_card_router(Arc::new(
             StaticAgentCard::new(card),
         )))
         .merge(a2a_server::rest::rest_router(Arc::clone(&handler)))
         .merge(a2a_server::jsonrpc::jsonrpc_router(Arc::clone(&handler)))
-        .layer(from_fn(normalize_a2a_json));
-    (app, handler)
+        .layer(from_fn(move |request: Request, next: Next| {
+            let gate = http_gate.clone();
+            async move {
+                let caller = gate.caller(request.headers(), request.uri().query());
+                with_caller(caller, normalize_a2a_json(request, next)).await
+            }
+        }));
+    (app, handler, gate)
 }
 
 fn grpc_incoming(listener: TcpListener) -> impl Stream<Item = std::io::Result<TcpStream>> + Send {
@@ -241,9 +266,10 @@ fn grpc_incoming(listener: TcpListener) -> impl Stream<Item = std::io::Result<Tc
 async fn serve_grpc(
     listener: TcpListener,
     handler: Arc<DefaultRequestHandler>,
+    gate: AccessGate,
 ) -> Result<(), A2aLabError> {
     tonic::transport::Server::builder()
-        .layer(GrpcStatusLayer)
+        .layer(GrpcStatusLayer { gate })
         .add_service(A2aServiceServer::new(GrpcHandler::new(handler)))
         .serve_with_incoming(grpc_incoming(listener))
         .await
@@ -273,44 +299,31 @@ fn remap_grpc_status(headers: &mut HeaderMap) {
         .get("grpc-message")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
-    if unimplemented_grpc_message(&percent_decode(message)) {
+    if unimplemented_grpc_message(&super::access::percent_decode(message)) {
         headers.insert("grpc-status", HeaderValue::from_static("12"));
     }
 }
 
-fn percent_decode(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            let hex = &value[index + 1..index + 3];
-            if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                decoded.push(byte);
-                index += 3;
-                continue;
-            }
-        }
-        decoded.push(bytes[index]);
-        index += 1;
-    }
-    String::from_utf8_lossy(&decoded).into_owned()
+#[derive(Clone)]
+struct GrpcStatusLayer {
+    gate: AccessGate,
 }
-
-#[derive(Clone, Copy)]
-struct GrpcStatusLayer;
 
 impl<S> Layer<S> for GrpcStatusLayer {
     type Service = GrpcStatusService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        GrpcStatusService { inner }
+        GrpcStatusService {
+            inner,
+            gate: self.gate.clone(),
+        }
     }
 }
 
 #[derive(Clone)]
 struct GrpcStatusService<S> {
     inner: S,
+    gate: AccessGate,
 }
 
 impl<S, ReqBody, ResBody> Service<HttpRequest<ReqBody>> for GrpcStatusService<S>
@@ -332,8 +345,10 @@ where
     fn call(&mut self, request: HttpRequest<ReqBody>) -> Self::Future {
         let clone = self.inner.clone();
         let mut inner = std::mem::replace(&mut self.inner, clone);
+        let gate = self.gate.clone();
         Box::pin(async move {
-            let response = inner.call(request).await?;
+            let caller = gate.caller(request.headers(), request.uri().query());
+            let response = with_caller(caller, inner.call(request)).await?;
             let (mut parts, body) = response.into_parts();
             remap_grpc_status(&mut parts.headers);
             Ok(HttpResponse::from_parts(parts, RemapBody { inner: body }))
@@ -379,31 +394,6 @@ fn remap_frame<T>(frame: http_body::Frame<T>) -> http_body::Frame<T> {
             http_body::Frame::trailers(trailers)
         }
         Err(frame) => frame,
-    }
-}
-
-struct VersionAuthorizer;
-
-impl RequestAuthorizer for VersionAuthorizer {
-    fn authorize(&self, params: &ServiceParams, _task_id: Option<&str>) -> Result<(), A2AError> {
-        let requested = params
-            .get("a2a-version")
-            .and_then(|values| values.first())
-            .map(String::as_str);
-        match requested {
-            None => Ok(()),
-            Some(version)
-                if version
-                    .trim()
-                    .split('.')
-                    .next()
-                    .and_then(|part| part.parse::<u32>().ok())
-                    == Some(1) =>
-            {
-                Ok(())
-            }
-            Some(version) => Err(A2AError::version_not_supported(version)),
-        }
     }
 }
 

@@ -323,6 +323,27 @@ async fn http_json_status_001_error_status_mapping() {
     let part_body: Value = part.json().await.unwrap();
     assert_eq!(reason(&part_body), Some("CONTENT_TYPE_NOT_SUPPORTED"));
 
+    let raw = http()
+        .post(format!("{base}/message:send"))
+        .header("Content-Type", "application/a2a+json")
+        .header("A2A-Version", A2A_PROTOCOL_VERSION)
+        .json(&json!({
+            "message": {
+                "messageId": "bad-raw",
+                "role": "ROLE_USER",
+                "parts": [{
+                    "raw": "dGNr",
+                    "mediaType": "application/x-unsupported-tck-type"
+                }]
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(raw.status(), reqwest::StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let raw_body: Value = raw.json().await.unwrap();
+    assert_eq!(reason(&raw_body), Some("CONTENT_TYPE_NOT_SUPPORTED"));
+
     let push = http()
         .post(format!("{base}/tasks/missing/pushNotificationConfigs"))
         .header("Content-Type", "application/a2a+json")

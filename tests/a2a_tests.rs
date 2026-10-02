@@ -2,7 +2,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_lab_dev_kit::{
-    A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, GetTaskStatusRequest,
+    A2A_PROTOCOL_VERSION, A2aClient, A2aLabError, A2aServer, AgentCard, AgentMessageFuture,
+    AgentMessageHandler, AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest,
     HttpAuthSecurityScheme, JsonObject, LAB_MEDIA_TYPE, LabApi, LabCommand, LabResult, LabService,
     ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel, LogRecord, LogSource,
     MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, PageRequest,
@@ -589,7 +590,12 @@ async fn extended_card_and_security_are_advertised_when_configured() {
         }
     })
     .await;
-    let client = A2aClient::new(&enabled).unwrap();
+    let anonymous = A2aClient::new(&enabled).unwrap();
+    assert_eq!(
+        anonymous.extended_agent_card().await.unwrap_err().code(),
+        "invalid"
+    );
+    let client = anonymous.with_bearer_token("lab-token");
     let card = client.agent_card().await.unwrap();
     assert_eq!(card.capabilities.extended_agent_card, Some(true));
     assert!(card.security_schemes.is_some());
@@ -746,6 +752,227 @@ async fn start_task_wait_returns_terminal_state() {
         .await
         .unwrap();
     assert_eq!(outcome.task.state, TaskState::Completed);
+}
+
+struct ScriptedMessages {
+    calls: Mutex<Vec<AgentMessageRequest>>,
+    fail: bool,
+}
+
+impl AgentMessageHandler for ScriptedMessages {
+    fn handle(
+        &self,
+        request: AgentMessageRequest,
+    ) -> AgentMessageFuture<'_, Result<AgentMessageReply, A2aLabError>> {
+        let fail = self.fail;
+        let text = request.text.clone();
+        self.calls.lock().expect("calls").push(request);
+        Box::pin(async move {
+            if fail {
+                Err(A2aLabError::unavailable("model offline"))
+            } else {
+                Ok(AgentMessageReply {
+                    text: format!("echo {text}"),
+                })
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn agent_message_continues_context_and_keeps_lab_commands() {
+    let lab = lab().await;
+    let handler = Arc::new(ScriptedMessages {
+        calls: Mutex::new(Vec::new()),
+        fail: false,
+    });
+    let base = serve_with(Arc::clone(&lab.service), {
+        let handler = Arc::clone(&handler);
+        move |server| server.with_message_handler(handler)
+    })
+    .await;
+    let client = A2aClient::new(&base).unwrap();
+    let ids: Vec<_> = client
+        .agent_card()
+        .await
+        .unwrap()
+        .skills
+        .into_iter()
+        .map(|skill| skill.id)
+        .collect();
+    assert_eq!(ids.last().map(String::as_str), Some("agent-message"));
+    assert_eq!(ids.len(), 8);
+
+    let first = client.agent_message("hello", None).await.unwrap();
+    assert_eq!(first.text, "echo hello");
+    let first_task = first.task_id.clone().unwrap();
+    let first_record = client.get_a2a_task(&first_task).await.unwrap();
+    let first_message = &first_record.history.unwrap()[0].message_id;
+    assert!(is_sender_message_id(first_message), "{first_message}");
+
+    let second = client
+        .agent_message_with_references("again", Some(&first.context_id), &[first_task.as_str()])
+        .await
+        .unwrap();
+    assert_eq!(second.text, "echo again");
+    assert_eq!(second.context_id, first.context_id);
+    assert_ne!(second.task_id.as_deref(), Some(first_task.as_str()));
+
+    let calls = handler.calls.lock().expect("calls").clone();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].context_id, first.context_id);
+    assert_eq!(calls[1].context_id, first.context_id);
+    assert_eq!(calls[0].task_id, first_task);
+    assert_eq!(calls[1].task_id, second.task_id.clone().unwrap());
+    assert!(calls[0].reference_task_ids.is_empty());
+    assert_eq!(calls[1].reference_task_ids, vec![first_task]);
+
+    client
+        .list_tasks(ListTasksRequest { page: page(10) })
+        .await
+        .unwrap();
+    assert_eq!(handler.calls.lock().expect("calls").len(), 2);
+}
+
+#[tokio::test]
+async fn agent_message_maps_handler_errors() {
+    let lab = lab().await;
+    let handler = Arc::new(ScriptedMessages {
+        calls: Mutex::new(Vec::new()),
+        fail: true,
+    });
+    let base = serve_with(Arc::clone(&lab.service), move |server| {
+        server.with_message_handler(handler)
+    })
+    .await;
+    let error = A2aClient::new(&base)
+        .unwrap()
+        .agent_message("hello", None)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), "unavailable");
+}
+
+fn is_sender_message_id(value: &str) -> bool {
+    let parts: Vec<_> = value.split('-').collect();
+    parts.len() == 5
+        && [
+            parts[0].len(),
+            parts[1].len(),
+            parts[2].len(),
+            parts[3].len(),
+            parts[4].len(),
+        ] == [8, 4, 4, 4, 12]
+        && value
+            .chars()
+            .all(|character| character == '-' || character.is_ascii_hexdigit())
+}
+
+#[tokio::test]
+async fn agent_message_rejects_non_user_and_non_text_parts() {
+    let lab = lab().await;
+    let base = serve_with(Arc::clone(&lab.service), |server| {
+        server.with_message_handler(Arc::new(ScriptedMessages {
+            calls: Mutex::new(Vec::new()),
+            fail: false,
+        }))
+    })
+    .await;
+    let role = send_message(
+        &base,
+        json!({
+            "message": {
+                "messageId": "role-1",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "hello", "mediaType": "text/plain"}]
+            }
+        }),
+    )
+    .await;
+    assert_eq!(role.status(), reqwest::StatusCode::BAD_REQUEST);
+    let mixed = send_message(
+        &base,
+        json!({
+            "message": {
+                "messageId": "mixed-1",
+                "role": "ROLE_USER",
+                "parts": [
+                    {"text": "hello", "mediaType": "text/plain"},
+                    {"url": "https://example.com/note"}
+                ]
+            }
+        }),
+    )
+    .await;
+    assert_eq!(mixed.status(), reqwest::StatusCode::BAD_REQUEST);
+}
+
+async fn send_message(base: &str, body: serde_json::Value) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("{base}/message:send"))
+        .header("Content-Type", "application/a2a+json")
+        .header("A2A-Version", A2A_PROTOCOL_VERSION)
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn security_requirement_hides_another_callers_context() {
+    let lab = lab().await;
+    let base = serve_with(Arc::clone(&lab.service), |server| {
+        server
+            .with_message_handler(Arc::new(ScriptedMessages {
+                calls: Mutex::new(Vec::new()),
+                fail: false,
+            }))
+            .with_security(
+                [(
+                    "bearerAuth".to_owned(),
+                    SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
+                        scheme: "bearer".to_owned(),
+                        description: None,
+                        bearer_format: None,
+                    }),
+                )]
+                .into(),
+                vec![[("bearerAuth".to_owned(), Vec::new())].into()],
+            )
+    })
+    .await;
+    let anonymous = A2aClient::new(&base).unwrap();
+    assert_eq!(
+        anonymous
+            .agent_message("hello", None)
+            .await
+            .unwrap_err()
+            .code(),
+        "invalid"
+    );
+    let alice = A2aClient::new(&base).unwrap().with_bearer_token("alice");
+    let bob = A2aClient::new(&base).unwrap().with_bearer_token("bob");
+    let first = alice.agent_message("hello", None).await.unwrap();
+    let hidden = bob
+        .agent_message("nope", Some(&first.context_id))
+        .await
+        .unwrap_err();
+    assert_eq!(hidden.code(), "invalid");
+    assert_eq!(
+        bob.get_a2a_task(first.task_id.as_deref().unwrap())
+            .await
+            .unwrap_err()
+            .code(),
+        "not_found"
+    );
+    let listed = bob.list_a2a_tasks(None).await.unwrap();
+    let first_task = first.task_id.clone().unwrap();
+    assert!(listed.tasks.iter().all(|task| task.id != first_task));
+    let again = alice
+        .agent_message("yes", Some(&first.context_id))
+        .await
+        .unwrap();
+    assert_eq!(again.context_id, first.context_id);
 }
 
 #[tokio::test]

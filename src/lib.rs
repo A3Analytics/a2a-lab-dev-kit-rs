@@ -28,8 +28,9 @@ pub mod tasks;
 pub mod time;
 
 pub use a2a::{
-    A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, HttpAuthSecurityScheme, LAB_MEDIA_TYPE,
-    SecurityScheme, StreamResponse, Task, TaskPushNotificationConfig, bind_local,
+    A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, AgentMessageFuture, AgentMessageHandler,
+    AgentMessageReply, AgentMessageRequest, AgentMessageResponse, HttpAuthSecurityScheme,
+    LAB_MEDIA_TYPE, SecurityScheme, StreamResponse, Task, TaskPushNotificationConfig, bind_local,
 };
 pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,

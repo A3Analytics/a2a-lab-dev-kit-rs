@@ -22,7 +22,7 @@ The server speaks A2A 1.0 over HTTP+JSON, JSON-RPC, and gRPC using the official 
 
 Protocol version `1.0` is on the `HTTP+JSON`, `JSONRPC`, and `GRPC` interfaces. JSON-RPC is `POST /` on the HTTP listener. gRPC listens on a second socket, and the card publishes that address as `host:port`. The card advertises `streaming`. It advertises `pushNotifications` and `extendedAgentCard` only when those features are configured on `A2aServer`.
 
-Clients send a `message` to `POST /message:send` or `POST /message:stream`. The lab command is a data part with media type `application/vnd.a2a-lab.v1+json`:
+Clients send a `message` to `POST /message:send` or `POST /message:stream`. The HTTP body is `application/a2a+json`. The lab command is a data part with media type `application/json`:
 
 ```json
 {
@@ -30,6 +30,10 @@ Clients send a `message` to `POST /message:send` or `POST /message:stream`. The 
   "params": {}
 }
 ```
+
+`A2aServer::with_message_handler` adds an eighth skill, `agent-message`. A `ROLE_USER` message whose parts are all `text/plain` is passed to that handler with the server `contextId`, the protocol task id, and any `referenceTaskIds`. The handler's text comes back as a `text/plain` artifact and the protocol task completes. The next turn reuses `contextId` and gets a new task, because a completed task does not accept another message. The client keeps the sender-generated message id. A lab data part still bypasses the handler. With a handler, any other part is rejected. A client role other than `ROLE_USER` is rejected. With no handler configured, a message without a lab command completes with the profile help artifact and the card keeps the seven lab skills.
+
+`with_security` applies its requirements to protocol calls. HTTP bearer, HTTP basic, API key, OAuth2, and OpenID Connect credentials identify the caller; this server does not contact an identity provider, and mutual TLS fails closed. Tasks and contexts created by one caller are hidden from the others. The public Agent Card stays unauthenticated.
 
 A successful send response is a ProtoJSON task envelope. Its artifact data part uses the same media type:
 
@@ -44,7 +48,7 @@ Task states use the protocol names `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`,
 
 `POST /tasks/{id}:subscribe` and `POST /message:stream` emit live `StreamResponse` frames. Query results are split into ordered artifact chunks. The last chunk sets `lastChunk` to true. Subscribe after a terminal task returns `unsupported_operation`.
 
-Core conformance is `tests/a2a_compliance.rs` plus `mise run tck`, which runs the official MUST, SHOULD, and MAY suite in a container against `examples/a2a_tck` for HTTP+JSON, JSON-RPC, and gRPC, including advertised streaming. MUST failures fail the run. Optional push, extended-card, and security declarations are out of that core set until they are configured. The TCK pin still expects success `Content-Type: application/json`; this crate emits `application/a2a+json` and deselects that one content-type assertion.
+Core conformance is `tests/a2a_compliance.rs` plus `mise run tck`, which runs the official MUST, SHOULD, and MAY suite in a container against `examples/a2a_tck` for HTTP+JSON, JSON-RPC, and gRPC, including advertised streaming. MUST failures fail the run. Optional push, extended-card, and security declarations are out of that core set until they are configured. The TCK pin still expects success `Content-Type: application/json`; this crate emits `application/a2a+json` and deselects that one content-type assertion. A part `mediaType` other than `text/plain` or `application/json` returns `CONTENT_TYPE_NOT_SUPPORTED`. The pinned `CORE-SEND-003` runner expects that send to succeed, so the TCK task deselects it.
 
 This crate depends on `a2a-lf` 0.4.1, `a2a-server-lf` 0.5.1, `a2a-client-lf` 0.2.7, and `a2a-grpc` 0.3.
 

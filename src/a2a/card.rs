@@ -18,6 +18,7 @@ pub(crate) fn agent_card(
     extended_agent_card: bool,
     security_schemes: Option<HashMap<String, SecurityScheme>>,
     security_requirements: Option<Vec<SecurityRequirement>>,
+    agent_message: bool,
 ) -> AgentCard {
     AgentCard {
         name: "a2a-lab".to_owned(),
@@ -34,9 +35,9 @@ pub(crate) fn agent_card(
             extensions: None,
             extended_agent_card: Some(extended_agent_card),
         },
-        default_input_modes: vec!["text/plain".to_owned(), LAB_MEDIA_TYPE.to_owned()],
-        default_output_modes: vec!["text/plain".to_owned(), LAB_MEDIA_TYPE.to_owned()],
-        skills: skills(),
+        default_input_modes: accepted_modes(),
+        default_output_modes: accepted_modes(),
+        skills: skills(agent_message),
         provider: None,
         documentation_url: None,
         icon_url: None,
@@ -44,6 +45,10 @@ pub(crate) fn agent_card(
         security_requirements,
         signatures: None,
     }
+}
+
+pub(crate) fn accepted_modes() -> Vec<String> {
+    vec!["text/plain".to_owned(), LAB_MEDIA_TYPE.to_owned()]
 }
 
 fn interface(url: &str, protocol_binding: &str) -> AgentInterface {
@@ -55,54 +60,70 @@ fn interface(url: &str, protocol_binding: &str) -> AgentInterface {
     }
 }
 
-fn skills() -> Vec<AgentSkill> {
-    [
+fn skills(agent_message: bool) -> Vec<AgentSkill> {
+    let mut items = vec![
         (
             "list-log-sources",
             "List log sources",
             "List the log sources this agent can read",
+            LAB_MEDIA_TYPE,
         ),
         (
             "query-logs",
             "Query logs",
             "Read structured logs from a source over a UTC time range",
+            LAB_MEDIA_TYPE,
         ),
         (
             "list-metrics",
             "List metrics",
             "List the metrics this agent can read",
+            LAB_MEDIA_TYPE,
         ),
         (
             "query-metric",
             "Query metric",
             "Read metric samples over a UTC time range",
+            LAB_MEDIA_TYPE,
         ),
         (
             "list-tasks",
             "List tasks",
             "List the tasks this agent can start",
+            LAB_MEDIA_TYPE,
         ),
         (
             "start-task",
             "Start task",
             "Start a task with a JSON object input. Waits until the run is terminal unless wait is false.",
+            LAB_MEDIA_TYPE,
         ),
         (
             "get-task-status",
             "Get task status",
             "Read the status of a started lab run",
+            LAB_MEDIA_TYPE,
         ),
-    ]
-    .into_iter()
-    .map(|(id, name, description)| AgentSkill {
-        id: id.to_owned(),
-        name: name.to_owned(),
-        description: description.to_owned(),
-        tags: vec!["lab".to_owned()],
-        examples: None,
-        input_modes: Some(vec![LAB_MEDIA_TYPE.to_owned()]),
-        output_modes: Some(vec![LAB_MEDIA_TYPE.to_owned()]),
-        security_requirements: None,
-    })
-    .collect()
+    ];
+    if agent_message {
+        items.push((
+            "agent-message",
+            "Agent message",
+            "Send plain text and continue the conversation by reusing the returned context",
+            "text/plain",
+        ));
+    }
+    items
+        .into_iter()
+        .map(|(id, name, description, media_type)| AgentSkill {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            description: description.to_owned(),
+            tags: vec!["lab".to_owned()],
+            examples: None,
+            input_modes: Some(vec![media_type.to_owned()]),
+            output_modes: Some(vec![media_type.to_owned()]),
+            security_requirements: None,
+        })
+        .collect()
 }

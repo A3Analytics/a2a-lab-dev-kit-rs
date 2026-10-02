@@ -11,7 +11,7 @@ use crate::service::{LabCommand, LabResult, TaskSnapshot};
 use crate::tasks::TaskState;
 
 /// Media type of lab command and result data parts.
-pub const LAB_MEDIA_TYPE: &str = "application/vnd.a2a-lab.v1+json";
+pub const LAB_MEDIA_TYPE: &str = "application/json";
 
 /// A2A protocol version advertised by this dev kit.
 pub const A2A_PROTOCOL_VERSION: &str = a2a_types::VERSION;

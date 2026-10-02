@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use a2a_server::{AgentExecutor, ExecutorContext};
 use a2a_types::{
-    A2AError, Artifact, Message, Part, Role, StreamResponse, Task, TaskArtifactUpdateEvent,
-    TaskStatus,
+    A2AError, Artifact, Message, Part, PartContent, Role, StreamResponse, Task,
+    TaskArtifactUpdateEvent, TaskStatus,
 };
 use futures_util::stream::{self, BoxStream};
 use tokio::sync::{Mutex, mpsc};
@@ -16,20 +16,26 @@ use crate::id::RunId;
 use crate::service::{LabApi, LabCommand, LabResult, TaskSnapshot};
 use crate::tasks::{GetTaskStatusRequest, TaskState};
 
-use super::wire;
+use super::message::{AgentMessageHandler, AgentMessageRequest};
+use super::wire::{self, LAB_MEDIA_TYPE};
 
 const POLL: Duration = Duration::from_millis(25);
 
 #[derive(Clone)]
 pub(crate) struct LabExecutor {
     lab: Arc<dyn LabApi>,
+    messages: Option<Arc<dyn AgentMessageHandler>>,
     runs: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl LabExecutor {
-    pub(crate) fn new(lab: Arc<dyn LabApi>) -> Self {
+    pub(crate) fn new(
+        lab: Arc<dyn LabApi>,
+        messages: Option<Arc<dyn AgentMessageHandler>>,
+    ) -> Self {
         Self {
             lab,
+            messages,
             runs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -40,16 +46,29 @@ impl AgentExecutor for LabExecutor {
         &self,
         ctx: ExecutorContext,
     ) -> BoxStream<'static, Result<StreamResponse, A2AError>> {
-        spawn_events(Arc::clone(&self.lab), Arc::clone(&self.runs), ctx, false)
+        spawn_events(
+            Arc::clone(&self.lab),
+            self.messages.clone(),
+            Arc::clone(&self.runs),
+            ctx,
+            false,
+        )
     }
 
     fn cancel(&self, ctx: ExecutorContext) -> BoxStream<'static, Result<StreamResponse, A2AError>> {
-        spawn_events(Arc::clone(&self.lab), Arc::clone(&self.runs), ctx, true)
+        spawn_events(
+            Arc::clone(&self.lab),
+            self.messages.clone(),
+            Arc::clone(&self.runs),
+            ctx,
+            true,
+        )
     }
 }
 
 fn spawn_events(
     lab: Arc<dyn LabApi>,
+    messages: Option<Arc<dyn AgentMessageHandler>>,
     runs: Arc<Mutex<HashMap<String, String>>>,
     ctx: ExecutorContext,
     cancel: bool,
@@ -59,7 +78,7 @@ fn spawn_events(
         let result = if cancel {
             cancel_lab(lab, runs, ctx, &tx).await
         } else {
-            execute_lab(lab, runs, ctx, &tx).await
+            execute_lab(lab, messages, runs, ctx, &tx).await
         };
         if let Err(error) = result {
             let _ = tx.send(Err(error)).await;
@@ -72,14 +91,15 @@ fn spawn_events(
 
 async fn execute_lab(
     lab: Arc<dyn LabApi>,
+    messages: Option<Arc<dyn AgentMessageHandler>>,
     runs: Arc<Mutex<HashMap<String, String>>>,
     ctx: ExecutorContext,
     tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
 ) -> Result<(), A2AError> {
-    let Some(message) = ctx.message.as_ref() else {
+    let Some(message) = ctx.message.clone() else {
         return Err(A2AError::invalid_request("message is required"));
     };
-    if let Some(events) = super::tck::profile(message, &ctx.task_id, &ctx.context_id) {
+    if let Some(events) = super::tck::profile(&message, &ctx.task_id, &ctx.context_id) {
         for event in events {
             send(tx, event).await?;
         }
@@ -88,11 +108,92 @@ async fn execute_lab(
     if message.parts.is_empty() {
         return Err(A2AError::invalid_request("message requires parts"));
     }
-    hold_resubscribe(message).await;
-    match wire::command_from_message(message)? {
-        Some(command) => run_command(lab, runs, ctx, command, tx).await,
-        None => complete_without_command(&ctx, tx).await,
+    if message.role != Role::User {
+        return Err(A2AError::invalid_request(
+            "client message role must be ROLE_USER",
+        ));
     }
+    hold_resubscribe(&message).await;
+    match wire::command_from_message(&message)? {
+        Some(command) => run_command(lab, runs, ctx, command, tx).await,
+        None => dispatch_text(messages, ctx, &message, tx).await,
+    }
+}
+
+async fn dispatch_text(
+    messages: Option<Arc<dyn AgentMessageHandler>>,
+    ctx: ExecutorContext,
+    message: &Message,
+    tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
+) -> Result<(), A2AError> {
+    let Some(handler) = messages else {
+        return complete_without_command(&ctx, tx).await;
+    };
+    let text = plain_text(message)?;
+    run_agent_message(handler, ctx, message, text, tx).await
+}
+
+fn plain_text(message: &Message) -> Result<String, A2AError> {
+    let mut texts = Vec::new();
+    for part in &message.parts {
+        let PartContent::Text(text) = &part.content else {
+            return Err(A2AError::invalid_request(
+                "agent message accepts only text parts",
+            ));
+        };
+        match part.media_type.as_deref() {
+            None | Some("" | "text/plain") => texts.push(text.as_str()),
+            Some(_) => return Err(A2AError::content_type_not_supported()),
+        }
+    }
+    let text = texts.join("\n");
+    if text.trim().is_empty() {
+        Err(A2AError::invalid_request("agent message requires text"))
+    } else {
+        Ok(text)
+    }
+}
+
+async fn run_agent_message(
+    handler: Arc<dyn AgentMessageHandler>,
+    ctx: ExecutorContext,
+    message: &Message,
+    text: String,
+    tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
+) -> Result<(), A2AError> {
+    let reply = handler
+        .handle(AgentMessageRequest {
+            text,
+            context_id: ctx.context_id.clone(),
+            task_id: ctx.task_id.clone(),
+            reference_task_ids: message.reference_task_ids.clone().unwrap_or_default(),
+        })
+        .await
+        .map_err(|error| wire::a2a_error(&error))?;
+    send(
+        tx,
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: ctx.task_id.clone(),
+            context_id: ctx.context_id.clone(),
+            artifact: Artifact {
+                artifact_id: a2a_types::new_artifact_id(),
+                name: Some("agent-message".to_owned()),
+                description: None,
+                parts: vec![Part::text(reply.text).with_media_type("text/plain")],
+                metadata: None,
+                extensions: None,
+            },
+            append: Some(false),
+            last_chunk: Some(true),
+            metadata: None,
+        }),
+    )
+    .await?;
+    send(
+        tx,
+        wire::status_update(&ctx.task_id, &ctx.context_id, TaskState::Completed),
+    )
+    .await
 }
 
 async fn run_command(
@@ -173,7 +274,7 @@ async fn complete_without_command(
                 name: Some("lab-profile".to_owned()),
                 description: Some("This agent speaks the a2a-lab data profile".to_owned()),
                 parts: vec![Part::text(
-                    "Send a data part with media type application/vnd.a2a-lab.v1+json",
+                    format!("Send a data part with media type {LAB_MEDIA_TYPE}"),
                 )],
                 metadata: None,
                 extensions: None,

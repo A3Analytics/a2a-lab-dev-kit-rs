@@ -16,6 +16,8 @@ Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of
 6. `start_task` starts a task with a JSON object and waits until the run is terminal. Set `wait` to false to return as soon as the run is accepted.
 7. `get_task_status` reads one run.
 
+`A2aServer::with_message_handler` adds `agent-message`. A `ROLE_USER` message whose parts are all `text/plain` uses that handler. A later message reuses the returned A2A `contextId` and can pass `referenceTaskIds` for earlier tasks. Each message keeps the sender's unique message id. Lab data parts stay on the seven operations. `with_security` requires the declared credential and shows each context only to the caller that created it.
+
 A2A skill ids are hyphenated (`list-log-sources`). MCP tool names match the Rust names (`list_log_sources`).
 
 Time ranges are half-open UTC intervals, `[start, end)`. `start` must be strictly before `end`. A timestamp inside the range is greater than or equal to `start` and strictly less than `end`. `UtcTimestamp` accepts RFC 3339 text with offset `Z`, `+00:00`, or `-00:00`.
