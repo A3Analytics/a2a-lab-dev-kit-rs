@@ -10,7 +10,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this dev kit
 
-A2A is one of the two agent-facing protocols. `A2aServer` and `A2aClient` speak A2A 1.0 HTTP+JSON through the official `a2a-lf`, `a2a-server-lf`, and `a2a-client-lf` crates. The default agent runs lab commands by calling the MCP tools on `http://127.0.0.1:31001/mcp` (`McpLab`). `A2aServer::new` still accepts any `LabApi`, including `LabService` for tests.
+A2A is one of the two agent-facing protocols. `A2aServer` speaks A2A 1.0 HTTP+JSON, JSON-RPC, and gRPC through the official `a2a-lf`, `a2a-server-lf`, `a2a-client-lf`, and `a2a-grpc` crates. `A2aClient` speaks HTTP+JSON. The default agent runs lab commands by calling the MCP tools on `http://127.0.0.1:31001/mcp` (`McpLab`). `A2aServer::new` still accepts any `LabApi`, including `LabService` for tests.
 
 The seven lab operations are an A2A data-part profile. A message data part with media type `application/vnd.a2a-lab.v1+json` (`LAB_MEDIA_TYPE`) is a `LabCommand`. The matching artifact data part is a `LabResult`. Protocol task ids are A2A UUIDs. A started lab run keeps its own `run-*` id inside the `start_task` result. `GET /tasks/{id}` is the protocol task, not `list_tasks` / `get_task_status`.
 
@@ -33,11 +33,11 @@ flowchart TD
 
 ## What this crate implements
 
-The adapter lives in `src/a2a`. `A2A_PROTOCOL_VERSION` is `"1.0"`. Canonical routes are `POST /message:send`, `POST /message:stream`, `GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}:cancel`, `POST /tasks/{id}:subscribe`, push-config CRUD, `GET /extendedAgentCard`, and `GET /.well-known/agent-card.json`.
+The adapter lives in `src/a2a`. `A2A_PROTOCOL_VERSION` is `"1.0"`. HTTP+JSON routes are `POST /message:send`, `POST /message:stream`, `GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}:cancel`, `POST /tasks/{id}:subscribe`, push-config CRUD, `GET /extendedAgentCard`, and `GET /.well-known/agent-card.json`. JSON-RPC is `POST /` on that same listener. gRPC is a second `127.0.0.1:0` listener.
 
 Requests use `A2A-Version: 1.0` and `application/a2a+json`. Success bodies are ProtoJSON envelopes. Failures are `google.rpc.Status` with `ErrorInfo`. SSE frames are `StreamResponse` objects (`task`, `statusUpdate`, `artifactUpdate`, `message`).
 
-`GET /.well-known/agent-card.json` returns a card named `a2a-lab`. Protocol version sits on the `HTTP+JSON` interface, not the card root. `streaming` is true. `pushNotifications` and `extendedAgentCard` are true only when those features are configured. Skills are `list-log-sources`, `query-logs`, `list-metrics`, `query-metric`, `list-tasks`, `start-task`, and `get-task-status`. Skill input and output modes are `LAB_MEDIA_TYPE`.
+`GET /.well-known/agent-card.json` returns a card named `a2a-lab`. Protocol version `1.0` sits on each interface, not the card root. The interfaces are `HTTP+JSON`, `JSONRPC` (the same origin), and `GRPC` (`host:port`, the form the official SDK writes for that binding). `streaming` is true. `pushNotifications` and `extendedAgentCard` are true only when those features are configured. Skills are `list-log-sources`, `query-logs`, `list-metrics`, `query-metric`, `list-tasks`, `start-task`, and `get-task-status`. Skill input and output modes are `LAB_MEDIA_TYPE`.
 
 A present data-part `mediaType` other than `LAB_MEDIA_TYPE` returns the standard content-type error. Text parts without a lab command complete with a help artifact. Query-log and query-metric pages become one artifact chunk per item. Later chunks set `append`; the last chunk sets `lastChunk`.
 
@@ -47,7 +47,7 @@ Providers that cannot cancel a run return `TASK_NOT_CANCELABLE` rather than chan
 
 With no listener, `A2aServer::listen` binds `127.0.0.1:31000`.
 
-Core HTTP+JSON conformance is what the official TCK mandatory tests cover, including advertised streaming. Optional capabilities are advertised only when they are implemented and configured. The pinned TCK still asserts success `Content-Type: application/json` (`HTTP_JSON-SVC-001`); this crate follows A2A 1.0 and the official SDK (`application/a2a+json`). The TCK task deselects that content-type assertion and keeps the schema half of the requirement. Error responses keep AIP-193 `google.rpc.Status` bodies; `TASK_NOT_CANCELABLE` maps to HTTP 409 and `CONTENT_TYPE_NOT_SUPPORTED` maps to HTTP 415.
+`tests/a2a_compliance.rs` checks the HTTP+JSON wire contract, JSON-RPC envelopes, gRPC calls, SSE frames, and the `tck-*` message-id profiles. `mise run tck` runs the pinned official MUST suite for `http_json`, `jsonrpc`, and `grpc`, including advertised streaming. Optional capabilities are advertised only when they are implemented and configured. The pinned TCK still asserts success `Content-Type: application/json` (`HTTP_JSON-SVC-001`); this crate follows A2A 1.0 and the official SDK (`application/a2a+json`). The TCK task deselects that content-type assertion and keeps the schema half of the requirement. Error responses keep AIP-193 `google.rpc.Status` bodies; `TASK_NOT_CANCELABLE` maps to HTTP 409 and `CONTENT_TYPE_NOT_SUPPORTED` maps to HTTP 415. JSON-RPC errors stay HTTP 200 with the code in the envelope.
 
 ## Entry points
 

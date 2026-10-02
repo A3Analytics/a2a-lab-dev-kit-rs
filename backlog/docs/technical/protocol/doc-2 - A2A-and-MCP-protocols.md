@@ -10,7 +10,7 @@ created_date: "2026-09-29 23:40"
 
 ## A2A
 
-The server speaks A2A 1.0 over HTTP+JSON using the official `a2a-lf` models and `a2a-server-lf` request handler. It publishes an Agent Card at `/.well-known/agent-card.json` with seven skills:
+The server speaks A2A 1.0 over HTTP+JSON, JSON-RPC, and gRPC using the official `a2a-lf` models, `a2a-server-lf` request handler, and `a2a-grpc`. It publishes an Agent Card at `/.well-known/agent-card.json` with seven skills:
 
 - `list-log-sources`
 - `query-logs`
@@ -20,7 +20,7 @@ The server speaks A2A 1.0 over HTTP+JSON using the official `a2a-lf` models and 
 - `start-task`
 - `get-task-status`
 
-Protocol version `1.0` is on the `HTTP+JSON` interface. The card advertises `streaming`. It advertises `pushNotifications` and `extendedAgentCard` only when those features are configured on `A2aServer`.
+Protocol version `1.0` is on the `HTTP+JSON`, `JSONRPC`, and `GRPC` interfaces. JSON-RPC is `POST /` on the HTTP listener. gRPC listens on a second socket, and the card publishes that address as `host:port`. The card advertises `streaming`. It advertises `pushNotifications` and `extendedAgentCard` only when those features are configured on `A2aServer`.
 
 Clients send a `message` to `POST /message:send` or `POST /message:stream`. The lab command is a data part with media type `application/vnd.a2a-lab.v1+json`:
 
@@ -44,9 +44,9 @@ Task states use the protocol names `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`,
 
 `POST /tasks/{id}:subscribe` and `POST /message:stream` emit live `StreamResponse` frames. Query results are split into ordered artifact chunks. The last chunk sets `lastChunk` to true. Subscribe after a terminal task returns `unsupported_operation`.
 
-Core conformance is the official HTTP+JSON TCK mandatory suite plus the advertised-capability tests for streaming. Optional push, extended-card, and security declarations are out of that core set until they are configured. The TCK pin still expects success `Content-Type: application/json`; this crate emits `application/a2a+json` and deselects that one content-type assertion.
+Core conformance is `tests/a2a_compliance.rs` plus `mise run tck`, which runs the official MUST suite for HTTP+JSON, JSON-RPC, and gRPC, including advertised streaming. Optional push, extended-card, and security declarations are out of that core set until they are configured. The TCK pin still expects success `Content-Type: application/json`; this crate emits `application/a2a+json` and deselects that one content-type assertion.
 
-This crate depends on `a2a-lf` 0.4.1, `a2a-server-lf` 0.5.1, and `a2a-client-lf` 0.2.7.
+This crate depends on `a2a-lf` 0.4.1, `a2a-server-lf` 0.5.1, `a2a-client-lf` 0.2.7, and `a2a-grpc` 0.3.
 
 ## MCP
 

@@ -1,4 +1,4 @@
-//! Serves a memory lab over A2A HTTP+JSON for the official TCK.
+//! Serves a memory lab over A2A HTTP+JSON, JSON-RPC, and gRPC for the official TCK.
 
 use std::io::{Write, stderr};
 

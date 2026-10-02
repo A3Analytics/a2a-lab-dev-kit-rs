@@ -1,6 +1,8 @@
 # a2a-lab-dev-kit
 
-Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` runs seven operations, and A2A HTTP+JSON and MCP both call that service.
+[![A2A 1.0](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml)
+
+Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` runs seven operations. A2A HTTP+JSON, JSON-RPC, and gRPC, plus MCP, call that service.
 
 [Wiki Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
 
@@ -50,13 +52,13 @@ let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp")).await?;
 
 `A2aServer::listen(None)` binds `127.0.0.1:31000`. `McpServer::serve_http(None)` binds `127.0.0.1:31001`. The default A2A agent calls `http://127.0.0.1:31001/mcp`. The example passes `TcpListener`s from `bind_local` (`127.0.0.1:0`) and runs both servers until each client call returns. `McpServer::serve_stdio` speaks MCP on standard input and output; keep diagnostics on stderr.
 
-A2A publishes `/.well-known/agent-card.json` and accepts `POST /message:send` (A2A 1.0 HTTP+JSON). MCP Streamable HTTP is mounted at `/mcp`. Optional A2A push notifications, extended Agent Card, and security schemes are off unless configured on `A2aServer`.
+A2A publishes `/.well-known/agent-card.json` and serves A2A 1.0 on HTTP+JSON (`POST /message:send`), JSON-RPC (`POST /`), and gRPC. MCP Streamable HTTP is mounted at `/mcp`. Optional A2A push notifications, extended Agent Card, and security schemes are off unless configured on `A2aServer`.
 
 ## Standards
 
-| Topic                      | Wiki                                                                |
-| -------------------------- | ------------------------------------------------------------------- |
-| Lab dev kit overview           | [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)     |
+| Topic                      | Wiki                                                                    |
+| -------------------------- | ----------------------------------------------------------------------- |
+| Lab dev kit overview       | [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)     |
 | A2A                        | [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)       |
 | MCP                        | [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP)       |
 | Asset Administration Shell | [AAS](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS)       |
@@ -90,6 +92,6 @@ mise run test
 mise run quality
 ```
 
-`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, tests, and the official A2A HTTP+JSON TCK.
+`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, tests, and the official A2A TCK for HTTP+JSON, JSON-RPC, and gRPC. In-process wire checks live in `tests/a2a_compliance.rs`.
 
 Wiki pages are generated from public Backlog docs and published by the Wiki GitHub Action. Do not publish from a local checkout. GitHub's `GITHUB_TOKEN` cannot write Wikis, so add a `WIKI_TOKEN` repository secret with Wikis read/write. Create the first GitHub Wiki page once so `.wiki.git` exists, then re-run the Action.

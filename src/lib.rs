@@ -1,7 +1,7 @@
 //! Rust dev kit for lab logs, metrics, and tasks.
 //!
-//! Provider traits are the source of truth. The A2A HTTP+JSON adapter and the
-//! MCP adapter expose the same seven operations over those traits.
+//! Provider traits are the source of truth. The A2A adapter (HTTP+JSON, JSON-RPC,
+//! and gRPC) and the MCP adapter expose the same seven operations over those traits.
 
 #![allow(clippy::doc_markdown)]
 

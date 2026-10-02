@@ -27,16 +27,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "a2a-grpc"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dc392308c0235063e3ab99a4903eed8b74df1670d143d0dab4cd6273ff1ade2"
+dependencies = [
+ "a2a-client-lf",
+ "a2a-lf",
+ "a2a-pb",
+ "a2a-server-lf",
+ "async-trait",
+ "futures",
+ "http",
+ "prost",
+ "rustls",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-tls",
+ "tonic-types",
+ "tracing",
+]
+
+[[package]]
 name = "a2a-lab-dev-kit"
 version = "0.1.0"
 dependencies = [
  "a2a-client-lf",
+ "a2a-grpc",
  "a2a-lf",
+ "a2a-pb",
  "a2a-server-lf",
  "async-opcua-client",
  "async-opcua-types",
  "axum",
  "futures-util",
+ "http-body",
  "jiff",
  "mdns-sd",
  "prost",
@@ -52,6 +78,8 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]
@@ -317,6 +345,28 @@ dependencies = [
  "thiserror",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -3232,6 +3282,35 @@ dependencies = [
  "syn 2.0.119",
  "tempfile",
  "tonic-build",
+]
+
+[[package]]
+name = "tonic-tls"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ace145c667504b488f44f08fd4966da7feefd430621a4ce1eae5ca79e6c867"
+dependencies = [
+ "async-stream",
+ "futures",
+ "hyper",
+ "hyper-util",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "tonic",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "tonic-types"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73ab1b02061f83d519bba3caa167f88f261ef05720ab8ebc954ade70de3348e8"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
 ]
 
 [[package]]

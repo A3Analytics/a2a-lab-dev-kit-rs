@@ -1,4 +1,6 @@
-//! A2A 1.0 HTTP+JSON adapter for lab providers.
+//! A2A 1.0 adapter for lab providers.
+//!
+//! `A2aServer` serves HTTP+JSON, JSON-RPC, and gRPC. `A2aClient` speaks HTTP+JSON.
 
 mod card;
 mod client;

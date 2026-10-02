@@ -4,15 +4,16 @@ use std::collections::HashMap;
 
 use a2a_types::{
     AgentCapabilities, AgentCard, AgentInterface, AgentSkill, SecurityRequirement, SecurityScheme,
-    TRANSPORT_PROTOCOL_HTTP_JSON,
+    TRANSPORT_PROTOCOL_GRPC, TRANSPORT_PROTOCOL_HTTP_JSON, TRANSPORT_PROTOCOL_JSONRPC,
 };
 
 use super::wire::{A2A_PROTOCOL_VERSION, LAB_MEDIA_TYPE};
 
-/// Builds the well-known Agent Card for `public_url`.
+/// Builds the well-known Agent Card for the HTTP origin and gRPC socket.
 #[must_use]
 pub(crate) fn agent_card(
     public_url: &str,
+    grpc_url: &str,
     push_notifications: bool,
     extended_agent_card: bool,
     security_schemes: Option<HashMap<String, SecurityScheme>>,
@@ -22,12 +23,11 @@ pub(crate) fn agent_card(
         name: "a2a-lab".to_owned(),
         description: "Lab logs, metrics, and tasks".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
-        supported_interfaces: vec![AgentInterface {
-            url: public_url.to_owned(),
-            protocol_binding: TRANSPORT_PROTOCOL_HTTP_JSON.to_owned(),
-            protocol_version: A2A_PROTOCOL_VERSION.to_owned(),
-            tenant: None,
-        }],
+        supported_interfaces: vec![
+            interface(public_url, TRANSPORT_PROTOCOL_HTTP_JSON),
+            interface(public_url, TRANSPORT_PROTOCOL_JSONRPC),
+            interface(grpc_url, TRANSPORT_PROTOCOL_GRPC),
+        ],
         capabilities: AgentCapabilities {
             streaming: Some(true),
             push_notifications: Some(push_notifications),
@@ -43,6 +43,15 @@ pub(crate) fn agent_card(
         security_schemes,
         security_requirements,
         signatures: None,
+    }
+}
+
+fn interface(url: &str, protocol_binding: &str) -> AgentInterface {
+    AgentInterface {
+        url: url.to_owned(),
+        protocol_binding: protocol_binding.to_owned(),
+        protocol_version: A2A_PROTOCOL_VERSION.to_owned(),
+        tenant: None,
     }
 }
 

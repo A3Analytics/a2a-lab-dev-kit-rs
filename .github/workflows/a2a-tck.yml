@@ -1,0 +1,24 @@
+name: A2A TCK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a2a-tck
+  cancel-in-progress: true
+
+jobs:
+  tck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+
+      - name: Official A2A MUST suite
+        run: mise run tck

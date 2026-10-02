@@ -175,11 +175,24 @@ async fn agent_card_advertises_every_skill() {
             "get-task-status",
         ]
     );
-    assert_eq!(
-        card.supported_interfaces[0].protocol_version,
-        A2A_PROTOCOL_VERSION
+    let bindings: Vec<_> = card
+        .supported_interfaces
+        .iter()
+        .map(|interface| interface.protocol_binding.as_str())
+        .collect();
+    assert_eq!(bindings, ["HTTP+JSON", "JSONRPC", "GRPC"]);
+    assert!(
+        card.supported_interfaces
+            .iter()
+            .all(|interface| { interface.protocol_version == A2A_PROTOCOL_VERSION })
     );
-    assert_eq!(card.supported_interfaces[0].protocol_binding, "HTTP+JSON");
+    assert!(card.supported_interfaces[0].url.starts_with("http://"));
+    assert_eq!(
+        card.supported_interfaces[0].url,
+        card.supported_interfaces[1].url
+    );
+    assert!(!card.supported_interfaces[2].url.contains("://"));
+    assert!(card.supported_interfaces[2].url.contains(':'));
     assert_eq!(card.capabilities.streaming, Some(true));
     assert_eq!(card.capabilities.push_notifications, Some(false));
     assert_eq!(card.capabilities.extended_agent_card, Some(false));

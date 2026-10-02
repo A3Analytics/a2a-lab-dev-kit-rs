@@ -60,6 +60,7 @@ PY
   uv sync
   # HTTP_JSON-SVC-001 still asserts application/json; A2A 1.0 and the official
   # Rust SDK emit application/a2a+json. Keep the schema half of that requirement.
-  uv run python run_tck.py --sut-host "$sut_url" --transport http_json --level must -- \
+  # grpcio is a direct TCK dependency, so uv sync already installs the gRPC client.
+  uv run python run_tck.py --sut-host "$sut_url" --transport http_json,jsonrpc,grpc --level must -- \
     -k "not test_response_content_type"
 )
