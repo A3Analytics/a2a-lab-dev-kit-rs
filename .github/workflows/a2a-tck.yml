@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: read
 
 concurrency:
@@ -26,3 +27,12 @@ jobs:
 
       - name: Official A2A TCK
         run: bash .mise/scripts/a2a-tck.sh
+
+      - name: Publish TCK reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a2a-tck-reports
+          path: target/a2a-tck-reports/
+          if-no-files-found: ignore
+          retention-days: 14
