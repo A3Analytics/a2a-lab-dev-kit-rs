@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use crate::error::A2aLabError;
-use crate::service::LabApi;
+use crate::service::A2aLabApi;
 use crate::sila::constraints::execution_uuid;
 use crate::sila::errors::{cancel_defined, framework, reject_metadata, undefined, validation};
 use crate::sila::executions::{status_request, Executions};
@@ -20,7 +20,7 @@ const EXECUTION_PARAMETER: &str = "org.silastandard/core/commands/CancelControll
 
 #[derive(Clone)]
 pub(crate) struct CancelFeature {
-    pub lab: Arc<dyn LabApi>,
+    pub lab: Arc<dyn A2aLabApi>,
     pub executions: Executions,
 }
 
@@ -74,7 +74,7 @@ impl CancelFeature {
         let request = status_request(&run_id).map_err(|error| undefined(error.to_string()))?;
         match self.lab.cancel(request).await {
             Ok(snapshot) => {
-                let crate::service::LabResult::StartTask(run) = snapshot.result else {
+                let crate::service::A2aLabResult::StartTask(run) = snapshot.result else {
                     return Err(undefined("cancel did not return a task run"));
                 };
                 if run.state != TaskState::Canceled {

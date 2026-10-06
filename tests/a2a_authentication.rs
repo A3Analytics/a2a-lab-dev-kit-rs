@@ -5,9 +5,9 @@ use a2a_client::A2AClient;
 use a2a_client::auth::AuthInterceptor;
 use a2a_grpc::GrpcTransport;
 use a2a_lab_dev_kit::{
-    A2aClient, A2aServer, AgentCard, A2aLabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
-    OidcAuthenticator, OpenIdConnectSecurityScheme, SecurityScheme, SourceId, TaskDefinition,
-    TaskId, bind_local,
+    A2aClient, A2aLabService, A2aServer, AgentCard, LogSource, MemoryLogs, MemoryMetrics,
+    MemoryTasks, OidcAuthenticator, OpenIdConnectSecurityScheme, SecurityScheme, SourceId,
+    TaskDefinition, TaskId, bind_local,
 };
 use a2a_types::{Message, Part, Role, SendMessageRequest};
 use base64::Engine;

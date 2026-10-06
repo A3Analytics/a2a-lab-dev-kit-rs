@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aClient, A2aServer, Asset, AssetKey, Binding, BindingRole, Endpoint, IndustrialLabBuilder,
-    JsonObject, A2aLabService, ListMetricsRequest, MemoryCatalog, MetricPoint, OpcUaIdentityKind,
-    PageRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind, StartTaskRequest, TaskId,
-    TimeRange, UtcTimestamp, bind_local,
+    A2aClient, A2aLabService, A2aServer, Asset, AssetKey, Binding, BindingRole, Endpoint,
+    IndustrialLabBuilder, JsonObject, ListMetricsRequest, MemoryCatalog, MetricPoint,
+    OpcUaIdentityKind, PageRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind,
+    StartTaskRequest, TaskId, TimeRange, UtcTimestamp, bind_local,
 };
 
 fn timestamp(value: &str) -> UtcTimestamp {

@@ -7,7 +7,7 @@ use a2a_types::{
 
 use crate::error::A2aLabError;
 use crate::page::Page;
-use crate::service::{LabCommand, LabResult, TaskSnapshot};
+use crate::service::{A2aLabCommand, A2aLabResult, TaskSnapshot};
 use crate::tasks::TaskState;
 
 /// Media type of lab command and result data parts.
@@ -16,7 +16,7 @@ pub const LAB_MEDIA_TYPE: &str = "application/json";
 /// A2A protocol version advertised by this dev kit.
 pub const A2A_PROTOCOL_VERSION: &str = a2a_types::VERSION;
 
-pub(crate) fn command_from_message(message: &Message) -> Result<Option<LabCommand>, A2AError> {
+pub(crate) fn command_from_message(message: &Message) -> Result<Option<A2aLabCommand>, A2AError> {
     for part in &message.parts {
         let PartContent::Data(data) = &part.content else {
             continue;
@@ -68,13 +68,13 @@ fn whole_number(number: serde_json::Number) -> serde_json::Value {
     serde_json::Value::Number(serde_json::Number::from(float.round() as u32))
 }
 
-pub(crate) fn lab_part(result: &LabResult) -> Result<Part, A2AError> {
+pub(crate) fn lab_part(result: &A2aLabResult) -> Result<Part, A2AError> {
     let data =
         serde_json::to_value(result).map_err(|error| A2AError::internal(error.to_string()))?;
     Ok(Part::data(data).with_media_type(LAB_MEDIA_TYPE))
 }
 
-pub(crate) fn artifact(result: &LabResult, artifact_id: String) -> Result<Artifact, A2AError> {
+pub(crate) fn artifact(result: &A2aLabResult, artifact_id: String) -> Result<Artifact, A2AError> {
     Ok(Artifact {
         artifact_id,
         name: None,
@@ -85,14 +85,14 @@ pub(crate) fn artifact(result: &LabResult, artifact_id: String) -> Result<Artifa
     })
 }
 
-pub(crate) fn chunks(result: &LabResult) -> Vec<LabResult> {
+pub(crate) fn chunks(result: &A2aLabResult) -> Vec<A2aLabResult> {
     match result {
-        LabResult::QueryLogs(page) if !page.items().is_empty() => page
+        A2aLabResult::QueryLogs(page) if !page.items().is_empty() => page
             .items()
             .iter()
             .enumerate()
             .map(|(index, item)| {
-                LabResult::QueryLogs(chunk_page(
+                A2aLabResult::QueryLogs(chunk_page(
                     page.next_cursor(),
                     page.items().len(),
                     index,
@@ -100,12 +100,12 @@ pub(crate) fn chunks(result: &LabResult) -> Vec<LabResult> {
                 ))
             })
             .collect(),
-        LabResult::QueryMetric(page) if !page.items().is_empty() => page
+        A2aLabResult::QueryMetric(page) if !page.items().is_empty() => page
             .items()
             .iter()
             .enumerate()
             .map(|(index, item)| {
-                LabResult::QueryMetric(chunk_page(
+                A2aLabResult::QueryMetric(chunk_page(
                     page.next_cursor(),
                     page.items().len(),
                     index,
@@ -166,7 +166,7 @@ pub(crate) fn status_update(task_id: &str, context_id: &str, state: TaskState) -
 pub(crate) fn artifact_update(
     task_id: &str,
     context_id: &str,
-    result: &LabResult,
+    result: &A2aLabResult,
     artifact_id: String,
     append: bool,
     last_chunk: bool,
@@ -181,8 +181,8 @@ pub(crate) fn artifact_update(
     }))
 }
 
-pub(crate) fn result_from_task(task: &Task) -> Result<LabResult, A2aLabError> {
-    let results: Vec<LabResult> = task
+pub(crate) fn result_from_task(task: &Task) -> Result<A2aLabResult, A2aLabError> {
+    let results: Vec<A2aLabResult> = task
         .artifacts
         .as_ref()
         .into_iter()
@@ -196,32 +196,32 @@ pub(crate) fn result_from_task(task: &Task) -> Result<LabResult, A2aLabError> {
     merge_results(results)
 }
 
-fn merge_results(results: Vec<LabResult>) -> Result<LabResult, A2aLabError> {
+fn merge_results(results: Vec<A2aLabResult>) -> Result<A2aLabResult, A2aLabError> {
     match results.as_slice() {
         [] => Err(A2aLabError::protocol(
             "task artifact is missing a lab result",
         )),
-        [LabResult::QueryLogs(_), ..] => {
+        [A2aLabResult::QueryLogs(_), ..] => {
             let mut items = Vec::new();
             let mut next = None;
             for result in results {
-                if let LabResult::QueryLogs(page) = result {
+                if let A2aLabResult::QueryLogs(page) = result {
                     next = page.next_cursor().map(ToOwned::to_owned);
                     items.extend(page.items().iter().cloned());
                 }
             }
-            Ok(LabResult::QueryLogs(Page::new(items, next)))
+            Ok(A2aLabResult::QueryLogs(Page::new(items, next)))
         }
-        [LabResult::QueryMetric(_), ..] => {
+        [A2aLabResult::QueryMetric(_), ..] => {
             let mut items = Vec::new();
             let mut next = None;
             for result in results {
-                if let LabResult::QueryMetric(page) = result {
+                if let A2aLabResult::QueryMetric(page) = result {
                     next = page.next_cursor().map(ToOwned::to_owned);
                     items.extend(page.items().iter().copied());
                 }
             }
-            Ok(LabResult::QueryMetric(Page::new(items, next)))
+            Ok(A2aLabResult::QueryMetric(Page::new(items, next)))
         }
         [first, ..] => Ok(first.clone()),
     }

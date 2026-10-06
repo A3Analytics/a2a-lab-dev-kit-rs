@@ -29,7 +29,7 @@ use tower_layer::Layer;
 use tower_service::Service;
 
 use crate::error::A2aLabError;
-use crate::service::LabApi;
+use crate::service::A2aLabApi;
 
 use super::access::{
     AccessError, AccessGate, OwnedTaskStore, auth_response, grpc_auth_status,
@@ -46,7 +46,7 @@ const DEFAULT_ADDRESS: &str = "127.0.0.1:31000";
 ///
 /// HTTP+JSON and JSON-RPC share one listener. gRPC listens on a second socket.
 pub struct A2aServer {
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     public_url: Option<String>,
     grpc_host: Option<String>,
     push_notifications: bool,
@@ -61,7 +61,7 @@ pub struct A2aServer {
 impl A2aServer {
     /// Creates a server that dispatches to `lab`.
     #[must_use]
-    pub fn new(lab: &Arc<dyn LabApi>) -> Self {
+    pub fn new(lab: &Arc<dyn A2aLabApi>) -> Self {
         Self {
             lab: Arc::clone(lab),
             public_url: None,

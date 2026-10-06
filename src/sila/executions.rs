@@ -8,7 +8,7 @@ use tokio::sync::{RwLock, watch};
 use uuid::Uuid;
 
 use crate::error::A2aLabError;
-use crate::service::{LabApi, LabResult};
+use crate::service::{A2aLabApi, A2aLabResult};
 use crate::tasks::{GetTaskStatusRequest, TaskRun, TaskState};
 
 const KEEP_AFTER_TERMINAL: Duration = Duration::from_secs(60);
@@ -53,7 +53,7 @@ impl Executions {
         Self::default()
     }
 
-    pub(crate) async fn start(&self, lab: Arc<dyn LabApi>, run: TaskRun) -> String {
+    pub(crate) async fn start(&self, lab: Arc<dyn A2aLabApi>, run: TaskRun) -> String {
         let execution = Uuid::new_v4().to_string();
         let run_id = run.id.as_str().to_owned();
         let (sender, _) = watch::channel(View::from_run(run));
@@ -136,14 +136,14 @@ fn publish(sender: &watch::Sender<View>, view: &View) {
     });
 }
 
-async fn poll_until_terminal(lab: Arc<dyn LabApi>, run_id: &str, sender: watch::Sender<View>) {
+async fn poll_until_terminal(lab: Arc<dyn A2aLabApi>, run_id: &str, sender: watch::Sender<View>) {
     loop {
         if sender.borrow().state.is_terminal() {
             return;
         }
         match lab.task(run_id).await {
             Ok(snapshot) => {
-                let LabResult::StartTask(run) = snapshot.result else {
+                let A2aLabResult::StartTask(run) = snapshot.result else {
                     publish(
                         &sender,
                         &View {

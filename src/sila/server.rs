@@ -11,7 +11,7 @@ use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 
 use crate::error::A2aLabError;
-use crate::service::LabApi;
+use crate::service::A2aLabApi;
 use crate::sila::cancel::CancelFeature;
 use crate::sila::cert::{install_crypto, SilaCertificate};
 use crate::sila::connection::Hub;
@@ -51,10 +51,10 @@ impl Drop for SilaServerHandle {
     }
 }
 
-/// Feature Provider for one [`crate::service::LabApi`].
+/// Feature Provider for one [`crate::service::A2aLabApi`].
 pub struct SilaServer {
     identity: Arc<Mutex<SilaIdentity>>,
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     certificate: Option<SilaCertificate>,
     plaintext: bool,
     announce: bool,
@@ -66,7 +66,7 @@ pub struct SilaServer {
 impl SilaServer {
     /// Serves `lab` with the supplied identity. TLS is required unless [`Self::plaintext`] is set.
     #[must_use]
-    pub fn new(identity: SilaIdentity, lab: Arc<dyn LabApi>) -> Self {
+    pub fn new(identity: SilaIdentity, lab: Arc<dyn A2aLabApi>) -> Self {
         Self {
             identity: identity.share(),
             lab,

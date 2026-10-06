@@ -44,7 +44,7 @@ It serves standard input and output, or Streamable HTTP.
 
 The default A2A agent uses `McpLab` to call that MCP server.
 
-`A2aServer::new` accepts any `LabApi`, including `A2aLabService`.
+`A2aServer::new` accepts any `A2aLabApi`, including `A2aLabService`.
 
 `SilaServer` is the inbound [SiLA 2](<../../reference/sila-2/doc-8 - SiLA-2.md>) Feature Provider.
 

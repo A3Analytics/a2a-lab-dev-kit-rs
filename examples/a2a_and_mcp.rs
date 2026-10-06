@@ -7,7 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aClient, A2aLabError, A2aServer, LabApi, A2aLabService, ListLogSourcesRequest, LogSource,
+    A2aClient, A2aLabApi, A2aLabError, A2aLabService, A2aServer, ListLogSourcesRequest, LogSource,
     McpLab, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
     bind_local,
 };
@@ -71,14 +71,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 fn spawn_a2a(
-    service: Arc<dyn LabApi>,
+    service: Arc<dyn A2aLabApi>,
     listener: TcpListener,
 ) -> JoinHandle<Result<(), A2aLabError>> {
     tokio::spawn(async move { A2aServer::new(&service).listen(listener).await })
 }
 
 fn spawn_mcp(
-    service: Arc<dyn LabApi>,
+    service: Arc<dyn A2aLabApi>,
     listener: TcpListener,
 ) -> JoinHandle<Result<(), A2aLabError>> {
     tokio::spawn(async move { McpServer::new(&service).serve_http(listener).await })

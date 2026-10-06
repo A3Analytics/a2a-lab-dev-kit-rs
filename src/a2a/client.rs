@@ -16,7 +16,7 @@ use crate::error::A2aLabError;
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
-use crate::service::{LabCommand, LabResult, TaskSnapshot};
+use crate::service::{A2aLabCommand, A2aLabResult, TaskSnapshot};
 use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
 };
@@ -67,10 +67,13 @@ impl A2aClient {
         &self,
         request: ListLogSourcesRequest,
     ) -> Result<Page<LogSource>, A2aLabError> {
-        self.result(LabCommand::ListLogSources(request), |result| match result {
-            LabResult::ListLogSources(page) => Some(page),
-            _ => None,
-        })
+        self.result(
+            A2aLabCommand::ListLogSources(request),
+            |result| match result {
+                A2aLabResult::ListLogSources(page) => Some(page),
+                _ => None,
+            },
+        )
         .await
     }
 
@@ -79,8 +82,8 @@ impl A2aClient {
         &self,
         request: QueryLogsRequest,
     ) -> Result<Page<LogRecord>, A2aLabError> {
-        self.result(LabCommand::QueryLogs(request), |result| match result {
-            LabResult::QueryLogs(page) => Some(page),
+        self.result(A2aLabCommand::QueryLogs(request), |result| match result {
+            A2aLabResult::QueryLogs(page) => Some(page),
             _ => None,
         })
         .await
@@ -91,8 +94,8 @@ impl A2aClient {
         &self,
         request: ListMetricsRequest,
     ) -> Result<Page<MetricDescriptor>, A2aLabError> {
-        self.result(LabCommand::ListMetrics(request), |result| match result {
-            LabResult::ListMetrics(page) => Some(page),
+        self.result(A2aLabCommand::ListMetrics(request), |result| match result {
+            A2aLabResult::ListMetrics(page) => Some(page),
             _ => None,
         })
         .await
@@ -103,8 +106,8 @@ impl A2aClient {
         &self,
         request: QueryMetricRequest,
     ) -> Result<Page<MetricPoint>, A2aLabError> {
-        self.result(LabCommand::QueryMetric(request), |result| match result {
-            LabResult::QueryMetric(page) => Some(page),
+        self.result(A2aLabCommand::QueryMetric(request), |result| match result {
+            A2aLabResult::QueryMetric(page) => Some(page),
             _ => None,
         })
         .await
@@ -115,8 +118,8 @@ impl A2aClient {
         &self,
         request: ListTasksRequest,
     ) -> Result<Page<TaskDefinition>, A2aLabError> {
-        self.result(LabCommand::ListTasks(request), |result| match result {
-            LabResult::ListTasks(page) => Some(page),
+        self.result(A2aLabCommand::ListTasks(request), |result| match result {
+            A2aLabResult::ListTasks(page) => Some(page),
             _ => None,
         })
         .await
@@ -127,7 +130,7 @@ impl A2aClient {
         let wait = request.wait;
         let snapshot = self
             .invoke(
-                LabCommand::StartTask(request),
+                A2aLabCommand::StartTask(request),
                 Some(SendMessageConfiguration {
                     accepted_output_modes: None,
                     task_push_notification_config: None,
@@ -136,15 +139,20 @@ impl A2aClient {
                 }),
             )
             .await?;
-        expect_variant(snapshot, |result| matches!(result, LabResult::StartTask(_)))
+        expect_variant(snapshot, |result| {
+            matches!(result, A2aLabResult::StartTask(_))
+        })
     }
 
     /// Reads a started lab run through the `get_task_status` skill.
     pub async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
-        self.result(LabCommand::GetTaskStatus(request), |result| match result {
-            LabResult::GetTaskStatus(run) => Some(run),
-            _ => None,
-        })
+        self.result(
+            A2aLabCommand::GetTaskStatus(request),
+            |result| match result {
+                A2aLabResult::GetTaskStatus(run) => Some(run),
+                _ => None,
+            },
+        )
         .await
     }
 
@@ -226,7 +234,7 @@ impl A2aClient {
     /// Sends a streaming message.
     pub async fn send_stream(
         &self,
-        command: LabCommand,
+        command: A2aLabCommand,
     ) -> Result<Vec<StreamResponse>, A2aLabError> {
         let request = Self::send_request(&command, None)?;
         let mut stream = self
@@ -361,8 +369,8 @@ impl A2aClient {
 
     async fn result<T>(
         &self,
-        command: LabCommand,
-        pick: impl FnOnce(LabResult) -> Option<T>,
+        command: A2aLabCommand,
+        pick: impl FnOnce(A2aLabResult) -> Option<T>,
     ) -> Result<T, A2aLabError> {
         let snapshot = self.invoke(command, None).await?;
         pick(snapshot.result).ok_or_else(|| A2aLabError::protocol("unexpected result variant"))
@@ -370,7 +378,7 @@ impl A2aClient {
 
     async fn invoke(
         &self,
-        command: LabCommand,
+        command: A2aLabCommand,
         configuration: Option<SendMessageConfiguration>,
     ) -> Result<TaskSnapshot, A2aLabError> {
         let request = Self::send_request(&command, configuration)?;
@@ -388,7 +396,7 @@ impl A2aClient {
     }
 
     fn send_request(
-        command: &LabCommand,
+        command: &A2aLabCommand,
         configuration: Option<SendMessageConfiguration>,
     ) -> Result<SendMessageRequest, A2aLabError> {
         let data = serde_json::to_value(command)
@@ -463,7 +471,7 @@ fn text_from_parts<'a>(parts: impl Iterator<Item = &'a Part>) -> Result<String, 
 
 fn expect_variant(
     snapshot: TaskSnapshot,
-    matches_result: impl FnOnce(&LabResult) -> bool,
+    matches_result: impl FnOnce(&A2aLabResult) -> bool,
 ) -> Result<TaskSnapshot, A2aLabError> {
     if matches_result(&snapshot.result) {
         Ok(snapshot)

@@ -53,7 +53,9 @@ pub use metrics::{
 };
 pub use page::{MAX_PAGE_LIMIT, Page, PageRequest};
 pub use ros2::{MemoryRos2, Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph, Ros2Tasks};
-pub use service::{LabApi, LabCommand, LabOutcome, LabResult, A2aLabService, TaskSnapshot};
+pub use service::{
+    A2aLabApi, A2aLabCommand, A2aLabOutcome, A2aLabResult, A2aLabService, TaskSnapshot,
+};
 pub use tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
     TaskRun, TaskState, start_run,

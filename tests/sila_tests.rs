@@ -17,8 +17,9 @@ use a2a_lab_dev_kit::sila::{
     SilaCertificate, SilaIdentity, SilaServer, certificate_matches_profile,
 };
 use a2a_lab_dev_kit::{
-    JsonObject, A2aLabService, LogLevel, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
-    MetricDescriptor, MetricId, MetricPoint, SourceId, TaskDefinition, TaskId, UtcTimestamp,
+    A2aLabService, JsonObject, LogLevel, LogRecord, LogSource, MemoryLogs, MemoryMetrics,
+    MemoryTasks, MetricDescriptor, MetricId, MetricPoint, SourceId, TaskDefinition, TaskId,
+    UtcTimestamp,
 };
 use tonic::transport::Channel;
 
@@ -370,7 +371,7 @@ async fn demo_observations() -> (MemoryLogs, MemoryMetrics) {
 }
 
 async fn plain_server(
-    lab: Arc<dyn a2a_lab_dev_kit::LabApi>,
+    lab: Arc<dyn a2a_lab_dev_kit::A2aLabApi>,
 ) -> a2a_lab_dev_kit::sila::SilaServerHandle {
     SilaServer::new(
         SilaIdentity::lab_dev_kit("11111111-1111-1111-1111-111111111111").unwrap(),

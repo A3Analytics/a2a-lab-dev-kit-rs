@@ -12,7 +12,7 @@ This crate serves Model Context Protocol (MCP) tools for one lab.
 
 ## Role
 
-`McpServer` registers tools on `LabApi`.
+`McpServer` registers tools on `A2aLabApi`.
 
 The server name is `a2a-lab`.
 
@@ -22,7 +22,7 @@ The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, 
 
 What each tool does is on the [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>).
 
-`McpLab::connect` implements `LabApi` over Streamable HTTP.
+`McpLab::connect` implements `A2aLabApi` over Streamable HTTP.
 
 Agent2Agent (A2A) uses that client to call the same tools.
 

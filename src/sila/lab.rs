@@ -1,4 +1,4 @@
-//! `LabOperations` commands over [`LabApi`](crate::service::LabApi).
+//! `LabOperations` commands over [`A2aLabApi`](crate::service::A2aLabApi).
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use crate::error::A2aLabError;
-use crate::service::{LabApi, LabCommand, LabResult};
+use crate::service::{A2aLabApi, A2aLabCommand, A2aLabResult};
 use crate::sila::constraints::EXECUTION_LIFETIME_SECONDS;
 use crate::sila::errors::{framework, lab_error, reject_metadata, undefined, validation};
 use crate::sila::executions::{Executions, View};
@@ -31,7 +31,7 @@ use crate::tasks::{StartTaskRequest, TaskState};
 
 #[derive(Clone)]
 pub(crate) struct LabFeature {
-    pub lab: Arc<dyn LabApi>,
+    pub lab: Arc<dyn A2aLabApi>,
     pub executions: Executions,
 }
 
@@ -45,11 +45,11 @@ impl LabOperations for LabFeature {
         let page = page_from(request.into_inner().page.as_ref(), "ListLogSources")?;
         let page = self
             .page_result(
-                LabCommand::ListLogSources(crate::logs::ListLogSourcesRequest { page }),
+                A2aLabCommand::ListLogSources(crate::logs::ListLogSourcesRequest { page }),
                 "ProviderUnavailable",
             )
             .await?;
-        let LabResult::ListLogSources(page) = page else {
+        let A2aLabResult::ListLogSources(page) = page else {
             return Err(undefined("unexpected list log sources result"));
         };
         Ok(Response::new(ListLogSourcesResponses {
@@ -75,7 +75,7 @@ impl LabOperations for LabFeature {
         let page = page_from(body.page.as_ref(), "QueryLogs")?;
         let page = self
             .page_result(
-                LabCommand::QueryLogs(crate::logs::QueryLogsRequest {
+                A2aLabCommand::QueryLogs(crate::logs::QueryLogsRequest {
                     source_id,
                     range,
                     page,
@@ -83,7 +83,7 @@ impl LabOperations for LabFeature {
                 "SourceNotFound",
             )
             .await?;
-        let LabResult::QueryLogs(page) = page else {
+        let A2aLabResult::QueryLogs(page) = page else {
             return Err(undefined("unexpected query logs result"));
         };
         Ok(Response::new(QueryLogsResponses {
@@ -106,11 +106,11 @@ impl LabOperations for LabFeature {
         let page = page_from(request.into_inner().page.as_ref(), "ListMetrics")?;
         let page = self
             .page_result(
-                LabCommand::ListMetrics(crate::metrics::ListMetricsRequest { page }),
+                A2aLabCommand::ListMetrics(crate::metrics::ListMetricsRequest { page }),
                 "ProviderUnavailable",
             )
             .await?;
-        let LabResult::ListMetrics(page) = page else {
+        let A2aLabResult::ListMetrics(page) = page else {
             return Err(undefined("unexpected list metrics result"));
         };
         Ok(Response::new(ListMetricsResponses {
@@ -136,7 +136,7 @@ impl LabOperations for LabFeature {
         let page = page_from(body.page.as_ref(), "QueryMetric")?;
         let page = self
             .page_result(
-                LabCommand::QueryMetric(crate::metrics::QueryMetricRequest {
+                A2aLabCommand::QueryMetric(crate::metrics::QueryMetricRequest {
                     metric_id,
                     range,
                     page,
@@ -144,7 +144,7 @@ impl LabOperations for LabFeature {
                 "MetricNotFound",
             )
             .await?;
-        let LabResult::QueryMetric(page) = page else {
+        let A2aLabResult::QueryMetric(page) = page else {
             return Err(undefined("unexpected query metric result"));
         };
         Ok(Response::new(QueryMetricResponses {
@@ -167,11 +167,11 @@ impl LabOperations for LabFeature {
         let page = page_from(request.into_inner().page.as_ref(), "ListTasks")?;
         let page = self
             .page_result(
-                LabCommand::ListTasks(crate::tasks::ListTasksRequest { page }),
+                A2aLabCommand::ListTasks(crate::tasks::ListTasksRequest { page }),
                 "ProviderUnavailable",
             )
             .await?;
-        let LabResult::ListTasks(page) = page else {
+        let A2aLabResult::ListTasks(page) = page else {
             return Err(undefined("unexpected list tasks result"));
         };
         Ok(Response::new(ListTasksResponses {
@@ -194,11 +194,11 @@ impl LabOperations for LabFeature {
         )?;
         let result = self
             .page_result(
-                LabCommand::GetTaskStatus(crate::tasks::GetTaskStatusRequest { id: run_id }),
+                A2aLabCommand::GetTaskStatus(crate::tasks::GetTaskStatusRequest { id: run_id }),
                 "RunNotFound",
             )
             .await?;
-        let LabResult::GetTaskStatus(run) = result else {
+        let A2aLabResult::GetTaskStatus(run) = result else {
             return Err(undefined("unexpected task status result"));
         };
         Ok(Response::new(GetTaskStatusResponses {
@@ -223,7 +223,7 @@ impl LabOperations for LabFeature {
             })?;
         let result = self
             .page_result(
-                LabCommand::StartTask(StartTaskRequest {
+                A2aLabCommand::StartTask(StartTaskRequest {
                     task_id,
                     input,
                     wait: false,
@@ -232,7 +232,7 @@ impl LabOperations for LabFeature {
                 "TaskNotFound",
             )
             .await?;
-        let LabResult::StartTask(run) = result else {
+        let A2aLabResult::StartTask(run) = result else {
             return Err(undefined("unexpected start task result"));
         };
         let execution = self.executions.start(Arc::clone(&self.lab), run).await;
@@ -323,7 +323,11 @@ impl LabOperations for LabFeature {
 }
 
 impl LabFeature {
-    async fn page_result(&self, command: LabCommand, not_found: &str) -> Result<LabResult, Status> {
+    async fn page_result(
+        &self,
+        command: A2aLabCommand,
+        not_found: &str,
+    ) -> Result<A2aLabResult, Status> {
         self.lab
             .execute(command)
             .await

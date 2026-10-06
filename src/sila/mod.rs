@@ -1,7 +1,7 @@
 //! SiLA 2 Feature Provider for the equipment represented by this devkit.
 //!
 //! `SilaServer` serves `SiLAService`, `LabOperations`, and `CancelController` over the same
-//! [`LabApi`](crate::service::LabApi) used by A2A and MCP.
+//! [`A2aLabApi`](crate::service::A2aLabApi) used by A2A and MCP.
 
 mod cancel;
 mod cert;

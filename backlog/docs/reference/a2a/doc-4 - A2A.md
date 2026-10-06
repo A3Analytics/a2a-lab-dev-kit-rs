@@ -12,7 +12,7 @@ This crate serves Agent2Agent (A2A) 1.0 for lab commands.
 
 ## Role
 
-`A2aServer` accepts any `LabApi`.
+`A2aServer` accepts any `A2aLabApi`.
 
 `McpLab::connect_default` calls Model Context Protocol (MCP) tools at `http://127.0.0.1:31001/mcp`.
 
@@ -29,9 +29,9 @@ A lab command takes the following path:
 ```mermaid
 flowchart TD
   accTitle: A2A lab command path
-  accDescr: The agent card leads to message send. Message send carries a LabCommand to the executor. The executor calls MCP tools. MCP tools return a protocol task.
+  accDescr: The agent card leads to message send. Message send carries an A2aLabCommand to the executor. The executor calls MCP tools. MCP tools return a protocol task.
   card["Agent card"] --> send["Message send"]
-  send --> command["LabCommand"]
+  send --> command["A2aLabCommand"]
   command --> executor["Executor"]
   executor --> tools["MCP tools"]
   tools --> task["Protocol task"]
@@ -39,9 +39,9 @@ flowchart TD
 
 In the preceding diagram, the agent card leads to message send.
 
-Message send carries a LabCommand.
+Message send carries an `A2aLabCommand`.
 
-The LabCommand reaches the executor.
+The `A2aLabCommand` reaches the executor.
 
 The executor calls MCP tools.
 

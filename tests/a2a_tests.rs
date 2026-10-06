@@ -2,14 +2,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_lab_dev_kit::{
-    A2A_PROTOCOL_VERSION, A2aClient, A2aLabError, A2aServer, AgentCard, AgentMessageFuture,
-    AgentMessageHandler, AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest,
-    HttpAuthSecurityScheme, JsonObject, LAB_MEDIA_TYPE, LabApi, LabCommand, LabResult, A2aLabService,
-    ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel, LogRecord, LogSource,
-    MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, PageRequest,
-    QueryLogsRequest, QueryMetricRequest, RunId, SecurityScheme, SourceId, StartTaskRequest,
-    StreamResponse, TaskDefinition, TaskId, TaskPushNotificationConfig, TaskState, TimeRange,
-    UtcTimestamp, bind_local,
+    A2A_PROTOCOL_VERSION, A2aClient, A2aLabApi, A2aLabCommand, A2aLabError, A2aLabResult,
+    A2aLabService, A2aServer, AgentCard, AgentMessageFuture, AgentMessageHandler,
+    AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest, HttpAuthSecurityScheme,
+    JsonObject, LAB_MEDIA_TYPE, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest,
+    LogLevel, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor,
+    MetricId, MetricPoint, PageRequest, QueryLogsRequest, QueryMetricRequest, RunId,
+    SecurityScheme, SourceId, StartTaskRequest, StreamResponse, TaskDefinition, TaskId,
+    TaskPushNotificationConfig, TaskState, TimeRange, UtcTimestamp, bind_local,
 };
 use axum::{Json, Router, routing::post};
 use serde_json::json;
@@ -29,7 +29,7 @@ fn page(limit: u32) -> PageRequest {
 struct Lab {
     logs: MemoryLogs,
     tasks: MemoryTasks,
-    service: Arc<dyn LabApi>,
+    service: Arc<dyn A2aLabApi>,
 }
 
 async fn lab() -> Lab {
@@ -103,12 +103,12 @@ async fn lab() -> Lab {
     }
 }
 
-async fn serve(service: Arc<dyn LabApi>) -> String {
+async fn serve(service: Arc<dyn A2aLabApi>) -> String {
     serve_with(service, |server| server).await
 }
 
 async fn serve_with(
-    service: Arc<dyn LabApi>,
+    service: Arc<dyn A2aLabApi>,
     configure: impl FnOnce(A2aServer) -> A2aServer + Send + 'static,
 ) -> String {
     let (listener, address) = bind_local().await.unwrap();
@@ -119,7 +119,7 @@ async fn serve_with(
     format!("http://{address}")
 }
 
-fn lab_results(events: &[StreamResponse]) -> Vec<LabResult> {
+fn lab_results(events: &[StreamResponse]) -> Vec<A2aLabResult> {
     events
         .iter()
         .filter_map(|event| {
@@ -268,7 +268,7 @@ async fn exercises_every_operation_failure_and_stream() {
     assert!(task["history"].as_array().is_some());
 
     let events = client
-        .send_stream(LabCommand::QueryLogs(QueryLogsRequest {
+        .send_stream(A2aLabCommand::QueryLogs(QueryLogsRequest {
             source_id: SourceId::new("app").unwrap(),
             range: range("2024-01-01T00:00:00Z", "2024-01-01T01:00:00Z"),
             page: page(10),
@@ -278,7 +278,9 @@ async fn exercises_every_operation_failure_and_stream() {
     let messages: Vec<_> = lab_results(&events)
         .into_iter()
         .filter_map(|result| match result {
-            LabResult::QueryLogs(page) => page.items().first().map(|record| record.message.clone()),
+            A2aLabResult::QueryLogs(page) => {
+                page.items().first().map(|record| record.message.clone())
+            }
             _ => None,
         })
         .collect();
@@ -329,7 +331,7 @@ async fn reads_metrics_and_task_transitions() {
         .await
         .unwrap();
     assert_eq!(started.state, TaskState::Submitted);
-    let LabResult::StartTask(run) = &started.result else {
+    let A2aLabResult::StartTask(run) = &started.result else {
         panic!("start result");
     };
     let run_id = run.id.clone();
@@ -684,7 +686,7 @@ async fn push_webhook_delivers_authenticated_stream_payloads() {
     lab.tasks
         .transition(
             match &running.result {
-                LabResult::StartTask(run) => &run.id,
+                A2aLabResult::StartTask(run) => &run.id,
                 _ => panic!("run"),
             },
             TaskState::Completed,
@@ -716,7 +718,7 @@ async fn start_task_returns_immediately_when_wait_is_false() {
     let lab = lab().await;
     let outcome = lab
         .service
-        .execute(LabCommand::StartTask(
+        .execute(A2aLabCommand::StartTask(
             StartTaskRequest::new(TaskId::new("build").unwrap(), JsonObject::empty()).immediate(),
         ))
         .await
@@ -748,7 +750,7 @@ async fn start_task_wait_returns_terminal_state() {
     request.timeout_seconds = Some(2);
     let outcome = lab
         .service
-        .execute(LabCommand::StartTask(request))
+        .execute(A2aLabCommand::StartTask(request))
         .await
         .unwrap();
     assert_eq!(outcome.task.state, TaskState::Completed);
@@ -982,7 +984,7 @@ async fn start_task_wait_times_out() {
     request.timeout_seconds = Some(1);
     let error = lab
         .service
-        .execute(LabCommand::StartTask(request))
+        .execute(A2aLabCommand::StartTask(request))
         .await
         .unwrap_err();
     assert_eq!(error.code(), "unavailable");

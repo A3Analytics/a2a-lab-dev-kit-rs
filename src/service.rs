@@ -22,13 +22,13 @@ use crate::tasks::{
     TaskRun, TaskState,
 };
 
-/// Future returned by [`LabApi`].
-pub type LabFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+/// Future returned by [`A2aLabApi`].
+pub type A2aLabFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Tagged request envelope shared by A2A and MCP.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "operation", content = "params", rename_all = "snake_case")]
-pub enum LabCommand {
+pub enum A2aLabCommand {
     /// List log sources.
     ListLogSources(ListLogSourcesRequest),
     /// Query logs.
@@ -48,7 +48,7 @@ pub enum LabCommand {
 /// Tagged result envelope shared by A2A and MCP.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "operation", content = "result", rename_all = "snake_case")]
-pub enum LabResult {
+pub enum A2aLabResult {
     /// A page of log sources.
     ListLogSources(Page<LogSource>),
     /// A page of log records.
@@ -75,29 +75,32 @@ pub struct TaskSnapshot {
     /// A2A task state.
     pub state: TaskState,
     /// Typed lab result carried by the task artifact.
-    pub result: LabResult,
+    pub result: A2aLabResult,
 }
 
 /// Outcome of executing one lab command.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LabOutcome {
+pub struct A2aLabOutcome {
     /// Task created or updated by the command.
     pub task: TaskSnapshot,
 }
 
 /// Object-safe facade used by the protocol adapters.
-pub trait LabApi: Send + Sync {
+pub trait A2aLabApi: Send + Sync {
     /// Executes a lab command and records its task.
-    fn execute(&self, command: LabCommand) -> LabFuture<'_, Result<LabOutcome, A2aLabError>>;
+    fn execute(
+        &self,
+        command: A2aLabCommand,
+    ) -> A2aLabFuture<'_, Result<A2aLabOutcome, A2aLabError>>;
 
     /// Returns the current snapshot of a previously created task.
-    fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, A2aLabError>>;
+    fn task<'a>(&'a self, task_id: &str) -> A2aLabFuture<'a, Result<TaskSnapshot, A2aLabError>>;
 
     /// Cancels a started lab run. Snapshot commands are not cancelable.
     fn cancel(
         &self,
         request: GetTaskStatusRequest,
-    ) -> LabFuture<'_, Result<TaskSnapshot, A2aLabError>>;
+    ) -> A2aLabFuture<'_, Result<TaskSnapshot, A2aLabError>>;
 }
 
 #[derive(Clone)]
@@ -108,7 +111,10 @@ struct StoredTask {
 
 #[derive(Clone)]
 enum StoredBody {
-    Snapshot { state: TaskState, result: LabResult },
+    Snapshot {
+        state: TaskState,
+        result: A2aLabResult,
+    },
     Run(RunId),
 }
 
@@ -141,7 +147,7 @@ where
 
     /// Shares the service with protocol adapters.
     #[must_use]
-    pub fn share(self) -> Arc<dyn LabApi>
+    pub fn share(self) -> Arc<dyn A2aLabApi>
     where
         L: 'static,
         M: 'static,
@@ -151,17 +157,17 @@ where
     }
 
     /// Executes a command and stores the resulting task.
-    pub async fn execute(&self, command: LabCommand) -> Result<LabOutcome, A2aLabError> {
+    pub async fn execute(&self, command: A2aLabCommand) -> Result<A2aLabOutcome, A2aLabError> {
         let task = match command {
-            LabCommand::ListLogSources(request) => self.list_sources(request).await?,
-            LabCommand::QueryLogs(request) => self.query_logs(request).await?,
-            LabCommand::ListMetrics(request) => self.list_metrics(request).await?,
-            LabCommand::QueryMetric(request) => self.query_metric(request).await?,
-            LabCommand::ListTasks(request) => self.list_tasks(request).await?,
-            LabCommand::StartTask(request) => self.start_task(request).await?,
-            LabCommand::GetTaskStatus(request) => self.task_status(request).await?,
+            A2aLabCommand::ListLogSources(request) => self.list_sources(request).await?,
+            A2aLabCommand::QueryLogs(request) => self.query_logs(request).await?,
+            A2aLabCommand::ListMetrics(request) => self.list_metrics(request).await?,
+            A2aLabCommand::QueryMetric(request) => self.query_metric(request).await?,
+            A2aLabCommand::ListTasks(request) => self.list_tasks(request).await?,
+            A2aLabCommand::StartTask(request) => self.start_task(request).await?,
+            A2aLabCommand::GetTaskStatus(request) => self.task_status(request).await?,
         };
-        Ok(LabOutcome { task })
+        Ok(A2aLabOutcome { task })
     }
 
     /// Cancels a started lab run.
@@ -171,7 +177,7 @@ where
             id: run.id.as_str().to_owned(),
             context_id: context_id(run.id.as_str()),
             state: run.state,
-            result: LabResult::StartTask(run),
+            result: A2aLabResult::StartTask(run),
         })
     }
 
@@ -193,33 +199,34 @@ where
     ) -> Result<TaskSnapshot, A2aLabError> {
         check_page(&request.page)?;
         let page = self.logs.list_sources(request).await?;
-        self.store_snapshot(LabResult::ListLogSources(page)).await
+        self.store_snapshot(A2aLabResult::ListLogSources(page))
+            .await
     }
 
     async fn query_logs(&self, request: QueryLogsRequest) -> Result<TaskSnapshot, A2aLabError> {
         check_page(&request.page)?;
         request.range.check()?;
         let page = self.logs.query(request).await?;
-        self.store_snapshot(LabResult::QueryLogs(page)).await
+        self.store_snapshot(A2aLabResult::QueryLogs(page)).await
     }
 
     async fn list_metrics(&self, request: ListMetricsRequest) -> Result<TaskSnapshot, A2aLabError> {
         check_page(&request.page)?;
         let page = self.metrics.list_metrics(request).await?;
-        self.store_snapshot(LabResult::ListMetrics(page)).await
+        self.store_snapshot(A2aLabResult::ListMetrics(page)).await
     }
 
     async fn query_metric(&self, request: QueryMetricRequest) -> Result<TaskSnapshot, A2aLabError> {
         check_page(&request.page)?;
         request.range.check()?;
         let page = self.metrics.query(request).await?;
-        self.store_snapshot(LabResult::QueryMetric(page)).await
+        self.store_snapshot(A2aLabResult::QueryMetric(page)).await
     }
 
     async fn list_tasks(&self, request: ListTasksRequest) -> Result<TaskSnapshot, A2aLabError> {
         check_page(&request.page)?;
         let page = self.tasks.list_tasks(request).await?;
-        self.store_snapshot(LabResult::ListTasks(page)).await
+        self.store_snapshot(A2aLabResult::ListTasks(page)).await
     }
 
     async fn start_task(&self, request: StartTaskRequest) -> Result<TaskSnapshot, A2aLabError> {
@@ -241,10 +248,10 @@ where
         request: GetTaskStatusRequest,
     ) -> Result<TaskSnapshot, A2aLabError> {
         let run = self.tasks.status(request).await?;
-        self.store_snapshot(LabResult::GetTaskStatus(run)).await
+        self.store_snapshot(A2aLabResult::GetTaskStatus(run)).await
     }
 
-    async fn store_snapshot(&self, result: LabResult) -> Result<TaskSnapshot, A2aLabError> {
+    async fn store_snapshot(&self, result: A2aLabResult) -> Result<TaskSnapshot, A2aLabError> {
         let id = self.allocate("task");
         let stored = StoredTask {
             context_id: context_id(&id),
@@ -265,7 +272,7 @@ where
             StoredBody::Snapshot { state, result } => (state, result),
             StoredBody::Run(id) => {
                 let run = self.tasks.status(GetTaskStatusRequest { id }).await?;
-                (run.state, LabResult::StartTask(run))
+                (run.state, A2aLabResult::StartTask(run))
             }
         };
         Ok(TaskSnapshot {
@@ -282,17 +289,20 @@ where
     }
 }
 
-impl<L, M, W> LabApi for A2aLabService<L, M, W>
+impl<L, M, W> A2aLabApi for A2aLabService<L, M, W>
 where
     L: LogProvider + 'static,
     M: MetricProvider + 'static,
     W: TaskProvider + 'static,
 {
-    fn execute(&self, command: LabCommand) -> LabFuture<'_, Result<LabOutcome, A2aLabError>> {
+    fn execute(
+        &self,
+        command: A2aLabCommand,
+    ) -> A2aLabFuture<'_, Result<A2aLabOutcome, A2aLabError>> {
         Box::pin(A2aLabService::execute(self, command))
     }
 
-    fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, A2aLabError>> {
+    fn task<'a>(&'a self, task_id: &str) -> A2aLabFuture<'a, Result<TaskSnapshot, A2aLabError>> {
         let task_id = task_id.to_owned();
         Box::pin(async move { A2aLabService::task(self, &task_id).await })
     }
@@ -300,7 +310,7 @@ where
     fn cancel(
         &self,
         request: GetTaskStatusRequest,
-    ) -> LabFuture<'_, Result<TaskSnapshot, A2aLabError>> {
+    ) -> A2aLabFuture<'_, Result<TaskSnapshot, A2aLabError>> {
         Box::pin(A2aLabService::cancel(self, request))
     }
 }

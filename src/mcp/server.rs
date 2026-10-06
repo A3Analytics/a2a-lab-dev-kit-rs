@@ -16,7 +16,7 @@ use crate::error::A2aLabError;
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
-use crate::service::{LabApi, LabCommand, LabResult};
+use crate::service::{A2aLabApi, A2aLabCommand, A2aLabResult};
 use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
 };
@@ -24,7 +24,7 @@ use crate::tasks::{
 /// MCP server exposing the lab operations as tools.
 #[derive(Clone)]
 pub struct McpServer {
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -33,7 +33,7 @@ impl McpServer {
     ///
     /// The server stores its own handle to the same service.
     #[must_use]
-    pub fn new(lab: &Arc<dyn LabApi>) -> Self {
+    pub fn new(lab: &Arc<dyn A2aLabApi>) -> Self {
         Self {
             lab: Arc::clone(lab),
             tool_router: Self::tool_router(),
@@ -88,8 +88,8 @@ impl McpServer {
 
     async fn take<T>(
         &self,
-        command: LabCommand,
-        pick: impl FnOnce(LabResult) -> Option<T>,
+        command: A2aLabCommand,
+        pick: impl FnOnce(A2aLabResult) -> Option<T>,
     ) -> Result<Json<T>, ErrorData> {
         let outcome = self
             .lab
@@ -113,9 +113,9 @@ impl McpServer {
         params: Parameters<ListLogSourcesRequest>,
     ) -> Result<Json<Page<LogSource>>, ErrorData> {
         self.take(
-            LabCommand::ListLogSources(params.0),
+            A2aLabCommand::ListLogSources(params.0),
             |result| match result {
-                LabResult::ListLogSources(page) => Some(page),
+                A2aLabResult::ListLogSources(page) => Some(page),
                 _ => None,
             },
         )
@@ -130,8 +130,8 @@ impl McpServer {
         &self,
         params: Parameters<QueryLogsRequest>,
     ) -> Result<Json<Page<LogRecord>>, ErrorData> {
-        self.take(LabCommand::QueryLogs(params.0), |result| match result {
-            LabResult::QueryLogs(page) => Some(page),
+        self.take(A2aLabCommand::QueryLogs(params.0), |result| match result {
+            A2aLabResult::QueryLogs(page) => Some(page),
             _ => None,
         })
         .await
@@ -145,10 +145,13 @@ impl McpServer {
         &self,
         params: Parameters<ListMetricsRequest>,
     ) -> Result<Json<Page<MetricDescriptor>>, ErrorData> {
-        self.take(LabCommand::ListMetrics(params.0), |result| match result {
-            LabResult::ListMetrics(page) => Some(page),
-            _ => None,
-        })
+        self.take(
+            A2aLabCommand::ListMetrics(params.0),
+            |result| match result {
+                A2aLabResult::ListMetrics(page) => Some(page),
+                _ => None,
+            },
+        )
         .await
     }
 
@@ -160,10 +163,13 @@ impl McpServer {
         &self,
         params: Parameters<QueryMetricRequest>,
     ) -> Result<Json<Page<MetricPoint>>, ErrorData> {
-        self.take(LabCommand::QueryMetric(params.0), |result| match result {
-            LabResult::QueryMetric(page) => Some(page),
-            _ => None,
-        })
+        self.take(
+            A2aLabCommand::QueryMetric(params.0),
+            |result| match result {
+                A2aLabResult::QueryMetric(page) => Some(page),
+                _ => None,
+            },
+        )
         .await
     }
 
@@ -175,8 +181,8 @@ impl McpServer {
         &self,
         params: Parameters<ListTasksRequest>,
     ) -> Result<Json<Page<TaskDefinition>>, ErrorData> {
-        self.take(LabCommand::ListTasks(params.0), |result| match result {
-            LabResult::ListTasks(page) => Some(page),
+        self.take(A2aLabCommand::ListTasks(params.0), |result| match result {
+            A2aLabResult::ListTasks(page) => Some(page),
             _ => None,
         })
         .await
@@ -190,8 +196,8 @@ impl McpServer {
         &self,
         params: Parameters<StartTaskRequest>,
     ) -> Result<Json<TaskRun>, ErrorData> {
-        self.take(LabCommand::StartTask(params.0), |result| match result {
-            LabResult::StartTask(run) => Some(run),
+        self.take(A2aLabCommand::StartTask(params.0), |result| match result {
+            A2aLabResult::StartTask(run) => Some(run),
             _ => None,
         })
         .await
@@ -205,10 +211,13 @@ impl McpServer {
         &self,
         params: Parameters<GetTaskStatusRequest>,
     ) -> Result<Json<TaskRun>, ErrorData> {
-        self.take(LabCommand::GetTaskStatus(params.0), |result| match result {
-            LabResult::GetTaskStatus(run) => Some(run),
-            _ => None,
-        })
+        self.take(
+            A2aLabCommand::GetTaskStatus(params.0),
+            |result| match result {
+                A2aLabResult::GetTaskStatus(run) => Some(run),
+                _ => None,
+            },
+        )
         .await
     }
 }

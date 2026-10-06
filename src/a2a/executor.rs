@@ -13,7 +13,7 @@ use futures_util::stream::{self, BoxStream};
 use tokio::sync::{Mutex, mpsc};
 
 use crate::id::RunId;
-use crate::service::{LabApi, LabCommand, LabResult, TaskSnapshot};
+use crate::service::{A2aLabApi, A2aLabCommand, A2aLabResult, TaskSnapshot};
 use crate::tasks::{GetTaskStatusRequest, TaskState};
 
 use super::message::{AgentMessageHandler, AgentMessageRequest};
@@ -23,14 +23,14 @@ const POLL: Duration = Duration::from_millis(25);
 
 #[derive(Clone)]
 pub(crate) struct LabExecutor {
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     messages: Option<Arc<dyn AgentMessageHandler>>,
     runs: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl LabExecutor {
     pub(crate) fn new(
-        lab: Arc<dyn LabApi>,
+        lab: Arc<dyn A2aLabApi>,
         messages: Option<Arc<dyn AgentMessageHandler>>,
     ) -> Self {
         Self {
@@ -67,7 +67,7 @@ impl AgentExecutor for LabExecutor {
 }
 
 fn spawn_events(
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     messages: Option<Arc<dyn AgentMessageHandler>>,
     runs: Arc<Mutex<HashMap<String, String>>>,
     ctx: ExecutorContext,
@@ -90,7 +90,7 @@ fn spawn_events(
 }
 
 async fn execute_lab(
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     messages: Option<Arc<dyn AgentMessageHandler>>,
     runs: Arc<Mutex<HashMap<String, String>>>,
     ctx: ExecutorContext,
@@ -197,17 +197,17 @@ async fn run_agent_message(
 }
 
 async fn run_command(
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     runs: Arc<Mutex<HashMap<String, String>>>,
     ctx: ExecutorContext,
-    command: LabCommand,
+    command: A2aLabCommand,
     tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
 ) -> Result<(), A2AError> {
-    let poll_run = matches!(command, LabCommand::StartTask(_));
+    let poll_run = matches!(command, A2aLabCommand::StartTask(_));
     let command = match command {
-        LabCommand::StartTask(mut request) => {
+        A2aLabCommand::StartTask(mut request) => {
             request.wait = false;
-            LabCommand::StartTask(request)
+            A2aLabCommand::StartTask(request)
         }
         other => other,
     };
@@ -215,7 +215,7 @@ async fn run_command(
         .execute(command)
         .await
         .map_err(|e| wire::a2a_error(&e))?;
-    if poll_run && let LabResult::StartTask(run) = &outcome.task.result {
+    if poll_run && let A2aLabResult::StartTask(run) = &outcome.task.result {
         runs.lock()
             .await
             .insert(ctx.task_id.clone(), run.id.as_str().to_owned());
@@ -233,12 +233,12 @@ async fn run_command(
 }
 
 async fn poll_run_status(
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     ctx: &ExecutorContext,
     snapshot: &TaskSnapshot,
     tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
 ) -> Result<(), A2AError> {
-    let LabResult::StartTask(run) = &snapshot.result else {
+    let A2aLabResult::StartTask(run) = &snapshot.result else {
         return Ok(());
     };
     let mut state = run.state;
@@ -308,7 +308,7 @@ async fn hold_resubscribe(message: &Message) {
 }
 
 async fn cancel_lab(
-    lab: Arc<dyn LabApi>,
+    lab: Arc<dyn A2aLabApi>,
     runs: Arc<Mutex<HashMap<String, String>>>,
     ctx: ExecutorContext,
     tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
@@ -356,7 +356,7 @@ async fn send_canceled(
 async fn emit_result(
     task_id: &str,
     context_id: &str,
-    result: &LabResult,
+    result: &A2aLabResult,
     tx: &mpsc::Sender<Result<StreamResponse, A2AError>>,
 ) -> Result<(), A2AError> {
     let chunks = wire::chunks(result);

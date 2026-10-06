@@ -10,22 +10,22 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Standardization in Lab Automation (SiLA) 2 is an inbound Feature Provider. `SilaServer` uses the same `LabApi` as A2A and MCP.
+Standardization in Lab Automation (SiLA) 2 is an inbound Feature Provider. `SilaServer` uses the same `A2aLabApi` as A2A and MCP.
 
-One `LabApi` reaches the agent protocols and `SilaServer`:
+One `A2aLabApi` reaches the agent protocols and `SilaServer`:
 
 ```mermaid
 flowchart LR
   accTitle: Shared lab interface
-  accDescr: Equipment adapters feed LabApi. LabApi serves A2A, MCP, and SilaServer. SilaServer serves SiLA clients.
-  adapters["Equipment adapters"] --> lab["LabApi"]
+  accDescr: Equipment adapters feed A2aLabApi. A2aLabApi serves A2A, MCP, and SilaServer. SilaServer serves SiLA clients.
+  adapters["Equipment adapters"] --> lab["A2aLabApi"]
   lab --> a2a["A2A"]
   lab --> mcp["MCP"]
   lab --> sila["SilaServer"]
   sila --> clients["SiLA clients"]
 ```
 
-Equipment adapters feed `LabApi`. `LabApi` serves A2A. `LabApi` serves MCP. `LabApi` serves `SilaServer`. `SilaServer` serves SiLA clients.
+Equipment adapters feed `A2aLabApi`. `A2aLabApi` serves A2A. `A2aLabApi` serves MCP. `A2aLabApi` serves `SilaServer`. `SilaServer` serves SiLA clients.
 
 ## What this crate serves
 

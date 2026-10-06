@@ -3,8 +3,8 @@ use std::time::Duration;
 use a2a_client::A2AClient;
 use a2a_grpc::GrpcTransport;
 use a2a_lab_dev_kit::{
-    A2A_PROTOCOL_VERSION, A2aServer, A2aLabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
-    SourceId, TaskDefinition, TaskId, bind_local,
+    A2A_PROTOCOL_VERSION, A2aLabService, A2aServer, LogSource, MemoryLogs, MemoryMetrics,
+    MemoryTasks, SourceId, TaskDefinition, TaskId, bind_local,
 };
 use a2a_types::{
     GetTaskRequest, Message, Part, PartContent, Role, SendMessageRequest, SendMessageResponse,

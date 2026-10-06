@@ -4,7 +4,7 @@ use std::io::{Write, stderr};
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aServer, AgentCard, A2aLabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    A2aLabService, A2aServer, AgentCard, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
     OidcAuthenticator, OpenIdConnectSecurityScheme, SecurityScheme, SourceId, TaskDefinition,
     TaskId,
 };
