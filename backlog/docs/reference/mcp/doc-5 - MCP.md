@@ -8,41 +8,78 @@ created_date: "2026-09-30 17:38"
 
 # MCP
 
-## Role in this dev kit
+This crate serves Model Context Protocol (MCP) tools for one lab.
 
-MCP is the other agent-facing protocol. `McpServer` registers the seven lab operations as tools on `LabApi`. `A2aServer` in the default serve path calls those tools through `McpLab` at `http://127.0.0.1:31001/mcp`. Tests and the TCK can still inject `LabService` into `A2aServer::new`.
+## Role
 
-Both transports hit the same seven tools. Each tool calls `LabService.execute` and returns the unwrapped page or `TaskRun`.
+`McpServer` registers tools on `LabApi`.
+
+The server name is `a2a-lab`.
+
+The instructions are `Lab logs, metrics, and tasks`.
+
+The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`.
+
+What each tool does is on the [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>).
+
+`McpLab::connect` implements `LabApi` over Streamable HTTP.
+
+Agent2Agent (A2A) uses that client to call the same tools.
+
+## Transports
+
+`McpServer` uses `rmcp` and protocol version `2026-07-28`.
+
+`serve_stdio` uses standard input and output.
+
+Those frames are newline-delimited JSON-RPC.
+
+`serve_http` mounts `/mcp`.
+
+With no listener, `serve_http` binds `127.0.0.1:31001`.
+
+Both transports reach the same tools:
 
 ```mermaid
 flowchart LR
-  a2a["A2aServer"] --> mcpLab["McpLab"]
-  mcpLab --> http["serve_http at mcp"]
-  client["MCP client"] --> stdio["serve_stdio JSON-RPC"]
-  client --> http
-  stdio --> tools["Seven McpServer tools"]
-  http --> tools
-  tools --> lab["LabService.execute"]
-  lab --> body["Page or TaskRun"]
+  accTitle: MCP transports and the lab service
+  accDescr: Standard input and output reach the MCP tools. Streamable HTTP reaches the same tools. The tools call LabService.
+  stdio["Standard input and output"] --> tools["MCP tools"]
+  http["Streamable HTTP"] --> tools
+  tools --> service["LabService"]
 ```
 
-## What this crate implements
+In the preceding diagram, standard input and output reach the MCP tools.
 
-`src/mcp` builds the server with `rmcp` 3.5. `get_info` advertises protocol version `2026-07-28` (`ProtocolVersion::V_2026_07_28`), server name `a2a-lab`, instructions `Lab logs, metrics, and tasks`, and the tools capability.
+Streamable HTTP reaches those same tools.
 
-The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`. Each tool takes the same request type `LabService` accepts and returns the matching page or `TaskRun`.
+The MCP tools call `LabService`.
 
-`serve_stdio` speaks newline-delimited JSON-RPC on standard input and output. `serve_http` mounts Streamable HTTP at `/mcp`. With no listener it binds `127.0.0.1:31001`. Accepted `Host` values are `localhost`, `127.0.0.1`, `::1`, and `host.docker.internal`.
+## Host allowlist
 
-`invalid`, `protocol`, and `not_found` become MCP invalid-params errors. `unavailable` and `transport` become internal errors. `start_task` waits until the run is terminal unless `wait` is false. `timeout_seconds` defaults to 60. `get_task_status` is a separate call.
+`serve_http` accepts these `Host` values:
 
-## Entry points
+- `localhost`
+- `127.0.0.1`
+- `::1`
+- `host.docker.internal`
 
-`McpServer` is re-exported from the crate root. Construct it with `McpServer::new` and serve with `serve_stdio` or `serve_http`. `McpLab::connect` / `McpLab::connect_default` implement `LabApi` over Streamable HTTP so `A2aServer` can call the same tools. Error payloads include the `A2aLabError` `code` so A2A keeps `invalid` / `not_found` / `unavailable`.
+## Errors
+
+`invalid`, `protocol`, and `not_found` become MCP invalid-params errors.
+
+`unavailable` and `transport` become internal errors.
+
+Each error includes the `A2aLabError` code.
+
+## Wait
+
+`start_task` waits until the run is terminal unless `wait` is false.
+
+`timeout_seconds` defaults to 60.
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A](<../a2a/doc-4 - A2A.md>)
-- [Lab dev kit architecture](<../../technical/architecture/doc-1 - Lab-dev-kit-architecture.md>)
-- [A2A and MCP protocols](<../../technical/protocol/doc-2 - A2A-and-MCP-protocols.md>)
+- [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
+- [a2a_and_mcp.rs](<../../../../examples/a2a_and_mcp.rs>)

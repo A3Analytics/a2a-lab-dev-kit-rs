@@ -3,98 +3,113 @@
 [![A2A 1.0](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml)
 [![SiLA 2 provider](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml)
 
-Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` runs seven operations. A2A HTTP+JSON, JSON-RPC, and gRPC, plus MCP, call that service.
+`a2a-lab-dev-kit` is a Rust library for lab logs, metrics, and tasks.
 
-[Wiki Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
+Provider traits are the source of truth.
 
-## Operations
+`LabService` runs seven operations.
 
-1. `list_log_sources` lists log sources.
-2. `query_logs` reads structured records for one source.
-3. `list_metrics` lists metric descriptors.
-4. `query_metric` reads samples for one metric.
-5. `list_tasks` lists task definitions.
-6. `start_task` starts a task with a JSON object and waits until the run is terminal. Set `wait` to false to return as soon as the run is accepted.
-7. `get_task_status` reads one run.
+Agent2Agent (A2A) and Model Context Protocol (MCP) call that service.
 
-`A2aServer::with_message_handler` adds `agent-message`. A `ROLE_USER` message whose parts are all `text/plain` uses that handler. A later message reuses the returned A2A `contextId` and can pass `referenceTaskIds` for earlier tasks. Each message keeps the sender's unique message id. Lab data parts stay on the seven operations. `with_security` requires the declared credential and shows each context only to the caller that created it. OAuth2 and OpenID Connect also need `with_authenticator`. `OidcAuthenticator` validates RS256 access tokens. Obtain a client-credentials token from the issuer, then pass it to `A2aClient::with_bearer_token`.
+## Call path
 
-A2A skill ids are hyphenated (`list-log-sources`). MCP tool names match the Rust names (`list_log_sources`).
+The following diagram shows an agent reaching the lab service through A2A or MCP:
 
-Time ranges are half-open UTC intervals, `[start, end)`. `start` must be strictly before `end`. A timestamp inside the range is greater than or equal to `start` and strictly less than `end`. `UtcTimestamp` accepts RFC 3339 text with offset `Z`, `+00:00`, or `-00:00`.
-
-## Quickstart
-
-```bash
-mise install
-mise exec -- cargo run --example memory_lab
-mise exec -- cargo run --example a2a_and_mcp
+```mermaid
+flowchart LR
+  accTitle: Agent call path
+  accDescr: An agent calls A2A or MCP. Both paths reach the lab service. The lab service calls the log, metric, and task providers.
+  agent["Agent"] --> a2a["A2A"]
+  agent --> mcp["MCP"]
+  a2a --> labService["Lab service"]
+  mcp --> labService
+  labService --> logProvider["Log provider"]
+  labService --> metricProvider["Metric provider"]
+  labService --> taskProvider["Task provider"]
 ```
 
-[`examples/memory_lab.rs`](examples/memory_lab.rs) lists logs, metrics, and tasks. The log query keeps records in `[2024-01-01T00:00:00Z, 2024-01-01T01:00:00Z)`:
+The preceding diagram has these connections:
 
-```rust
-let queried = logs
-    .query(QueryLogsRequest {
-        source_id,
-        range: TimeRange::new(
-            UtcTimestamp::parse("2024-01-01T00:00:00Z")?,
-            UtcTimestamp::parse("2024-01-01T01:00:00Z")?,
-        )?,
-        page: PageRequest::new(None, 10)?,
-    })
-    .await?;
-```
+- An agent calls A2A or MCP.
+- Both paths reach the lab service (`LabService`).
+- The lab service calls the log provider (`LogProvider`).
+- The lab service calls the metric provider (`MetricProvider`).
+- The lab service calls the task provider (`TaskProvider`).
 
-[`examples/a2a_and_mcp.rs`](examples/a2a_and_mcp.rs) serves MCP from `LabService` and points A2A at that MCP server through `McpLab`:
+The overview page shows the default A2A path through the MCP lab client.
 
-```rust
-let service = LabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
-let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp")).await?;
-```
+## Run the memory example
 
-`A2aServer::listen(None)` binds `127.0.0.1:31000`. `McpServer::serve_http(None)` binds `127.0.0.1:31001`. The default A2A agent calls `http://127.0.0.1:31001/mcp`. The example passes `TcpListener`s from `bind_local` (`127.0.0.1:0`) and runs both servers until each client call returns. `McpServer::serve_stdio` speaks MCP on standard input and output; keep diagnostics on stderr.
+Run these commands from the repository root.
 
-A2A publishes `/.well-known/agent-card.json` and serves A2A 1.0 on HTTP+JSON (`POST /message:send`), JSON-RPC (`POST /`), and gRPC. MCP Streamable HTTP is mounted at `/mcp`. Optional A2A push notifications, extended Agent Card, and security schemes are off unless configured on `A2aServer`.
+1. Install the tools:
 
-## Standards
+   ```bash
+   mise install
+   ```
 
-| Topic                      | Wiki                                                                    |
-| -------------------------- | ----------------------------------------------------------------------- |
-| Lab dev kit overview       | [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)     |
-| A2A                        | [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)       |
-| MCP                        | [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP)       |
-| Asset Administration Shell | [AAS](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS)       |
-| OPC UA                     | [OPC-UA](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/OPC-UA) |
-| SiLA 2                     | [SiLA-2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/SiLA-2) |
-| ROS 2                      | [ROS-2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/ROS-2)   |
+2. Run the [memory lab example](examples/memory_lab.rs):
+
+   ```bash
+   mise exec -- cargo run --example memory_lab
+   ```
 
 ## Features
 
-`aas`, `opcua`, and `sila2` are default features. `sila2` serves the represented equipment as a SiLA 2 Feature Provider. `ros2` is always compiled.
+The default features are `aas`, `opcua`, and `sila2`.
 
-Live OPC UA is partial. `OpcUaClient` does not implement `LiveSource`. [`examples/sila2_server.rs`](examples/sila2_server.rs) serves one lab over A2A, MCP, and SiLA. [`examples/industrial_scripted.rs`](examples/industrial_scripted.rs) uses `ScriptedLive`. [`examples/ros2_tasks.rs`](examples/ros2_tasks.rs) uses the in-process `MemoryRos2` graph.
+They enable Asset Administration Shell (AAS), Open Platform Communications Unified Architecture (OPC UA), and Standardization in Lab Automation (SiLA) 2.
 
-## API documentation
+Robot Operating System 2 (ROS 2) code in the `ros2` module is always compiled.
+
+`OpcUaClient` is not a `LiveSource`. See the OPC UA page in the following table.
+
+## Public documentation
+
+These pages are the public documentation:
+
+| Page |
+| --- |
+| [Lab dev kit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home) |
+| [Run the memory lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-the-memory-lab) |
+| [Serve A2A and MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Serve-A2A-and-MCP) |
+| [Run a scripted industrial lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-a-scripted-industrial-lab) |
+| [Expose ROS 2 actions as tasks](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Expose-ROS-2-actions-as-tasks) |
+| [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A) |
+| [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP) |
+| [Asset Administration Shell](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS) |
+| [OPC UA](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/OPC-UA) |
+| [SiLA 2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/SiLA-2) |
+| [ROS 2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/ROS-2) |
+
+## Open the crate documentation
+
+Generate the application programming interface (API) documentation with this command:
 
 ```bash
 mise exec -- cargo doc --no-deps --open
 ```
 
-## Setup
+## Check the crate
 
-```bash
-mise install
-```
+1. Build the crate:
 
-## Development
+   ```bash
+   mise run build
+   ```
 
-```bash
-mise run build
-mise run test
-mise run quality
-```
+2. Test the crate:
 
-`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, tests, and the official A2A TCK for HTTP+JSON, JSON-RPC, and gRPC. In-process wire checks live in `tests/a2a_compliance.rs`. `mise run test` starts a pre-seeded Keycloak container for the OIDC tests and removes it when the run finishes. The pinned official TCK does not execute its `AUTH-*` requirements; local authentication coverage is `tests/a2a_authentication.rs`.
+   ```bash
+   mise run test
+   ```
 
-Wiki pages are generated from public Backlog docs and published by the Wiki GitHub Action. Do not publish from a local checkout. GitHub's `GITHUB_TOKEN` cannot write Wikis, so add a `WIKI_TOKEN` repository secret with Wikis read/write. Create the first GitHub Wiki page once so `.wiki.git` exists, then re-run the Action.
+3. Run the quality checks:
+
+   ```bash
+   mise run quality
+   ```
+
+`mise run quality` checks formatting, the SiLA matrix, the Wiki, complexity, duplication, compilation, Clippy, tests, the A2A TCK, and the SiLA provider checks.
+
+The Wiki action publishes public Backlog docs.

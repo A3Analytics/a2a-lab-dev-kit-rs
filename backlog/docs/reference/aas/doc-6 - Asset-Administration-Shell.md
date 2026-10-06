@@ -10,31 +10,57 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this dev kit
 
-The Asset Administration Shell HTTP repository is the outbound asset catalog. `AasClient` implements `AssetCatalogProvider`. Industrial log, metric, and task providers read bindings from that catalog. AAS is not one of the seven agent-facing operations.
+The Asset Administration Shell (AAS) HTTP repository is an outbound asset catalog. `AasClient` implements `AssetCatalogProvider`. Industrial log, metric, and task providers read bindings from that catalog. AAS is not one of the seven agent operations.
 
-The first catalog read fills the cache from `description`, `shells`, and binding submodels. Later calls reuse that cache.
+Industrial providers load bindings in this order:
 
 ```mermaid
 sequenceDiagram
-  participant Ind as IndustrialProvider
-  participant Cat as AasClient
-  participant Repo as AasRepository
-  Ind->>Cat: list_bindings
-  Cat->>Repo: GET description
-  Cat->>Repo: GET shells
-  Cat->>Repo: GET submodels by base64url id
-  Cat-->>Ind: Bindings with Endpoint
+  accTitle: Catalog read sequence
+  accDescr: An industrial provider calls list_bindings on AasClient. AasClient reads description, shells, and each submodel from the AAS repository, then returns bindings.
+  participant Provider as Industrial provider
+  participant Client as AasClient
+  participant Repo as AAS repository
+  Provider->>Client: list_bindings
+  Client->>Repo: GET description
+  Client->>Repo: GET shells
+  Client->>Repo: GET submodels by base64url id
+  Client-->>Provider: Bindings with an endpoint
 ```
+
+An industrial provider calls `list_bindings` on `AasClient`. `AasClient` sends `GET description` to the AAS repository. `AasClient` sends `GET shells` to the repository. `AasClient` requests each submodel from the repository by its unpadded base64url id. `AasClient` returns the bindings and their endpoints to the provider.
 
 ## What this crate implements
 
-The `aas` feature is on by default and compiles `a2a_lab_dev_kit::aas`. `AasClient::new` takes a base URL and an `AccessTokenSource`. `StaticToken::new(None)` sends no `Authorization` header. A token is sent as a bearer credential.
+The `aas` feature is on by default and compiles `a2a_lab_dev_kit::aas`.
 
-`list_assets` loads the catalog once and caches it. The client `GET`s `description`, then `shells`, then `submodels/{id}` for each submodel key. The submodel path segment is unpadded base64url of the identifier. `description.profiles` must contain a string that includes both `3.2` and `AssetAdministrationShellRepositoryServiceSpecification`. Shells are the `result` array. Each asset key is the shell `id`; `assetInformation.globalAssetId` is optional.
+- `AasClient::new` takes a base URL and an `AccessTokenSource`.
+- `StaticToken::new(None)` sends no `Authorization` header.
+- A present token is sent as a bearer credential.
+- The first catalog read fills the cache from `description`, `shells`, and binding submodels.
+- Later calls reuse that cache.
+- HTTP 401 and HTTP 403 are `protocol` errors.
+- HTTP 404 is `not_found`.
+- Any other non-success status is `unavailable`.
 
-Binding submodels are those whose `semanticId` key value is `https://a2a-lab.example/LabBindings/1/0`. Each submodel element supplies `labId`, `role` (`log_source`, `metric`, or `task`), and `protocol` `opc_ua`, plus the fields required by `Endpoint::OpcUa`. The binding semantic id is an IRI taken from the element, or the binding semantic when the element has none. `list_bindings` pages every binding. `get_asset` looks up the cached shell id.
+The catalog read follows these rules:
 
-HTTP 401 and 403 are `protocol` errors. HTTP 404 is `not_found`. Any other non-success status is `unavailable`.
+- `description.profiles` must contain one string that includes both `3.2` and `AssetAdministrationShellRepositoryServiceSpecification`.
+- Shells are the `result` array.
+- Each asset key is the shell `id`.
+- `assetInformation.globalAssetId` is optional.
+- Binding submodels use semantic id `https://a2a-lab.example/LabBindings/1/0`.
+- `list_bindings` pages every binding.
+- `get_asset` looks up the cached shell id.
+
+Binding elements describe an Open Platform Communications Unified Architecture (OPC UA) endpoint. Each element supplies:
+
+- `labId`
+- `role` of `log_source`, `metric`, or `task`
+- `protocol` `opc_ua`
+- the fields `Endpoint::OpcUa` requires
+
+The binding semantic id is an IRI from the element, or the binding semantic id when the element has none.
 
 ## Entry points
 
@@ -43,13 +69,19 @@ With the `aas` feature:
 - `aas::AasClient`
 - `aas::AccessTokenSource` and `aas::StaticToken`
 - `AssetCatalogProvider::list_assets`, `get_asset`, and `list_bindings`
-- `MemoryCatalog` for an in-memory catalog used by tests
+- `MemoryCatalog`, an in-memory catalog
 
-`AasClient` is not re-exported at the crate root. Catalog types such as `Asset`, `Binding`, `Endpoint`, `AssetKey`, and `SemanticId` are.
+`AasClient` stays in the `aas` module. These catalog types are re-exported at the crate root:
+
+- `Asset`
+- `Binding`
+- `Endpoint`
+- `AssetKey`
+- `SemanticId`
 
 ## Related
 
 - [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
-- [SiLA 2](<../sila-2/doc-8 - SiLA-2.md>)
-- [Industrial equipment connectors](<../../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)
+- [Standardization in Lab Automation (SiLA) 2](<../sila-2/doc-8 - SiLA-2.md>)
+- [Run a scripted industrial lab](<../../guide/scripted-industrial/doc-14 - Run-a-scripted-industrial-lab.md>)

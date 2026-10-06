@@ -233,6 +233,36 @@ load_map() {
   [ "$page_count" -gt 0 ] || die "wiki map has no pages"
 }
 
+validate_map_groups() {
+  local i=0 phase=0 top source saw_home=0
+  while [ "$i" -lt "$page_count" ]; do
+    source=${page_sources[$i]}
+    top=${source%%/*}
+    case "$top" in
+      overview)
+        [ "$phase" -eq 0 ] || die "overview pages must be listed before guides and reference"
+        ;;
+      guide)
+        if [ "$phase" -eq 0 ]; then
+          phase=1
+        fi
+        [ "$phase" -eq 1 ] || die "guide pages must stay together after overview pages"
+        ;;
+      reference)
+        if [ "$phase" -lt 2 ]; then
+          phase=2
+        fi
+        [ "$phase" -eq 2 ] || die "reference pages must stay together after guide pages"
+        ;;
+    esac
+    if [ "${page_wikis[$i]}" = "Home.md" ]; then
+      saw_home=1
+    fi
+    i=$((i + 1))
+  done
+  [ "$saw_home" -eq 1 ] || die "wiki map must include Home.md"
+}
+
 expected_type_for() {
   local source="$1" top
   top=${source%%/*}
@@ -260,6 +290,43 @@ validate_mermaid_ids() {
       die "reserved Mermaid node id in ${label}: ${line}"
     fi
   done <"$body"
+}
+
+validate_mermaid_a11y() {
+  local body="$1" label="$2" line in_mermaid=0 has_title=0 has_descr=0 trimmed text
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '```mermaid' | '```mermaid'*)
+        in_mermaid=1
+        has_title=0
+        has_descr=0
+        continue
+        ;;
+      '```'* | '~~~'*)
+        if [ "$in_mermaid" -eq 1 ]; then
+          [ "$has_title" -eq 1 ] && [ "$has_descr" -eq 1 ] \
+            || die "mermaid diagram in ${label} needs accTitle and accDescr"
+          in_mermaid=0
+        fi
+        continue
+        ;;
+    esac
+    [ "$in_mermaid" -eq 1 ] || continue
+    trimmed=$(printf '%s' "$line" | sed 's/^[[:space:]]*//')
+    case "$trimmed" in
+      accTitle:*)
+        text=${trimmed#accTitle:}
+        text=$(printf '%s' "$text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [ -n "$text" ] && has_title=1
+        ;;
+      accDescr:*)
+        text=${trimmed#accDescr:}
+        text=$(printf '%s' "$text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [ -n "$text" ] && has_descr=1
+        ;;
+    esac
+  done <"$body"
+  [ "$in_mermaid" -eq 0 ] || die "unclosed mermaid fence in ${label}"
 }
 
 validate_h1() {
@@ -355,8 +422,7 @@ EOF
     validate_fences "$body" "${page_files[$i]}" || die "fence check failed for ${page_files[$i]}"
     validate_h1 "$body" "$title" || die "H1 check failed for ${page_files[$i]}"
     validate_mermaid_ids "$body" "${page_files[$i]}"
-    mermaid_count=$(awk '$0 ~ /^```mermaid([[:space:]]|$)/ { n++ } END { print n + 0 }' "$body")
-    [ "$mermaid_count" -eq 1 ] || die "${page_files[$i]} must contain exactly one mermaid diagram (found $mermaid_count)"
+    validate_mermaid_a11y "$body" "${page_files[$i]}"
     page_titles[$i]=$title
     i=$((i + 1))
   done
@@ -487,17 +553,8 @@ rewrite_line() {
   done
 }
 
-mermaid_to_wiki_image() {
-  local src="$1" title="$2" encoded
-  encoded=$(printf '%s' "$src" | base64 | tr -d '\r\n')
-  encoded=${encoded//+/%2B}
-  encoded=${encoded//\//%2F}
-  encoded=${encoded//=/%3D}
-  printf '![%s](https://mermaid.ink/svg/%s)\n' "$title" "$encoded"
-}
-
 render_pages() {
-  local i=0 src_dir line started dest in_fence in_mermaid mermaid_buf
+  local i=0 src_dir line started dest in_fence
   case "$WIKI_STAGE" in
     "$root"/target/wiki-stage) ;;
     *) die "refusing to replace unexpected stage path $WIKI_STAGE" ;;
@@ -509,8 +566,6 @@ render_pages() {
     dest="$WIKI_STAGE/${page_wikis[$i]}"
     started=0
     in_fence=0
-    in_mermaid=0
-    mermaid_buf=""
     : >"$dest"
     while IFS= read -r line || [ -n "$line" ]; do
       if [ "$started" -eq 0 ] && [ -z "$line" ]; then
@@ -518,35 +573,16 @@ render_pages() {
       fi
       started=1
       case "$line" in
-        '```mermaid' | '```mermaid'*)
-          if [ "$in_fence" -eq 0 ]; then
-            in_fence=1
-            in_mermaid=1
-            mermaid_buf=""
-            continue
-          fi
-          ;;
         '```'* | '~~~'*)
           if [ "$in_fence" -eq 0 ]; then
             in_fence=1
-            printf '%s\n' "$line" >>"$dest"
-            continue
-          fi
-          in_fence=0
-          if [ "$in_mermaid" -eq 1 ]; then
-            mermaid_to_wiki_image "$mermaid_buf" "${page_titles[$i]}" >>"$dest"
-            in_mermaid=0
-            mermaid_buf=""
           else
-            printf '%s\n' "$line" >>"$dest"
+            in_fence=0
           fi
+          printf '%s\n' "$line" >>"$dest"
           continue
           ;;
       esac
-      if [ "$in_mermaid" -eq 1 ]; then
-        mermaid_buf="${mermaid_buf}${line}"$'\n'
-        continue
-      fi
       if [ "$in_fence" -eq 1 ]; then
         printf '%s\n' "$line" >>"$dest"
         continue
@@ -559,10 +595,29 @@ render_pages() {
     fi
     i=$((i + 1))
   done
+  write_sidebar
+}
+
+write_sidebar() {
+  local i=0 source top heading="" current="" name
   {
-    i=0
     while [ "$i" -lt "$page_count" ]; do
-      printf -- '* [[%s|%s]]\n' "${page_wikis[$i]%.md}" "${page_titles[$i]}"
+      source=${page_sources[$i]}
+      top=${source%%/*}
+      case "$top" in
+        overview) heading="Start" ;;
+        guide) heading="Guides" ;;
+        reference) heading="Reference" ;;
+      esac
+      if [ "$heading" != "$current" ]; then
+        if [ -n "$current" ]; then
+          printf '\n'
+        fi
+        printf '## %s\n\n' "$heading"
+        current=$heading
+      fi
+      name=${page_wikis[$i]%.md}
+      printf -- '- [%s](%s/%s)\n' "${page_titles[$i]}" "$WIKI_PAGE_BASE" "$name"
       i=$((i + 1))
     done
   } >"$WIKI_STAGE/_Sidebar.md"
@@ -673,22 +728,34 @@ check_wiki_bracket_links() {
 }
 
 check_mermaid_diagrams() {
-  local file base count fences
+  local file base
   for file in "$WIKI_STAGE"/*.md; do
     [ -f "$file" ] || continue
     base=$(basename "$file")
     [ "$base" = "_Sidebar.md" ] && continue
-    fences=$(awk '
-      $0 ~ /^```mermaid([[:space:]]|$)/ { n++ }
-      END { print n + 0 }
-    ' "$file")
-    [ "$fences" -eq 0 ] || die "$base must not keep mermaid fences on the Wiki (found $fences)"
-    count=$(awk '
-      /https:\/\/mermaid\.ink\/svg\// { n++ }
-      END { print n + 0 }
-    ' "$file")
-    [ "$count" -eq 1 ] || die "$base must contain exactly one mermaid.ink diagram (found $count)"
+    if grep -q 'https://mermaid.ink/' "$file"; then
+      die "$base must keep native Mermaid fences"
+    fi
+    validate_mermaid_a11y "$file" "$base"
   done
+}
+
+check_readme_wiki_parity() {
+  local readme="$root/README.md" actual expected name i
+  [ -f "$readme" ] || die "missing README.md"
+  actual=$(
+    grep -oE 'https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/[A-Za-z0-9._~-]+' "$readme" \
+      | awk -F/ '!seen[$NF]++ { print $NF }'
+  )
+  expected=""
+  i=0
+  while [ "$i" -lt "$page_count" ]; do
+    name=${page_wikis[$i]%.md}
+    expected="${expected}${name}"$'\n'
+    i=$((i + 1))
+  done
+  expected=$(printf '%s' "$expected" | sed '/^$/d')
+  [ "$actual" = "$expected" ] || die "README Wiki links do not match .mise/wiki-map.toml order"
 }
 
 check_staged_links() {
@@ -723,11 +790,14 @@ wiki_check() {
   local saved_cmd=${wiki_cmd:-wiki-check}
   wiki_cmd=wiki-check
   load_map
+  validate_map_groups
   prepare_pages
   ensure_public_docs_are_mapped
   render_pages
+  [ -f "$WIKI_STAGE/Home.md" ] || die "staged Home.md is missing"
   check_staged_links
   check_mermaid_diagrams
+  check_readme_wiki_parity
   if [ -n "${wiki_tmp:-}" ]; then
     rm -rf "$wiki_tmp"
     wiki_tmp=""

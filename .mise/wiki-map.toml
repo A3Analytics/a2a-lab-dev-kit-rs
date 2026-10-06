@@ -1,9 +1,26 @@
 # Canonical public docs published to the GitHub Wiki.
-# source is a directory under backlog/docs. Order is _Sidebar.md order.
+# source is a directory under backlog/docs. Order is _Sidebar.md order:
+# Start, then Guides, then Reference.
 
 [[page]]
 source = "overview"
 wiki = "Home.md"
+
+[[page]]
+source = "guide/memory-lab"
+wiki = "Run-the-memory-lab.md"
+
+[[page]]
+source = "guide/a2a-and-mcp"
+wiki = "Serve-A2A-and-MCP.md"
+
+[[page]]
+source = "guide/scripted-industrial"
+wiki = "Run-a-scripted-industrial-lab.md"
+
+[[page]]
+source = "guide/ros2-tasks"
+wiki = "Expose-ROS-2-actions-as-tasks.md"
 
 [[page]]
 source = "reference/a2a"

@@ -10,34 +10,74 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this dev kit
 
-OPC UA is an outbound history client, not an agent-facing protocol. Catalog bindings may point a lab token at an `Endpoint::OpcUa` node. `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` read history only through `LiveSource`. `OpcUaClient` is not a `LiveSource`.
+Open Platform Communications Unified Architecture (OPC UA) is an outbound history client. Industrial providers read history only through `LiveSource`. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient::read_history` is a separate helper and is not a `LiveSource`.
 
-Catalog bindings feed `LiveSource`. `ScriptedLive` is the implementation in this crate. `OpcUaClient::read_history` is a separate helper and is not wired into that path.
+Catalog bindings point a lab token at an `Endpoint::OpcUa` node. The industrial providers pass that endpoint to `LiveSource`. The helper reads one node on its own.
+
+Industrial history and `OpcUaClient::read_history` follow different paths:
 
 ```mermaid
 flowchart TD
-  binding["Binding role metric or log_source"] --> industrial["IndustrialMetrics or IndustrialLogs"]
-  industrial --> live["LiveSource.query_metrics or query_logs"]
+  accTitle: Live source and history helper
+  accDescr: A catalog binding reaches IndustrialLogs and IndustrialMetrics. Those providers call LiveSource, and ScriptedLive implements it. An endpoint reaches OpcUaClient read_history on a separate path and returns metric points.
+  binding["Catalog binding"] --> providers["IndustrialLogs and IndustrialMetrics"]
+  providers --> live["LiveSource"]
   live --> scripted["ScriptedLive"]
-  endpoint["Endpoint OpcUa"] --> reader["OpcUaClient.read_history"]
-  reader --> points["MetricPoints inside the half-open range"]
+  endpoint["Endpoint::OpcUa"] -.-> helper["OpcUaClient::read_history"]
+  helper --> points["Metric points in the half-open range"]
 ```
+
+A catalog binding reaches `IndustrialLogs` and `IndustrialMetrics`. Those providers call `LiveSource`. `ScriptedLive` implements `LiveSource`. An `Endpoint::OpcUa` value reaches `OpcUaClient::read_history` on a separate path. That helper returns metric points inside the half-open range.
 
 ## What this crate implements
 
-The `opcua` feature is on by default and compiles `a2a_lab_dev_kit::opcua` against `async-opcua-client` 0.19. The public surface is `OpcUaClient`, `OpcUaClient::read_history`, `namespace_index`, and `filter_half_open`.
+The `opcua` feature is on by default. It compiles `a2a_lab_dev_kit::opcua` against `async-opcua-client` 0.19.0.
 
-`OpcUaClient::new` stores a PKI directory, username, and password. `read_history` requires an OPC UA endpoint. It rejects a `security_policy` that contains `None`. The session disables automatic server trust (`trust_server_certs(false)`), enables certificate verification (`verify_server_certs(true)`), does not create a sample key pair, and authenticates with a username token. The namespace index comes from the server namespace array for `namespace_uri`. The node id is `ns={index};{node_id}`.
+`OpcUaClient::new` stores a PKI directory, a username, and a password. `read_history` takes an `Endpoint::OpcUa` value. It rejects a `security_policy` that contains `None`.
 
-The history read is raw data (`is_read_modified` false), with source timestamps, no bounds, and no value cap. Missing history support (`BadHistoryOperationUnsupported`) is `unavailable`. Each value must be a double with a source timestamp. `filter_half_open` drops samples that are not inside the lab range `[start, end)`. `namespace_index` returns the index of a URI in a namespace list, or `not_found`.
+The session uses these settings:
+
+- Automatic server trust is off (`trust_server_certs(false)`).
+- Certificate verification is on (`verify_server_certs(true)`).
+- Sample key pair creation is off (`create_sample_keypair(false)`).
+- Authentication uses a username token.
+
+The namespace index comes from the server namespace array for `namespace_uri`. The node id is `ns={index};{node_id}`.
+
+The history read uses these settings:
+
+- Raw data (`is_read_modified` is false)
+- Source timestamps
+- No bounds (`return_bounds` is false)
+- No value cap (`num_values_per_node` is 0)
+
+`BadHistoryOperationUnsupported` is `unavailable`. A history value without a source timestamp or a value is skipped. A value that is not a double is `invalid`. `filter_half_open` drops samples outside the lab range `[start, end)`. `namespace_index` returns the index of a URI in a namespace list, or `not_found`.
 
 ## Entry points
 
-With the `opcua` feature, use `opcua::OpcUaClient::read_history`, `opcua::namespace_index`, and `opcua::filter_half_open`. These items are not re-exported at the crate root. `Endpoint::OpcUa` is re-exported and carries `url`, `security_policy`, `security_mode`, `identity`, `node_id`, `namespace_uri`, and `browse_path`.
+With the `opcua` feature:
+
+- `opcua::OpcUaClient::read_history`
+- `opcua::namespace_index`
+- `opcua::filter_half_open`
+
+These helpers stay in the `opcua` module. `Endpoint::OpcUa` is re-exported and carries these fields:
+
+- `url`
+- `security_policy`
+- `security_mode`
+- `identity`
+- `node_id`
+- `namespace_uri`
+- `browse_path`
+
+## Future work
+
+Live OPC UA readings through `LiveSource`.
 
 ## Related
 
 - [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
-- [SiLA 2](<../sila-2/doc-8 - SiLA-2.md>)
-- [Industrial equipment connectors](<../../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)
+- [Standardization in Lab Automation (SiLA) 2](<../sila-2/doc-8 - SiLA-2.md>)
+- [Run a scripted industrial lab](<../../guide/scripted-industrial/doc-14 - Run-a-scripted-industrial-lab.md>)

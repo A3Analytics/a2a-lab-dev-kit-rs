@@ -1,10 +1,18 @@
 name: Wiki
 
 on:
+  pull_request:
+    paths:
+      - backlog/docs/**
+      - README.md
+      - .mise/wiki-map.toml
+      - .mise/scripts/wiki-*.sh
+      - .github/workflows/wiki.yml
   push:
     branches: [main]
     paths:
       - backlog/docs/**
+      - README.md
       - .mise/wiki-map.toml
       - .mise/scripts/wiki-*.sh
       - .github/workflows/wiki.yml
@@ -14,11 +22,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: wiki
+  group: wiki-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate Wiki
+        run: bash .mise/scripts/wiki-check.sh
+
   publish:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -38,3 +56,8 @@ jobs:
         env:
           WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
         run: bash .mise/scripts/wiki-publish.sh
+
+      - name: Confirm remote Wiki
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: bash .mise/scripts/wiki-drift.sh

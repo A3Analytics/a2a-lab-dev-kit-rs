@@ -8,83 +8,88 @@ created_date: "2026-09-30 17:38"
 
 # Lab dev kit overview
 
-## Role in this dev kit
+`a2a-lab-dev-kit` routes agent calls to logs, metrics, and tasks.
 
-`a2a-lab-dev-kit` is a Rust library for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` checks pages and time ranges, calls `LogProvider`, `MetricProvider`, and `TaskProvider`, and stores an A2A task snapshot. MCP tools call that service. The default A2A agent calls those MCP tools through `McpLab`.
+Provider traits are the source of truth.
 
-An agent call enters through A2A or MCP. `LabService` fans out to the three provider traits. Each trait is backed by one implementation chosen when the service is built.
+`LabService` runs seven operations.
+
+Agent2Agent (A2A) and Model Context Protocol (MCP) call that service.
+
+## Call path
+
+The following diagram shows the default path from an agent to the provider traits:
 
 ```mermaid
 flowchart TD
-  agent["Agent"] --> a2a["A2aServer"]
-  agent --> mcp["McpServer"]
-  a2a --> mcpLab["McpLab"]
-  mcpLab --> mcp
-  mcp --> lab["LabService"]
-  lab --> logs["LogProvider"]
-  lab --> metrics["MetricProvider"]
-  lab --> tasks["TaskProvider"]
-  logs --> memLogs["MemoryLogs"]
-  logs --> indLogs["IndustrialLogs"]
-  metrics --> memMetrics["MemoryMetrics"]
-  metrics --> indMetrics["IndustrialMetrics"]
-  tasks --> memWf["MemoryTasks"]
-  tasks --> indWf["IndustrialTasks"]
-  tasks --> ros["Ros2Tasks"]
-  indLogs --> catalog["AssetCatalogProvider"]
-  indMetrics --> catalog
-  indWf --> catalog
-  indLogs --> live["LiveSource"]
-  indMetrics --> live
-  indWf --> live
-  catalog --> aasClient["AasClient"]
-  catalog --> memCat["MemoryCatalog"]
-  live --> scripted["ScriptedLive"]
-  ros --> rosGraph["Ros2Graph"]
+  accTitle: Default call path
+  accDescr: The A2A server calls the MCP lab client. That client and a direct MCP client call the MCP server. The MCP server calls the lab service, which calls the log, metric, and task providers.
+  a2aServer["A2A server"] --> mcpLab["MCP lab client"]
+  mcpLab --> mcpServer["MCP server"]
+  directMcp["Direct MCP client"] --> mcpServer
+  mcpServer --> labService["Lab service"]
+  labService --> logProvider["Log provider"]
+  labService --> metricProvider["Metric provider"]
+  labService --> taskProvider["Task provider"]
 ```
 
-## What this crate implements
+The preceding diagram has these connections:
 
-`LabCommand` has seven operations. A2A skill ids and MCP tool names are in parentheses:
+- The A2A server (`A2aServer`) calls the MCP lab client (`McpLab`).
+- The MCP lab client calls the MCP server (`McpServer`).
+- A direct MCP client calls the MCP server.
+- The MCP server calls the lab service (`LabService`).
+- The lab service calls the log provider (`LogProvider`).
+- The lab service calls the metric provider (`MetricProvider`).
+- The lab service calls the task provider (`TaskProvider`).
+
+## Operations
+
+Each operation lists the A2A skill id, then the MCP tool name.
 
 1. `list_log_sources` (`list-log-sources`, `list_log_sources`) lists log sources.
-2. `query_logs` (`query-logs`, `query_logs`) reads structured records for one source.
-3. `list_metrics` (`list-metrics`, `list_metrics`) lists metric descriptors.
+2. `query_logs` (`query-logs`, `query_logs`) reads log records for one source.
+3. `list_metrics` (`list-metrics`, `list_metrics`) lists metrics.
 4. `query_metric` (`query-metric`, `query_metric`) reads samples for one metric.
-5. `list_tasks` (`list-tasks`, `list_tasks`) lists task definitions.
-6. `start_task` (`start-task`, `start_task`) starts a task with a JSON object and waits until the run is completed, failed, or canceled (`timeout_seconds` default 60). Set `wait` to false to return as soon as the run is accepted.
+5. `list_tasks` (`list-tasks`, `list_tasks`) lists tasks.
+6. `start_task` (`start-task`, `start_task`) waits until the run is terminal unless `wait` is false.
 7. `get_task_status` (`get-task-status`, `get_task_status`) reads one run.
 
-Query requests carry a `TimeRange`. The range is half-open UTC: `TimeRange` documents `[start, end)`, `start` must be strictly before `end`, and `contains` is true when the timestamp is greater than or equal to `start` and strictly less than `end`. `UtcTimestamp` accepts RFC 3339 text whose offset is `Z`, `+00:00`, or `-00:00`.
+The default `start_task` timeout is 60 seconds.
 
-List and query requests also carry a `PageRequest`. The limit must be from 1 to `MAX_PAGE_LIMIT` (1000). The default limit is 100. A cursor is an optional string of ASCII digits. Identifiers such as `SourceId`, `MetricId`, `TaskId`, and `RunId` are 1 to 128 characters of ASCII letters, digits, or `.` `_` `:` `-`. `A2aLabError::code` is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`.
+## Time ranges
 
-In-memory providers are `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryCatalog`. `IndustrialLabBuilder` can share one catalog and one `LiveSource` across `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks`. `ScriptedLive` is the `LiveSource` implemented in this crate.
+Time ranges are half-open Coordinated Universal Time (UTC) intervals, `[start, end)`.
 
-## Entry points
+A timestamp in the range is greater than or equal to `start` and less than `end`.
 
-`LabService::new` takes the three providers. `LabService::share` returns `Arc<dyn LabApi>` for `McpServer`. `McpLab::connect_default` returns `Arc<dyn LabApi>` for `A2aServer`. `version` returns the package version.
+## Implementations
 
-Protocol and equipment pages:
+This table lists the implementations behind the provider traits:
 
+| Implementation | Role |
+| --- | --- |
+| `MemoryLogs` | In-memory `LogProvider` |
+| `MemoryMetrics` | In-memory `MetricProvider` |
+| `MemoryTasks` | In-memory `TaskProvider` |
+| `AasClient` | Asset Administration Shell (AAS) `AssetCatalogProvider` |
+| `MemoryCatalog` | In-memory `AssetCatalogProvider` |
+| `ScriptedLive` | In-crate `LiveSource` |
+| `Ros2Tasks` | `TaskProvider` for Robot Operating System 2 (ROS 2) actions |
+| `IndustrialLogs`, `IndustrialMetrics`, `IndustrialTasks` | Use `AssetCatalogProvider` and `LiveSource` |
+
+## Related pages
+
+Read these related pages, including Open Platform Communications Unified Architecture (OPC UA) and Standardization in Lab Automation (SiLA) 2:
+
+- [Run the memory lab](<../guide/memory-lab/doc-12 - Run-the-memory-lab.md>)
+- [Serve A2A and MCP](<../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
+- [Run a scripted industrial lab](<../guide/scripted-industrial/doc-14 - Run-a-scripted-industrial-lab.md>)
+- [Expose ROS 2 actions as tasks](<../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)
 - [A2A](<../reference/a2a/doc-4 - A2A.md>)
 - [MCP](<../reference/mcp/doc-5 - MCP.md>)
 - [Asset Administration Shell](<../reference/aas/doc-6 - Asset-Administration-Shell.md>)
 - [OPC UA](<../reference/opc-ua/doc-7 - OPC-UA.md>)
 - [SiLA 2](<../reference/sila-2/doc-8 - SiLA-2.md>)
 - [ROS 2](<../reference/ros-2/doc-9 - ROS-2.md>)
-
-The repository [README](../../../README.md) shows `LabService` with the memory providers, `A2aServer::listen`, and `McpServer::serve_http`.
-
-## Related
-
 - [README](../../../README.md)
-- [A2A](<../reference/a2a/doc-4 - A2A.md>)
-- [MCP](<../reference/mcp/doc-5 - MCP.md>)
-- [Asset Administration Shell](<../reference/aas/doc-6 - Asset-Administration-Shell.md>)
-- [OPC UA](<../reference/opc-ua/doc-7 - OPC-UA.md>)
-- [SiLA 2](<../reference/sila-2/doc-8 - SiLA-2.md>)
-- [ROS 2](<../reference/ros-2/doc-9 - ROS-2.md>)
-- [Lab dev kit architecture](<../technical/architecture/doc-1 - Lab-dev-kit-architecture.md>)
-- [A2A and MCP protocols](<../technical/protocol/doc-2 - A2A-and-MCP-protocols.md>)
-- [Industrial equipment connectors](<../technical/industrial/doc-3 - Industrial-equipment-connectors.md>)

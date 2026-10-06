@@ -12,9 +12,9 @@ created_date: "2026-09-30"
 
 The seven A2A and MCP operations stay the agent-facing contract. `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` implement the provider traits over one `AssetCatalogProvider` and one `LiveSource`.
 
-`AasClient` implements `AssetCatalogProvider`. It reads `description`, `shells`, and `submodels/{id}` and rejects a description whose profiles do not include both `3.2` and `AssetAdministrationShellRepositoryServiceSpecification`.
+`AasClient` implements `AssetCatalogProvider`. It reads `description`, `shells`, and `submodels/{id}` and rejects a description whose profiles lack a string that includes both `3.2` and `AssetAdministrationShellRepositoryServiceSpecification`.
 
-`OpcUaClient` exposes `read_history`, `namespace_index`, and `filter_half_open`. `read_history` reads raw history for one node and drops samples outside the half-open range. The session rejects a security policy containing `None`, verifies server certificates, and authenticates with a username and password. `OpcUaClient` does not implement `LiveSource`.
+`OpcUaClient` exposes `read_history`, `namespace_index`, and `filter_half_open`. `read_history` reads raw history for one node and drops samples outside the half-open range. `read_history` rejects a security policy containing `None`, verifies server certificates, and authenticates with a username and password. `OpcUaClient` does not implement `LiveSource`.
 
 SiLA support is the Feature Provider in `sila::SilaServer`. It serves `LabOperations` for the seven lab operations and does not open an outbound SiLA client. Catalog bindings therefore do not store a SiLA endpoint.
 

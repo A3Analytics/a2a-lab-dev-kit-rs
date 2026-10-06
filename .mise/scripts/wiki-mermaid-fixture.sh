@@ -17,6 +17,10 @@ source = "overview"
 wiki = "Home.md"
 
 [[page]]
+source = "guide/plain"
+wiki = "Plain.md"
+
+[[page]]
 source = "reference/a2a"
 wiki = "A2A.md"
 EOF
@@ -24,8 +28,15 @@ EOF
 
 write_closed_docs() {
   local dest="$1"
-  mkdir -p "$dest/backlog/docs/overview" "$dest/backlog/docs/reference/a2a" "$dest/.mise"
-  printf '# fixture\n' >"$dest/README.md"
+  mkdir -p "$dest/backlog/docs/overview" "$dest/backlog/docs/guide/plain" \
+    "$dest/backlog/docs/reference/a2a" "$dest/.mise"
+  cat >"$dest/README.md" <<'EOF'
+# fixture
+
+- [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
+- [Plain](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Plain)
+- [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)
+EOF
   write_map "$dest"
   cat >"$dest/backlog/docs/overview/doc-1 - Fixture-Home.md" <<'EOF'
 ---
@@ -44,6 +55,8 @@ Caption for the fixture diagram.
 
 ```mermaid
 flowchart TD
+  accTitle: Fixture path
+  accDescr: The fixture moves from the first node to the next node.
   # this heading is inside the fence
   nodeA["See [Lab dev kit overview](<../overview/doc-1 - Fixture-Home.md>)"]
   nodeA --> nodeB[Next]
@@ -54,6 +67,21 @@ flowchart TD
 - [README](<../../../README.md>)
 - [A2A](<../reference/a2a/doc-2 - Fixture-A2A.md>)
 - GET /tasks/{id}
+EOF
+  cat >"$dest/backlog/docs/guide/plain/doc-3 - Fixture-Plain.md" <<'EOF'
+---
+id: doc-3
+title: Fixture Plain
+type: guide
+audience: public
+created_date: "2026-09-30"
+---
+
+# Fixture Plain
+
+## Role in this dev kit
+
+This page has no diagram.
 EOF
   cat >"$dest/backlog/docs/reference/a2a/doc-2 - Fixture-A2A.md" <<'EOF'
 ---
@@ -70,6 +98,8 @@ created_date: "2026-09-30"
 
 ```mermaid
 flowchart LR
+  accTitle: Fixture reference
+  accDescr: Node A connects to node B.
   a[A] --> b[B]
 ```
 
@@ -119,21 +149,42 @@ extract_mermaid_body() {
   ' "$1"
 }
 
-decode_staged_diagram() {
-  python3 -c '
-import base64, pathlib, re, sys, urllib.parse
-text = pathlib.Path(sys.argv[1]).read_text()
-match = re.search(r"https://mermaid.ink/svg/([^)\s]+)", text)
-if not match:
-    sys.exit(1)
-sys.stdout.write(base64.b64decode(urllib.parse.unquote(match.group(1))).decode())
-' "$1"
+write_inaccessible_docs() {
+  local dest="$1"
+  mkdir -p "$dest/backlog/docs/overview" "$dest/.mise"
+  cat >"$dest/README.md" <<'EOF'
+# fixture
+
+- [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
+EOF
+  cat >"$dest/.mise/wiki-map.toml" <<'EOF'
+[[page]]
+source = "overview"
+wiki = "Home.md"
+EOF
+  cat >"$dest/backlog/docs/overview/doc-1 - Missing-Title.md" <<'EOF'
+---
+id: doc-1
+title: Missing Title
+type: overview
+audience: public
+created_date: "2026-09-30"
+---
+
+# Missing Title
+
+```mermaid
+flowchart LR
+  a[A] --> b[B]
+```
+EOF
 }
 
 closed=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-mermaid.XXXXXX")
 unclosed=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-mermaid-open.XXXXXX")
+inaccessible=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-mermaid-a11y.XXXXXX")
 cleanup() {
-  rm -rf "$closed" "$unclosed"
+  rm -rf "$closed" "$unclosed" "$inaccessible"
 }
 trap cleanup EXIT
 
@@ -146,26 +197,35 @@ source "$lib"
 wiki_check
 
 home="$closed/target/wiki-stage/Home.md"
+plain="$closed/target/wiki-stage/Plain.md"
 a2a="$closed/target/wiki-stage/A2A.md"
+sidebar="$closed/target/wiki-stage/_Sidebar.md"
 [ -f "$home" ] || fail "missing staged Home.md"
+[ -f "$plain" ] || fail "missing staged Plain.md"
 [ -f "$a2a" ] || fail "missing staged A2A.md"
 
 source_mermaid=$(extract_mermaid_body "$closed/backlog/docs/overview/doc-1 - Fixture-Home.md")
-staged_mermaid=$(decode_staged_diagram "$home")
+staged_mermaid=$(extract_mermaid_body "$home")
 [ -n "$source_mermaid" ] || fail "source mermaid was empty"
-[ "$source_mermaid"$'\n' = "$staged_mermaid" ] || [ "$source_mermaid" = "$staged_mermaid" ] \
-  || fail "staged mermaid image did not round-trip the source diagram"
+[ "$source_mermaid" = "$staged_mermaid" ] \
+  || fail "staged mermaid fence did not keep the source diagram"
 
 printf '%s\n' "$staged_mermaid" | grep -q '# this heading is inside the fence' \
   || fail "heading inside mermaid was dropped"
+printf '%s\n' "$staged_mermaid" | grep -q 'accTitle: Fixture path' \
+  || fail "staged mermaid dropped accTitle"
+printf '%s\n' "$staged_mermaid" | grep -q 'accDescr: The fixture moves from the first node to the next node.' \
+  || fail "staged mermaid dropped accDescr"
 printf '%s\n' "$staged_mermaid" | grep -Fq '](<../overview/doc-1 - Fixture-Home.md>)' \
   || fail "markdown link inside mermaid was rewritten"
 
-if grep -q '```mermaid' "$home"; then
-  fail "staged Wiki kept a mermaid fence"
+grep -q '```mermaid' "$home" || fail "staged Wiki dropped the mermaid fence"
+if grep -q 'https://mermaid.ink/' "$home"; then
+  fail "staged Wiki converted mermaid to mermaid.ink"
 fi
-grep -q 'https://mermaid.ink/svg/' "$home" \
-  || fail "staged Wiki is missing a mermaid.ink image"
+if grep -q '```mermaid' "$plain"; then
+  fail "diagram-free page gained a mermaid fence"
+fi
 
 grep -q '\[README\](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/blob/main/README.md)' "$home" \
   || fail "README link after mermaid was not rewritten"
@@ -173,8 +233,11 @@ grep -q '\[A2A\](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)' "$
   || fail "sibling Wiki link after mermaid was not rewritten"
 grep -q 'GET /tasks/{id}' "$home" \
   || fail "curly braces after mermaid were rewritten"
-grep -q '\* \[\[Home|Fixture Home\]\]' "$closed/target/wiki-stage/_Sidebar.md" \
-  || fail "sidebar is not Wiki link syntax"
+grep -q '## Start' "$sidebar" || fail "sidebar is missing the Start group"
+grep -q '## Guides' "$sidebar" || fail "sidebar is missing the Guides group"
+grep -q '## Reference' "$sidebar" || fail "sidebar is missing the Reference group"
+grep -q '\[Fixture Home\](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)' "$sidebar" \
+  || fail "sidebar is not an absolute Markdown link"
 
 write_unclosed_docs "$unclosed"
 set +e
@@ -193,4 +256,19 @@ printf '%s\n' "$err" | grep -q 'unclosed mermaid fence' \
 printf '%s\n' "$err" | grep -q 'Open-Fence.md' \
   || fail "unclosed mermaid error did not name the page"
 
-printf 'wiki-mermaid-fixture: mermaid becomes a mermaid.ink image, Wiki links stay markdown, and unclosed fences fail\n'
+write_inaccessible_docs "$inaccessible"
+set +e
+err=$(
+  wiki_cmd=wiki-mermaid-fixture
+  root="$inaccessible"
+  # shellcheck disable=SC1090
+  source "$lib"
+  wiki_check 2>&1
+)
+status=$?
+set -e
+[ "$status" -ne 0 ] || fail "mermaid without accessibility text was accepted"
+printf '%s\n' "$err" | grep -q 'accTitle and accDescr' \
+  || fail "inaccessible mermaid error did not require accTitle and accDescr"
+
+printf 'wiki-mermaid-fixture: native mermaid stays fenced, sidebar links are markdown, and bad fences fail\n'
