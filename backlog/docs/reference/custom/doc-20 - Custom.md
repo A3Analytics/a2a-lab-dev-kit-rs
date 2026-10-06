@@ -28,10 +28,11 @@ flowchart LR
 
 In the preceding diagram, `A2aLabService` uses a custom provider. The custom provider implements `LogProvider`, `MetricProvider`, or `TaskProvider`.
 
-The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that contract. [Implementations](<../implementations/doc-18 - Implementations.md>) lists the built-in providers.
+The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that contract. [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>) shows how to write one. [Implementations](<../implementations/doc-18 - Implementations.md>) lists the built-in providers.
 
 ## Related
 
+- [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>)
 - [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)

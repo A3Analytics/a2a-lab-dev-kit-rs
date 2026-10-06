@@ -51,4 +51,5 @@ Read these pages:
 - [Run the memory lab](<../guide/memory-lab/doc-12 - Run-the-memory-lab.md>)
 - [Serve A2A and MCP](<../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
 - [Expose ROS 2 actions as tasks](<../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)
+- [Implement a custom provider](<../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>)
 - [README](../../../README.md)

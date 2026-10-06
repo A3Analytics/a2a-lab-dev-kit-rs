@@ -23,6 +23,11 @@ wiki = "Expose-ROS-2-actions-as-tasks.md"
 section = "Guides"
 
 [[page]]
+source = "guide/custom-provider"
+wiki = "Implement-a-custom-provider.md"
+section = "Guides"
+
+[[page]]
 source = "reference/interfaces-and-providers"
 wiki = "Interfaces-and-providers.md"
 section = "A2A-LAB"
