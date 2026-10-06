@@ -3,40 +3,32 @@
 [![A2A 1.0](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml)
 [![SiLA 2 provider](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml)
 
-A2A-LAB devkit is a Rust library for lab logs, metrics, and tasks. The crate name is `a2a-lab-dev-kit`.
+A2A-LAB devkit is a Rust crate for lab logs, metrics, and tasks over A2A, MCP, SiLA 2, AAS, OPC UA, and ROS 2.
 
-Provider traits are the source of truth.
+## Features
 
-`LabService` runs seven operations.
-
-Agent2Agent (A2A) and Model Context Protocol (MCP) call that service.
+- Supports lab logs, metrics, and tasks over Agent2Agent (A2A) and Model Context Protocol (MCP).
+- Serves that lab to Standardization in Lab Automation (SiLA) 2 clients.
+- Reads equipment from an Asset Administration Shell (AAS) catalog.
+- Reads Open Platform Communications Unified Architecture (OPC UA) equipment history.
+- Supplies live OPC UA readings through `LiveSource`. [Upcoming]
+- Exposes Robot Operating System 2 (ROS 2) actions as lab tasks.
 
 ## Call path
 
-The following diagram shows an agent reaching the lab service through A2A or MCP:
+The following diagram shows how the industry standards interface with A2A-Lab:
 
 ```mermaid
 flowchart LR
-  accTitle: Agent call path
-  accDescr: An agent calls A2A or MCP. Both paths reach the lab service. The lab service calls the log, metric, and task providers.
-  agent["Agent"] --> a2a["A2A"]
-  agent --> mcp["MCP"]
-  a2a --> labService["Lab service"]
-  mcp --> labService
-  labService --> logProvider["Log provider"]
-  labService --> metricProvider["Metric provider"]
-  labService --> taskProvider["Task provider"]
+  accTitle: A2A-LAB devkit
+  accDescr: A2A, MCP, and SiLA 2 call the lab service. The lab service uses AAS, OPC UA, and ROS 2.
+  a2a["A2A"] --> lab["Lab service"]
+  mcp["MCP"] --> lab
+  sila["SiLA 2"] --> lab
+  lab --> aas["AAS"]
+  lab --> opc["OPC UA"]
+  lab --> ros["ROS 2"]
 ```
-
-The preceding diagram has these connections:
-
-- An agent calls A2A or MCP.
-- Both paths reach the lab service (`LabService`).
-- The lab service calls the log provider (`LogProvider`).
-- The lab service calls the metric provider (`MetricProvider`).
-- The lab service calls the task provider (`TaskProvider`).
-
-The overview page shows the default A2A path through the MCP lab client.
 
 ## Run the memory example
 
@@ -53,16 +45,6 @@ Run these commands from the repository root.
    ```bash
    mise exec -- cargo run --example memory_lab
    ```
-
-## Features
-
-The default features are `aas`, `opcua`, and `sila2`.
-
-They enable Asset Administration Shell (AAS), Open Platform Communications Unified Architecture (OPC UA), and Standardization in Lab Automation (SiLA) 2.
-
-Robot Operating System 2 (ROS 2) code in the `ros2` module is always compiled.
-
-`OpcUaClient` supplies live OPC UA readings through `LiveSource`. [Upcoming] See the OPC UA page in the following table.
 
 ## Public documentation
 
