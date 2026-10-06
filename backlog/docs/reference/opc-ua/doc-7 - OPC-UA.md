@@ -10,29 +10,26 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Open Platform Communications Unified Architecture (OPC UA) supplies the values for the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). A catalog binding names the OPC UA node. `LiveSource` reads that node.
+Open Platform Communications Unified Architecture (OPC UA) is a provider. It supplies values for the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). A catalog binding names the OPC UA node. `LiveSource` reads that node.
 
 The following diagram shows that mapping:
 
 ```mermaid
 flowchart LR
-  accTitle: OPC UA fulfills primitive values
-  accDescr: An agent calls A2aLabService. A2aLabService calls industrial providers. Those providers read LiveSource. LiveSource returns log records, metric samples, and task runs for the bound OPC UA node.
-  agent["Agent"] --> service["A2aLabService"]
-  service --> providers["Industrial providers"]
-  providers --> live["LiveSource"]
-  live --> logs["Log records"]
+  accTitle: OPC UA supplies primitive values
+  accDescr: LiveSource reads a bound OPC UA node and returns log records, metric samples, and task runs.
+  live["LiveSource"] --> logs["Log records"]
   live --> metrics["Metric samples"]
   live --> tasks["Task runs"]
 ```
 
-In the preceding diagram, an agent calls `A2aLabService`. `A2aLabService` calls the industrial providers. Those providers read `LiveSource`. `LiveSource` fulfills the primitive values for the bound node:
+In the preceding diagram, `LiveSource` reads a bound OPC UA node. It returns log records, metric samples, and task runs:
 
 - `query_logs` returns log records.
-- `query_metrics` returns metric samples.
+- `query_metric` returns metric samples.
 - `start` and `status` return task runs.
 
-`ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` reads those values from an OPC UA server. [Upcoming] `OpcUaClient::read_history` reads raw history for one node.
+`ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` supplies those readings through `LiveSource`. [Upcoming] `OpcUaClient::read_history` reads raw history for one node. [Implementations](<../implementations/doc-18 - Implementations.md>) lists both.
 
 ## What this crate implements
 
@@ -78,5 +75,7 @@ These helpers stay in the `opcua` module. `Endpoint::OpcUa` is re-exported and c
 
 ## Related
 
+- [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
+- [Implementations](<../implementations/doc-18 - Implementations.md>)

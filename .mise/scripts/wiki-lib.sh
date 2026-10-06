@@ -20,6 +20,7 @@ page_sources=()
 page_wikis=()
 page_files=()
 page_titles=()
+page_sections=()
 page_count=0
 
 die() {
@@ -181,80 +182,103 @@ extract_body() {
   ' "$file" >"$dest"
 }
 
+wiki_section_index() {
+  case "$1" in
+    Start) printf '0' ;;
+    Guides) printf '1' ;;
+    A2A-LAB) printf '2' ;;
+    Interfaces) printf '3' ;;
+    Providers) printf '4' ;;
+    *) return 1 ;;
+  esac
+}
+
+store_mapped_page() {
+  local source="$1" wiki="$2" section="$3" i=0
+  [ -n "$source" ] || die "wiki map page is missing source"
+  [ -n "$wiki" ] || die "wiki map page is missing wiki"
+  [ -n "$section" ] || die "wiki map page is missing section"
+  case "$source" in
+    /* | *..*) die "wiki map source must be a relative docs directory: $source" ;;
+  esac
+  case "$wiki" in
+    *.md) ;;
+    *) die "wiki output must be a .md filename: $wiki" ;;
+  esac
+  case "$wiki" in
+    */* | _Sidebar.md) die "wiki output is not a page filename: $wiki" ;;
+  esac
+  wiki_section_index "$section" >/dev/null || die "unknown wiki section: $section"
+  while [ "$i" -lt "$page_count" ]; do
+    if [ "$source" = "${page_sources[$i]}" ] || [ "$wiki" = "${page_wikis[$i]}" ]; then
+      die "duplicate wiki map entry for $source -> $wiki"
+    fi
+    i=$((i + 1))
+  done
+  page_sources[$page_count]=$source
+  page_wikis[$page_count]=$wiki
+  page_sections[$page_count]=$section
+  page_count=$((page_count + 1))
+}
+
 load_map() {
-  local line source="" wiki=""
+  local line source="" wiki="" section="" open=0
   page_count=0
+  page_sources=()
+  page_wikis=()
+  page_sections=()
   [ -f "$WIKI_MAP" ] || die "missing $WIKI_MAP"
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%$'\r'}
     case "$line" in
       "" | \#*) continue ;;
       "[[page]]")
+        if [ "$open" -eq 1 ]; then
+          store_mapped_page "$source" "$wiki" "$section"
+        fi
         source=""
         wiki=""
+        section=""
+        open=1
         ;;
       source\ =\ \"*\")
+        [ "$open" -eq 1 ] || die "wiki map field is outside a page: $line"
         source=${line#source = \"}
         source=${source%\"}
         ;;
       wiki\ =\ \"*\")
+        [ "$open" -eq 1 ] || die "wiki map field is outside a page: $line"
         wiki=${line#wiki = \"}
         wiki=${wiki%\"}
+        ;;
+      section\ =\ \"*\")
+        [ "$open" -eq 1 ] || die "wiki map field is outside a page: $line"
+        section=${line#section = \"}
+        section=${section%\"}
         ;;
       *)
         die "cannot parse wiki map line: $line"
         ;;
     esac
-    if [ -n "$source" ] && [ -n "$wiki" ]; then
-      case "$source" in
-        /* | *..*) die "wiki map source must be a relative docs directory: $source" ;;
-      esac
-      case "$wiki" in
-        *.md) ;;
-        *) die "wiki output must be a .md filename: $wiki" ;;
-      esac
-      case "$wiki" in
-        */* | _Sidebar.md) die "wiki output is not a page filename: $wiki" ;;
-      esac
-      local i=0
-      while [ "$i" -lt "$page_count" ]; do
-        if [ "$source" = "${page_sources[$i]}" ] || [ "$wiki" = "${page_wikis[$i]}" ]; then
-          die "duplicate wiki map entry for $source -> $wiki"
-        fi
-        i=$((i + 1))
-      done
-      page_sources[$page_count]=$source
-      page_wikis[$page_count]=$wiki
-      page_count=$((page_count + 1))
-      source=""
-      wiki=""
-    fi
   done <"$WIKI_MAP"
+  if [ "$open" -eq 1 ]; then
+    store_mapped_page "$source" "$wiki" "$section"
+  fi
   [ "$page_count" -gt 0 ] || die "wiki map has no pages"
 }
 
 validate_map_groups() {
-  local i=0 phase=0 top source saw_home=0
+  local i=0 section="" index="" last=-1 saw_home=0
   while [ "$i" -lt "$page_count" ]; do
-    source=${page_sources[$i]}
-    top=${source%%/*}
-    case "$top" in
-      overview)
-        [ "$phase" -eq 0 ] || die "overview pages must be listed before guides and reference"
-        ;;
-      guide)
-        if [ "$phase" -eq 0 ]; then
-          phase=1
-        fi
-        [ "$phase" -eq 1 ] || die "guide pages must stay together after overview pages"
-        ;;
-      reference)
-        if [ "$phase" -lt 2 ]; then
-          phase=2
-        fi
-        [ "$phase" -eq 2 ] || die "reference pages must stay together after guide pages"
-        ;;
-    esac
+    section=${page_sections[$i]}
+    index=$(wiki_section_index "$section") || die "unknown wiki section: $section"
+    if [ "$last" -ge 0 ] && [ "$index" -lt "$last" ]; then
+      die "wiki section $section is out of order"
+    fi
+    if [ "$last" -ge 0 ] && [ "$index" -gt $((last + 1)) ]; then
+      die "wiki map skips a section before $section"
+    fi
+    last=$index
     if [ "${page_wikis[$i]}" = "Home.md" ]; then
       saw_home=1
     fi
@@ -599,16 +623,10 @@ render_pages() {
 }
 
 write_sidebar() {
-  local i=0 source top heading="" current="" name
+  local i=0 heading="" current="" name
   {
     while [ "$i" -lt "$page_count" ]; do
-      source=${page_sources[$i]}
-      top=${source%%/*}
-      case "$top" in
-        overview) heading="Start" ;;
-        guide) heading="Guides" ;;
-        reference) heading="Reference" ;;
-      esac
+      heading=${page_sections[$i]}
       if [ "$heading" != "$current" ]; then
         if [ -n "$current" ]; then
           printf '\n'

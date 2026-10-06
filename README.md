@@ -14,21 +14,34 @@ A2A-LAB devkit is a Rust crate for lab logs, metrics, and tasks over A2A, MCP, S
 - Supplies live OPC UA readings through `LiveSource`. [Upcoming]
 - Exposes Robot Operating System 2 (ROS 2) actions as lab tasks.
 
-## Call path
+## Interfaces and providers
 
-The following diagram shows how the industry standards interface with A2A-Lab:
+The following diagram shows the interfaces and providers around `A2aLabService`:
 
 ```mermaid
 flowchart LR
   accTitle: A2A-LAB devkit
-  accDescr: A2A, MCP, and SiLA 2 call A2aLabService. A2aLabService uses AAS, OPC UA, and ROS 2.
-  a2a["A2A"] --> lab["A2aLabService"]
-  mcp["MCP"] --> lab
-  sila["SiLA 2"] --> lab
-  lab --> aas["AAS"]
-  lab --> opc["OPC UA"]
-  lab --> ros["ROS 2"]
+  accDescr: A2A, MCP, and SiLA 2 are interfaces to A2aLabService. A2aLabService uses AAS, OPC UA, and ROS 2 as providers.
+  subgraph interfaces [Interfaces]
+    a2a["A2A"]
+    mcp["MCP"]
+    sila["SiLA 2"]
+  end
+  lab["A2aLabService"]
+  subgraph providers [Providers]
+    aas["AAS"]
+    opc["OPC UA"]
+    ros["ROS 2"]
+  end
+  a2a --> lab
+  mcp --> lab
+  sila --> lab
+  lab --> aas
+  lab --> opc
+  lab --> ros
 ```
+
+A2A, MCP, and SiLA 2 call `A2aLabService`. `A2aLabService` uses AAS, OPC UA, and ROS 2.
 
 ## Run the memory example
 

@@ -10,27 +10,25 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-The Asset Administration Shell (AAS) HTTP repository names the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `AasClient` reads the bindings. Industrial providers turn each binding into a log source, a metric, or a task.
+The Asset Administration Shell (AAS) is a provider. It names the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `AasClient` reads the bindings. Industrial providers turn each binding into a log source, a metric, or a task.
 
 The following diagram shows that mapping:
 
 ```mermaid
 flowchart LR
-  accTitle: AAS bindings fulfill primitive ids
-  accDescr: An agent calls A2aLabService. A2aLabService calls industrial providers. Those providers read AAS bindings. A log_source binding fulfills a log source. A metric binding fulfills a metric. A task binding fulfills a task.
-  agent["Agent"] --> service["A2aLabService"]
-  service --> providers["Industrial providers"]
-  providers --> bindings["AAS bindings"]
+  accTitle: AAS names primitive ids
+  accDescr: Industrial providers read AAS bindings. A binding names a log source, a metric, or a task.
+  providers["Industrial providers"] --> bindings["AAS bindings"]
   bindings --> logs["Log source"]
   bindings --> metrics["Metric"]
   bindings --> tasks["Task"]
 ```
 
-In the preceding diagram, an agent calls `A2aLabService`. `A2aLabService` calls the industrial providers. Those providers read AAS bindings. Each binding fulfills one primitive id:
+In the preceding diagram, industrial providers read AAS bindings. Each binding names one primitive id:
 
-- Role `log_source` fulfills a log source. `labId` is the source id.
-- Role `metric` fulfills a metric. `labId` is the metric id.
-- Role `task` fulfills a task. `labId` is the task id.
+- Role `log_source` names a log source. `labId` is the source id.
+- Role `metric` names a metric. `labId` is the metric id.
+- Role `task` names a task. `labId` is the task id.
 
 Log records, metric samples, and task runs come from the shared `LiveSource`.
 
@@ -80,5 +78,7 @@ With the `aas` feature:
 
 ## Related
 
+- [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
+- [Implementations](<../implementations/doc-18 - Implementations.md>)

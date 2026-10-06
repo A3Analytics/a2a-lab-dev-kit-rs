@@ -15,27 +15,43 @@ write_map() {
 [[page]]
 source = "overview"
 wiki = "Home.md"
+section = "Start"
 
 [[page]]
 source = "guide/plain"
 wiki = "Plain.md"
+section = "Guides"
+
+[[page]]
+source = "reference/primitives"
+wiki = "Primitives.md"
+section = "A2A-LAB"
 
 [[page]]
 source = "reference/a2a"
 wiki = "A2A.md"
+section = "Interfaces"
+
+[[page]]
+source = "reference/aas"
+wiki = "AAS.md"
+section = "Providers"
 EOF
 }
 
 write_closed_docs() {
   local dest="$1"
   mkdir -p "$dest/backlog/docs/overview" "$dest/backlog/docs/guide/plain" \
-    "$dest/backlog/docs/reference/a2a" "$dest/.mise"
+    "$dest/backlog/docs/reference/primitives" "$dest/backlog/docs/reference/a2a" \
+    "$dest/backlog/docs/reference/aas" "$dest/.mise"
   cat >"$dest/README.md" <<'EOF'
 # fixture
 
 - [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
 - [Plain](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Plain)
+- [Primitives](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Primitives)
 - [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)
+- [AAS](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS)
 EOF
   write_map "$dest"
   cat >"$dest/backlog/docs/overview/doc-1 - Fixture-Home.md" <<'EOF'
@@ -83,6 +99,36 @@ created_date: "2026-09-30"
 
 This page has no diagram.
 EOF
+  cat >"$dest/backlog/docs/reference/primitives/doc-4 - Fixture-Primitives.md" <<'EOF'
+---
+id: doc-4
+title: Fixture Primitives
+type: reference
+audience: public
+created_date: "2026-09-30"
+---
+
+# Fixture Primitives
+
+## Role in this dev kit
+
+The lab contract lives here.
+EOF
+  cat >"$dest/backlog/docs/reference/aas/doc-5 - Fixture-AAS.md" <<'EOF'
+---
+id: doc-5
+title: Fixture AAS
+type: reference
+audience: public
+created_date: "2026-09-30"
+---
+
+# Fixture AAS
+
+## Role in this dev kit
+
+This provider names equipment.
+EOF
   cat >"$dest/backlog/docs/reference/a2a/doc-2 - Fixture-A2A.md" <<'EOF'
 ---
 id: doc-2
@@ -117,6 +163,7 @@ write_unclosed_docs() {
 [[page]]
 source = "overview"
 wiki = "Home.md"
+section = "Start"
 EOF
   cat >"$dest/backlog/docs/overview/doc-1 - Open-Fence.md" <<'EOF'
 ---
@@ -161,6 +208,7 @@ EOF
 [[page]]
 source = "overview"
 wiki = "Home.md"
+section = "Start"
 EOF
   cat >"$dest/backlog/docs/overview/doc-1 - Missing-Title.md" <<'EOF'
 ---
@@ -235,9 +283,21 @@ grep -q 'GET /tasks/{id}' "$home" \
   || fail "curly braces after mermaid were rewritten"
 grep -q '## Start' "$sidebar" || fail "sidebar is missing the Start group"
 grep -q '## Guides' "$sidebar" || fail "sidebar is missing the Guides group"
-grep -q '## Reference' "$sidebar" || fail "sidebar is missing the Reference group"
+grep -q '## A2A-LAB' "$sidebar" || fail "sidebar is missing the A2A-LAB group"
+grep -q '## Interfaces' "$sidebar" || fail "sidebar is missing the Interfaces group"
+grep -q '## Providers' "$sidebar" || fail "sidebar is missing the Providers group"
 grep -q '\[Fixture Home\](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)' "$sidebar" \
   || fail "sidebar is not an absolute Markdown link"
+awk '
+  /^## / { headings = headings $0 "\n" }
+  END {
+    expected = "## Start\n## Guides\n## A2A-LAB\n## Interfaces\n## Providers\n"
+    if (headings != expected) {
+      print "sidebar headings are out of order" > "/dev/stderr"
+      exit 1
+    }
+  }
+' "$sidebar" || fail "sidebar headings are out of order"
 
 write_unclosed_docs "$unclosed"
 set +e
@@ -270,5 +330,94 @@ set -e
 [ "$status" -ne 0 ] || fail "mermaid without accessibility text was accepted"
 printf '%s\n' "$err" | grep -q 'accTitle and accDescr' \
   || fail "inaccessible mermaid error did not require accTitle and accDescr"
+
+write_section_home() {
+  local dest="$1"
+  mkdir -p "$dest/backlog/docs/overview" "$dest/.mise"
+  cat >"$dest/README.md" <<'EOF'
+# fixture
+
+- [Home](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)
+EOF
+  cat >"$dest/backlog/docs/overview/doc-1 - Fixture-Home.md" <<'EOF'
+---
+id: doc-1
+title: Fixture Home
+type: overview
+audience: public
+created_date: "2026-09-30"
+---
+
+# Fixture Home
+
+A page.
+EOF
+}
+
+expect_section_error() {
+  local name="$1" pattern="$2" dest="$3" err status
+  set +e
+  err=$(
+    wiki_cmd=wiki-mermaid-fixture
+    root="$dest"
+    # shellcheck disable=SC1090
+    source "$lib"
+    wiki_check 2>&1
+  )
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "$name was accepted"
+  printf '%s\n' "$err" | grep -q "$pattern" || fail "$name did not report: $pattern"
+}
+
+missing_section=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-section-missing.XXXXXX")
+unknown_section=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-section-unknown.XXXXXX")
+skipped_section=$(mktemp -d "${TMPDIR:-/tmp}/a2a-wiki-section-skipped.XXXXXX")
+trap 'rm -rf "$closed" "$unclosed" "$inaccessible" "$missing_section" "$unknown_section" "$skipped_section"' EXIT
+
+write_section_home "$missing_section"
+cat >"$missing_section/.mise/wiki-map.toml" <<'EOF'
+[[page]]
+source = "overview"
+wiki = "Home.md"
+EOF
+expect_section_error "missing section" "missing section" "$missing_section"
+
+write_section_home "$unknown_section"
+cat >"$unknown_section/.mise/wiki-map.toml" <<'EOF'
+[[page]]
+source = "overview"
+wiki = "Home.md"
+section = "Reference"
+EOF
+expect_section_error "unknown section" "unknown wiki section: Reference" "$unknown_section"
+
+write_section_home "$skipped_section"
+mkdir -p "$skipped_section/backlog/docs/guide/plain"
+cat >"$skipped_section/backlog/docs/guide/plain/doc-3 - Fixture-Plain.md" <<'EOF'
+---
+id: doc-3
+title: Fixture Plain
+type: guide
+audience: public
+created_date: "2026-09-30"
+---
+
+# Fixture Plain
+
+A page.
+EOF
+cat >"$skipped_section/.mise/wiki-map.toml" <<'EOF'
+[[page]]
+source = "overview"
+wiki = "Home.md"
+section = "Start"
+
+[[page]]
+source = "guide/plain"
+wiki = "Plain.md"
+section = "Interfaces"
+EOF
+expect_section_error "skipped section" "skips a section before Interfaces" "$skipped_section"
 
 printf 'wiki-mermaid-fixture: native mermaid stays fenced, sidebar links are markdown, and bad fences fail\n'

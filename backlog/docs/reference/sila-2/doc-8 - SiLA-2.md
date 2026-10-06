@@ -10,19 +10,19 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Standardization in Lab Automation (SiLA) 2 serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) to SiLA clients. `SilaServer` reads `A2aLabApi` and publishes those operations as a Feature Provider.
+Standardization in Lab Automation (SiLA) 2 is an interface. SiLA clients call `SilaServer`. `SilaServer` calls `A2aLabApi` and serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
 
 The following diagram shows that path:
 
 ```mermaid
 flowchart LR
-  accTitle: SiLA 2 serves the lab primitives
-  accDescr: A2aLabApi feeds SilaServer. SilaServer serves SiLA clients the log, metric, and task operations.
-  lab["A2aLabApi"] --> sila["SilaServer"]
-  sila --> clients["SiLA clients"]
+  accTitle: SiLA 2 interface
+  accDescr: SiLA clients call SilaServer. SilaServer calls A2aLabApi.
+  clients["SiLA clients"] --> sila["SilaServer"]
+  sila --> api["A2aLabApi"]
 ```
 
-In the preceding diagram, `A2aLabApi` feeds `SilaServer`. `SilaServer` serves SiLA clients.
+In the preceding diagram, SiLA clients call `SilaServer`. `SilaServer` calls `A2aLabApi`.
 
 ## What this crate serves
 
@@ -82,5 +82,6 @@ These types stay in the `sila` module. The [SiLA server example](../../../../exa
 
 ## Related
 
+- [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)

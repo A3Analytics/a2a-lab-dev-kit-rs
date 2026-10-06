@@ -10,21 +10,19 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Robot Operating System 2 (ROS 2) fulfills the task primitive. `Ros2Tasks` turns advertised actions into tasks for `A2aLabService`.
+Robot Operating System 2 (ROS 2) is a provider for tasks. It does not supply logs or metrics. `Ros2Tasks` turns advertised actions into task definitions and task runs.
 
 The following diagram shows that mapping:
 
 ```mermaid
 flowchart LR
-  accTitle: ROS 2 fulfills tasks
-  accDescr: An agent calls A2aLabService. A2aLabService calls Ros2Tasks. Ros2Tasks reads actions from the ROS 2 graph and returns task definitions and task runs.
-  agent["Agent"] --> service["A2aLabService"]
-  service --> rosTasks["Ros2Tasks"]
-  rosTasks --> actions["ROS 2 actions"]
+  accTitle: ROS 2 supplies tasks
+  accDescr: Ros2Tasks reads ROS 2 actions and returns task definitions and task runs.
+  rosTasks["Ros2Tasks"] --> actions["ROS 2 actions"]
   rosTasks --> tasks["Task definitions and runs"]
 ```
 
-In the preceding diagram, an agent calls `A2aLabService`. `A2aLabService` calls `Ros2Tasks`. `Ros2Tasks` reads ROS 2 actions and returns task definitions and task runs.
+In the preceding diagram, `Ros2Tasks` reads ROS 2 actions and returns task definitions and task runs.
 
 `list_tasks` lists the actions. `start` sends a goal. `get_task_status` reads that goal. `MemoryRos2` is the in-process graph in this crate. A graph over Data Distribution Service (DDS) and the ROS Client Library (RCL) is [Upcoming].
 
@@ -63,6 +61,8 @@ Pass `Ros2Tasks` to `A2aLabService::new` as the task provider. `Ros2Tasks::graph
 
 ## Related
 
+- [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
+- [Implementations](<../implementations/doc-18 - Implementations.md>)
 - [Expose ROS 2 actions as tasks](<../../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)

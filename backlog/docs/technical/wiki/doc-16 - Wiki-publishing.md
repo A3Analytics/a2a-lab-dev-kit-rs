@@ -14,7 +14,7 @@ Public Backlog docs are the Wiki source. The Wiki GitHub Action publishes those 
 
 ## Sources
 
-A public doc sets `audience: public` and lives under `overview`, `guide`, or `reference`. `.mise/wiki-map.toml` maps each directory to one Wiki file. Map order is the sidebar order: Start, Guides, then Reference.
+A public doc sets `audience: public` and lives under `overview`, `guide`, or `reference`. `.mise/wiki-map.toml` maps each directory to one Wiki file. Every page sets `section` to `Start`, `Guides`, `A2A-LAB`, `Interfaces`, or `Providers`. Those sections stay in that order, with no gaps. Map order is the sidebar order.
 
 Each public page has one heading 1, and that heading matches `title`. Mermaid is optional. A diagram starts with `accTitle` and `accDescr`. The following prose restates every node and relationship. The publisher keeps the Mermaid fence so GitHub renders it.
 

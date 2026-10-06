@@ -8,13 +8,9 @@ created_date: "2026-09-30 17:38"
 
 # A2A
 
-This crate serves Agent2Agent (A2A) 1.0 for lab commands.
+Agent2Agent (A2A) is an interface. `A2aServer` accepts any `A2aLabApi` and serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
 
 ## Role
-
-`A2aServer` accepts any `A2aLabApi`.
-
-`McpLab::connect_default` calls Model Context Protocol (MCP) tools at `http://127.0.0.1:31001/mcp`.
 
 A lab command is a data part with media type `application/json`.
 
@@ -24,28 +20,19 @@ Protocol task ids are A2A UUIDs.
 
 A lab run id is separate.
 
-A lab command takes the following path:
+A client reaches the lab through `A2aServer`:
 
 ```mermaid
-flowchart TD
-  accTitle: A2A lab command path
-  accDescr: The agent card leads to message send. Message send carries an A2aLabCommand to the executor. The executor calls MCP tools. MCP tools return a protocol task.
-  card["Agent card"] --> send["Message send"]
-  send --> command["A2aLabCommand"]
-  command --> executor["Executor"]
-  executor --> tools["MCP tools"]
-  tools --> task["Protocol task"]
+flowchart LR
+  accTitle: A2A interface
+  accDescr: A2A clients call A2aServer. A2aServer calls A2aLabApi.
+  clients["A2A clients"] --> server["A2aServer"]
+  server --> api["A2aLabApi"]
 ```
 
-In the preceding diagram, the agent card leads to message send.
+In the preceding diagram, A2A clients call `A2aServer`. `A2aServer` calls `A2aLabApi`.
 
-Message send carries an `A2aLabCommand`.
-
-The `A2aLabCommand` reaches the executor.
-
-The executor calls MCP tools.
-
-MCP tools return a protocol task.
+`McpLab` is one `A2aLabApi`. [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>) uses it, so an A2A client can reach the lab through Model Context Protocol (MCP).
 
 ## Transports
 
@@ -85,7 +72,7 @@ JSON-RPC is `POST /` on that same listener.
 
 ## Skills
 
-The card advertises these lab skills:
+The card advertises these lab skills. They are the seven operations on the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) page:
 
 - `list-log-sources`
 - `query-logs`
@@ -139,6 +126,8 @@ In-process coverage is `tests/a2a_compliance.rs` and `tests/a2a_authentication.r
 
 ## Related
 
+- [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
+- [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [MCP](<../mcp/doc-5 - MCP.md>)
 - [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)

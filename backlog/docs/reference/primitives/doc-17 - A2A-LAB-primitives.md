@@ -8,7 +8,7 @@ created_date: "2026-10-06 21:36"
 
 # A2A-LAB primitives
 
-A2A-LAB primitives are the logs, metrics, and tasks shared by every standard. The [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>) shows where those standards sit.
+A2A-LAB primitives are the logs, metrics, and tasks shared by every interface and provider. [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>) names those two sides. The [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>) shows where they sit.
 
 ## Primitives
 
@@ -40,6 +40,20 @@ A metric descriptor names one measurement and its unit. A metric point is one fi
 A task definition is work an agent can start. A task run is one start of that definition. The run input is a JSON object.
 
 A run state is `submitted`, `working`, `completed`, `failed`, or `canceled`. `completed`, `failed`, and `canceled` are terminal.
+
+## Operations
+
+`A2aLabService` runs these operations:
+
+1. `list_log_sources` lists log sources.
+2. `query_logs` reads records for one source.
+3. `list_metrics` lists metrics.
+4. `query_metric` reads samples for one metric.
+5. `list_tasks` lists tasks.
+6. `start_task` starts a task.
+7. `get_task_status` reads one run.
+
+Time ranges are half-open Coordinated Universal Time (UTC) intervals, `[start, end)`.
 
 ## Shared values
 

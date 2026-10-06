@@ -8,23 +8,17 @@ created_date: "2026-09-30 17:38"
 
 # MCP
 
-This crate serves Model Context Protocol (MCP) tools for one lab.
+Model Context Protocol (MCP) is an interface. `McpServer` registers the seven lab operations as tools on `A2aLabApi`.
 
 ## Role
-
-`McpServer` registers tools on `A2aLabApi`.
 
 The server name is `a2a-lab`.
 
 The instructions are `Lab logs, metrics, and tasks`.
 
-The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`.
+The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`. Those operations are on the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) page.
 
-What each tool does is on the [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>).
-
-`McpLab::connect` implements `A2aLabApi` over Streamable HTTP.
-
-Agent2Agent (A2A) uses that client to call the same tools.
+`McpLab::connect` implements `A2aLabApi` over Streamable HTTP. The [A2A](<../a2a/doc-4 - A2A.md>) page uses that client in the combined example.
 
 ## Transports
 
@@ -80,6 +74,8 @@ Each error includes the `A2aLabError` code.
 
 ## Related
 
+- [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
+- [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
 - [A2A](<../a2a/doc-4 - A2A.md>)
 - [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
 - [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs)
