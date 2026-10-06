@@ -23,7 +23,7 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust cargo:cargo-nextest
+          install_args: "rust cargo:cargo-nextest"
 
       - name: Test
         run: mise run test
