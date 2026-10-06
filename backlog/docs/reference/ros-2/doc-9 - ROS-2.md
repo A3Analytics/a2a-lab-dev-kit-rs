@@ -10,26 +10,27 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-`Ros2Tasks` exposes Robot Operating System 2 (ROS 2) actions as lab tasks. `Ros2Tasks` implements `TaskProvider`. It does not implement `LogProvider` or `MetricProvider`, and it is not an A2A or MCP adapter.
+Robot Operating System 2 (ROS 2) fulfills the task primitive. `Ros2Tasks` turns advertised actions into tasks for `A2aLabService`. Logs and metrics stay with the other providers.
 
-Tasks follow this path:
+The following diagram shows that mapping:
 
 ```mermaid
-flowchart TD
-  accTitle: ROS 2 task call path
-  accDescr: A2aLabService connects to Ros2Tasks. Ros2Tasks connects to Ros2Graph. Ros2Graph connects to MemoryRos2.
-  labService["A2aLabService"] --> rosTasks["Ros2Tasks"]
-  rosTasks --> actionApi["Ros2Graph"]
-  actionApi --> memoryRos["MemoryRos2"]
+flowchart LR
+  accTitle: ROS 2 fulfills tasks
+  accDescr: An agent calls A2aLabService. A2aLabService calls Ros2Tasks. Ros2Tasks reads actions from the ROS 2 graph and returns task definitions and task runs.
+  agent["Agent"] --> service["A2aLabService"]
+  service --> rosTasks["Ros2Tasks"]
+  rosTasks --> actions["ROS 2 actions"]
+  rosTasks --> tasks["Task definitions and runs"]
 ```
 
-`A2aLabService` connects to `Ros2Tasks`. `Ros2Tasks` connects to `Ros2Graph`. `Ros2Graph` connects to `MemoryRos2`.
+In the preceding diagram, an agent calls `A2aLabService`. `A2aLabService` calls `Ros2Tasks`. `Ros2Tasks` reads ROS 2 actions and returns task definitions and task runs.
+
+`list_tasks` lists the actions. `start` sends a goal. `get_task_status` reads that goal. `MemoryRos2` is the in-process graph in this crate. A graph over Data Distribution Service (DDS) and the ROS Client Library (RCL) is [Upcoming].
 
 ## What this crate implements
 
 The graph is the `Ros2Graph` trait. `MemoryRos2` is the in-process graph in this crate. The crate includes the `ros2` module in every build.
-
-`Ros2Tasks` sends goals through a ROS 2 graph over Data Distribution Service (DDS) and the ROS Client Library (RCL). [Upcoming]
 
 Action names become task ids. Goal status maps to `TaskState`. The task name stays the action name. The description and `semantic_id` are the action type name. `asset_id` is absent.
 

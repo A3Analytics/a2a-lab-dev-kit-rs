@@ -10,23 +10,29 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Open Platform Communications Unified Architecture (OPC UA) is an outbound equipment client. Industrial providers read live samples through `LiveSource`. `OpcUaClient` implements that source and returns samples inside the half-open range. [Upcoming]
+Open Platform Communications Unified Architecture (OPC UA) supplies the values for the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). A catalog binding names the OPC UA node. `LiveSource` reads that node.
 
-`ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient::read_history` reads raw history for one node.
-
-A catalog binding reaches the industrial providers through this path:
+The following diagram shows that mapping:
 
 ```mermaid
-flowchart TD
-  accTitle: OPC UA live readings
-  accDescr: A catalog binding reaches the industrial providers. Those providers call LiveSource. OpcUaClient implements LiveSource and returns metric points. That connection is upcoming.
-  binding["Catalog binding"] --> providers["Industrial providers"]
+flowchart LR
+  accTitle: OPC UA fulfills primitive values
+  accDescr: An agent calls A2aLabService. A2aLabService calls industrial providers. Those providers read LiveSource. LiveSource returns log records, metric samples, and task runs for the bound OPC UA node.
+  agent["Agent"] --> service["A2aLabService"]
+  service --> providers["Industrial providers"]
   providers --> live["LiveSource"]
-  live --> client["OpcUaClient"]
-  client --> points["Metric points in the half-open range"]
+  live --> logs["Log records"]
+  live --> metrics["Metric samples"]
+  live --> tasks["Task runs"]
 ```
 
-A catalog binding reaches the industrial providers. Those providers call `LiveSource`. `OpcUaClient` implements `LiveSource` and returns the metric points. [Upcoming]
+In the preceding diagram, an agent calls `A2aLabService`. `A2aLabService` calls the industrial providers. Those providers read `LiveSource`. `LiveSource` fulfills the primitive values for the bound node:
+
+- `query_logs` returns log records.
+- `query_metrics` returns metric samples.
+- `start` and `status` return task runs.
+
+`ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` reads those values from an OPC UA server. [Upcoming] `OpcUaClient::read_history` reads raw history for one node.
 
 ## What this crate implements
 

@@ -10,25 +10,29 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-The Asset Administration Shell (AAS) HTTP repository is an outbound asset catalog. `AasClient` implements `AssetCatalogProvider`. Industrial log, metric, and task providers read bindings from that catalog. AAS is not one of the seven agent operations.
+The Asset Administration Shell (AAS) HTTP repository names the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `AasClient` reads the bindings. Industrial providers turn each binding into a log source, a metric, or a task.
 
-Industrial providers load bindings in this order:
+The following diagram shows that mapping:
 
 ```mermaid
-sequenceDiagram
-  accTitle: Catalog read sequence
-  accDescr: An industrial provider calls list_bindings on AasClient. AasClient reads description, shells, and each submodel from the AAS repository, then returns bindings.
-  participant Provider as Industrial provider
-  participant Client as AasClient
-  participant Repo as AAS repository
-  Provider->>Client: list_bindings
-  Client->>Repo: GET description
-  Client->>Repo: GET shells
-  Client->>Repo: GET submodels by base64url id
-  Client-->>Provider: Bindings with an endpoint
+flowchart LR
+  accTitle: AAS bindings fulfill primitive ids
+  accDescr: An agent calls A2aLabService. A2aLabService calls industrial providers. Those providers read AAS bindings. A log_source binding fulfills a log source. A metric binding fulfills a metric. A task binding fulfills a task.
+  agent["Agent"] --> service["A2aLabService"]
+  service --> providers["Industrial providers"]
+  providers --> bindings["AAS bindings"]
+  bindings --> logs["Log source"]
+  bindings --> metrics["Metric"]
+  bindings --> tasks["Task"]
 ```
 
-An industrial provider calls `list_bindings` on `AasClient`. `AasClient` sends `GET description` to the AAS repository. `AasClient` sends `GET shells` to the repository. `AasClient` requests each submodel from the repository by its unpadded base64url id. `AasClient` returns the bindings and their endpoints to the provider.
+In the preceding diagram, an agent calls `A2aLabService`. `A2aLabService` calls the industrial providers. Those providers read AAS bindings. Each binding fulfills one primitive id:
+
+- Role `log_source` fulfills a log source. `labId` is the source id.
+- Role `metric` fulfills a metric. `labId` is the metric id.
+- Role `task` fulfills a task. `labId` is the task id.
+
+Log records, metric samples, and task runs come from the shared `LiveSource`.
 
 ## What this crate implements
 
