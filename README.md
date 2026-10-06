@@ -68,19 +68,19 @@ Robot Operating System 2 (ROS 2) code in the `ros2` module is always compiled.
 
 These pages are the public documentation:
 
-| Page |
-| --- |
-| [Lab dev kit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home) |
-| [Run the memory lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-the-memory-lab) |
-| [Serve A2A and MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Serve-A2A-and-MCP) |
+| Page                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- |
+| [Lab dev kit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)                                   |
+| [Run the memory lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-the-memory-lab)                       |
+| [Serve A2A and MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Serve-A2A-and-MCP)                         |
 | [Run a scripted industrial lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-a-scripted-industrial-lab) |
 | [Expose ROS 2 actions as tasks](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Expose-ROS-2-actions-as-tasks) |
-| [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A) |
-| [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP) |
-| [Asset Administration Shell](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS) |
-| [OPC UA](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/OPC-UA) |
-| [SiLA 2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/SiLA-2) |
-| [ROS 2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/ROS-2) |
+| [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)                                                     |
+| [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP)                                                     |
+| [Asset Administration Shell](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS)                              |
+| [OPC UA](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/OPC-UA)                                               |
+| [SiLA 2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/SiLA-2)                                               |
+| [ROS 2](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/ROS-2)                                                 |
 
 ## Open the crate documentation
 

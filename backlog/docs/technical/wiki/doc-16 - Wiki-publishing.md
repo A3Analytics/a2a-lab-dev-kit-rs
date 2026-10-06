@@ -3,7 +3,7 @@ id: doc-16
 title: Wiki publishing
 type: technical
 audience: technical
-created_date: '2026-10-06 20:12'
+created_date: "2026-10-06 20:12"
 ---
 
 # Wiki publishing

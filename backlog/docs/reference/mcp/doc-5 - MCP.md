@@ -82,4 +82,4 @@ Each error includes the `A2aLabError` code.
 
 - [A2A](<../a2a/doc-4 - A2A.md>)
 - [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
-- [a2a_and_mcp.rs](<../../../../examples/a2a_and_mcp.rs>)
+- [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs)
