@@ -15,12 +15,12 @@ source = "guide/a2a-and-mcp"
 wiki = "Serve-A2A-and-MCP.md"
 
 [[page]]
-source = "guide/scripted-industrial"
-wiki = "Run-a-scripted-industrial-lab.md"
-
-[[page]]
 source = "guide/ros2-tasks"
 wiki = "Expose-ROS-2-actions-as-tasks.md"
+
+[[page]]
+source = "reference/primitives"
+wiki = "Primitives.md"
 
 [[page]]
 source = "reference/a2a"

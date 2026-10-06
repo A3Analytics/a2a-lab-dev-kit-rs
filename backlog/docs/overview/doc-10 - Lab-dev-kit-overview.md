@@ -8,19 +8,19 @@ created_date: "2026-09-30 17:38"
 
 # A2A-LAB devkit overview
 
-A2A-LAB devkit routes agent calls to logs, metrics, and tasks. The crate name is `a2a-lab-dev-kit`.
+A2A-LAB devkit routes agent calls to logs, metrics, and tasks. Those values are the [A2A-LAB primitives](<../reference/primitives/doc-17 - A2A-LAB-primitives.md>). The crate name is `a2a-lab-dev-kit`.
 
-Provider traits are the source of truth. `LabService` runs seven operations.
+Provider traits are the source of truth. `A2aLabService` runs seven operations.
 
 ## Standards
 
-The following diagram shows the six standards around the lab service:
+The following diagram shows the six standards around `A2aLabService`:
 
 ```mermaid
 flowchart LR
   accTitle: A2A-LAB devkit
-  accDescr: A2A, MCP, and SiLA 2 call the lab service. The lab service uses AAS, OPC UA, and ROS 2.
-  a2a["A2A"] --> lab["Lab service"]
+  accDescr: A2A, MCP, and SiLA 2 call A2aLabService. A2aLabService uses AAS, OPC UA, and ROS 2.
+  a2a["A2A"] --> lab["A2aLabService"]
   mcp["MCP"] --> lab
   sila["SiLA 2"] --> lab
   lab --> aas["AAS"]
@@ -28,7 +28,7 @@ flowchart LR
   lab --> ros["ROS 2"]
 ```
 
-In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 call the lab service. The lab service uses the Asset Administration Shell (AAS), Open Platform Communications Unified Architecture (OPC UA), and Robot Operating System 2 (ROS 2).
+In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 call `A2aLabService`. `A2aLabService` uses the Asset Administration Shell (AAS), Open Platform Communications Unified Architecture (OPC UA), and Robot Operating System 2 (ROS 2).
 
 - [A2A](<../reference/a2a/doc-4 - A2A.md>) and [MCP](<../reference/mcp/doc-5 - MCP.md>) are how agents call the lab.
 - [SiLA 2](<../reference/sila-2/doc-8 - SiLA-2.md>) serves that same lab to SiLA clients.
@@ -38,7 +38,7 @@ In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and S
 
 ## Operations
 
-The lab service runs these operations:
+`A2aLabService` runs these operations:
 
 1. `list_log_sources` lists log sources.
 2. `query_logs` reads records for one source.
@@ -56,6 +56,7 @@ Read these guides:
 
 - [Run the memory lab](<../guide/memory-lab/doc-12 - Run-the-memory-lab.md>)
 - [Serve A2A and MCP](<../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
-- [Run a scripted industrial lab](<../guide/scripted-industrial/doc-14 - Run-a-scripted-industrial-lab.md>)
 - [Expose ROS 2 actions as tasks](<../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)
 - [README](../../../README.md)
+
+[a2a-lab-ot2](https://github.com/A3Analytics/a2a-lab-ot2) is an example implementation. It wraps an Opentrons OT-2 simulator.

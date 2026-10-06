@@ -20,7 +20,7 @@ Implement three traits:
 - `MetricProvider` lists descriptors and queries finite samples.
 - `TaskProvider` lists definitions, starts a run, and returns its status.
 
-`LabService` validates page limits and UTC ranges.
+`A2aLabService` validates page limits and UTC ranges.
 
 It calls the matching provider.
 
@@ -44,7 +44,7 @@ It serves standard input and output, or Streamable HTTP.
 
 The default A2A agent uses `McpLab` to call that MCP server.
 
-`A2aServer::new` accepts any `LabApi`, including `LabService`.
+`A2aServer::new` accepts any `LabApi`, including `A2aLabService`.
 
 `SilaServer` is the inbound [SiLA 2](<../../reference/sila-2/doc-8 - SiLA-2.md>) Feature Provider.
 

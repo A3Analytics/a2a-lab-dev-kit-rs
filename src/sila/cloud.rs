@@ -575,7 +575,7 @@ mod tests {
     use crate::sila::wire::sila2::org::silastandard::core::silaservice::v1::GetServerUuidResponses;
     use crate::sila::wire::sila2::org::silastandard::{SiLaClientMessage, SiLaServerMessage};
     use crate::sila::{SilaIdentity, SilaServerHandle};
-    use crate::{LabService, MemoryLogs, MemoryMetrics, MemoryTasks};
+    use crate::{A2aLabService, MemoryLogs, MemoryMetrics, MemoryTasks};
 
     const SERVER_UUID: &str = "11111111-1111-1111-1111-111111111111";
 
@@ -707,7 +707,7 @@ mod tests {
     async fn provider(path: &std::path::Path) -> SilaServerHandle {
         SilaServer::new(
             SilaIdentity::lab_dev_kit(SERVER_UUID).unwrap(),
-            LabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new()).share(),
+            A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new()).share(),
         )
         .plaintext()
         .cloud_plaintext()

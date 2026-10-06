@@ -5,7 +5,7 @@ use a2a_client::A2AClient;
 use a2a_client::auth::AuthInterceptor;
 use a2a_grpc::GrpcTransport;
 use a2a_lab_dev_kit::{
-    A2aClient, A2aServer, AgentCard, LabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    A2aClient, A2aServer, AgentCard, A2aLabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
     OidcAuthenticator, OpenIdConnectSecurityScheme, SecurityScheme, SourceId, TaskDefinition,
     TaskId, bind_local,
 };
@@ -153,7 +153,7 @@ async fn serve(authenticator: OidcAuthenticator, card: AgentCard) -> String {
             semantic_id: None,
         })
         .await;
-    let service = LabService::new(logs, MemoryMetrics::new(), tasks).share();
+    let service = A2aLabService::new(logs, MemoryMetrics::new(), tasks).share();
     let (listener, address) = bind_local().await.unwrap();
     let discovery = authenticator.discovery_url().to_owned();
     let server = A2aServer::new(&service)
@@ -413,7 +413,7 @@ async fn local_oidc_tokens_are_enforced_on_every_transport() {
 #[tokio::test]
 async fn oauth_security_without_an_authenticator_fails_startup() {
     let logs = MemoryLogs::new();
-    let service = LabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
+    let service = A2aLabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
     let (listener, _) = bind_local().await.unwrap();
     let error = A2aServer::new(&service)
         .with_security(

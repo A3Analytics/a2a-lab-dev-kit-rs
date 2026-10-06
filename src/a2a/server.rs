@@ -42,7 +42,7 @@ use super::message::AgentMessageHandler;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31000";
 
-/// A2A server for a lab service.
+/// A2A server for an [`A2aLabService`](crate::A2aLabService).
 ///
 /// HTTP+JSON and JSON-RPC share one listener. gRPC listens on a second socket.
 pub struct A2aServer {

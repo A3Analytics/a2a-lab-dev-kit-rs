@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use a2a_lab_dev_kit::sila::{SilaCertificate, SilaIdentity, SilaServer};
 use a2a_lab_dev_kit::{
-    A2aLabError, A2aServer, GetTaskStatusRequest, JsonObject, LabService, ListTasksRequest,
+    A2aLabError, A2aServer, GetTaskStatusRequest, JsonObject, A2aLabService, ListTasksRequest,
     LogLevel, LogRecord, LogSource, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks,
     MetricDescriptor, MetricId, MetricPoint, Page, SourceId, StartTaskRequest, TaskDefinition,
     TaskId, TaskProvider, TaskRun, TaskState, UtcTimestamp,
@@ -28,7 +28,7 @@ async fn main() -> Result<(), A2aLabError> {
     let logs = MemoryLogs::new();
     let metrics = MemoryMetrics::new();
     seed(&logs, &metrics).await?;
-    let lab = LabService::new(logs, metrics, tasks).share();
+    let lab = A2aLabService::new(logs, metrics, tasks).share();
     let a2a = TcpListener::bind("127.0.0.1:0").await.map_err(transport)?;
     let mcp = TcpListener::bind("127.0.0.1:0").await.map_err(transport)?;
     println!("a2a {}", a2a.local_addr().map_err(transport)?);

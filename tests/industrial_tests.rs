@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
     A2aClient, A2aServer, Asset, AssetKey, Binding, BindingRole, Endpoint, IndustrialLabBuilder,
-    JsonObject, LabService, ListMetricsRequest, MemoryCatalog, MetricPoint, OpcUaIdentityKind,
+    JsonObject, A2aLabService, ListMetricsRequest, MemoryCatalog, MetricPoint, OpcUaIdentityKind,
     PageRequest, ScriptedLive, SecurityMode, SemanticId, SemanticKind, StartTaskRequest, TaskId,
     TimeRange, UtcTimestamp, bind_local,
 };
@@ -72,7 +72,7 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_tasks() {
     live.insert_metric(MetricPoint::new(timestamp("2024-01-01T00:30:00Z"), 21.5).unwrap())
         .await;
     let builder = IndustrialLabBuilder::new(catalog, live);
-    let service = LabService::new(builder.logs(), builder.metrics(), builder.tasks()).share();
+    let service = A2aLabService::new(builder.logs(), builder.metrics(), builder.tasks()).share();
     let (listener, address) = bind_local().await.unwrap();
     let server = A2aServer::new(&service);
     tokio::spawn(async move {

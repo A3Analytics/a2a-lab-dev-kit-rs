@@ -7,7 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aClient, A2aLabError, A2aServer, LabApi, LabService, ListLogSourcesRequest, LogSource,
+    A2aClient, A2aLabError, A2aServer, LabApi, A2aLabService, ListLogSourcesRequest, LogSource,
     McpLab, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
     bind_local,
 };
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         semantic_id: None,
     })
     .await;
-    let service = LabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
+    let service = A2aLabService::new(logs, MemoryMetrics::new(), MemoryTasks::new()).share();
 
     let (a2a_listener, a2a_address) = bind_local().await?;
     let (mcp_listener, mcp_address) = bind_local().await?;

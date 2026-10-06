@@ -4,7 +4,7 @@ use std::time::Duration;
 use a2a_lab_dev_kit::{
     A2A_PROTOCOL_VERSION, A2aClient, A2aLabError, A2aServer, AgentCard, AgentMessageFuture,
     AgentMessageHandler, AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest,
-    HttpAuthSecurityScheme, JsonObject, LAB_MEDIA_TYPE, LabApi, LabCommand, LabResult, LabService,
+    HttpAuthSecurityScheme, JsonObject, LAB_MEDIA_TYPE, LabApi, LabCommand, LabResult, A2aLabService,
     ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel, LogRecord, LogSource,
     MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, PageRequest,
     QueryLogsRequest, QueryMetricRequest, RunId, SecurityScheme, SourceId, StartTaskRequest,
@@ -95,7 +95,7 @@ async fn lab() -> Lab {
             semantic_id: None,
         })
         .await;
-    let service = LabService::new(logs.clone(), metrics, tasks.clone()).share();
+    let service = A2aLabService::new(logs.clone(), metrics, tasks.clone()).share();
     Lab {
         logs,
         tasks,

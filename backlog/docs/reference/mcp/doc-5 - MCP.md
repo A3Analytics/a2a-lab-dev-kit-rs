@@ -42,18 +42,18 @@ Both transports reach the same tools:
 
 ```mermaid
 flowchart LR
-  accTitle: MCP transports and the lab service
-  accDescr: Standard input and output reach the MCP tools. Streamable HTTP reaches the same tools. The tools call LabService.
+  accTitle: MCP transports and A2aLabService
+  accDescr: Standard input and output reach the MCP tools. Streamable HTTP reaches the same tools. The tools call A2aLabService.
   stdio["Standard input and output"] --> tools["MCP tools"]
   http["Streamable HTTP"] --> tools
-  tools --> service["LabService"]
+  tools --> service["A2aLabService"]
 ```
 
 In the preceding diagram, standard input and output reach the MCP tools.
 
 Streamable HTTP reaches those same tools.
 
-The MCP tools call `LabService`.
+The MCP tools call `A2aLabService`.
 
 ## Host allowlist
 

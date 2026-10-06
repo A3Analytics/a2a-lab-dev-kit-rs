@@ -4,7 +4,7 @@ use std::io::{Write, stderr};
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aServer, AgentCard, LabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    A2aServer, AgentCard, A2aLabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
     OidcAuthenticator, OpenIdConnectSecurityScheme, SecurityScheme, SourceId, TaskDefinition,
     TaskId,
 };
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             semantic_id: None,
         })
         .await;
-    let service = LabService::new(logs, MemoryMetrics::new(), tasks).share();
+    let service = A2aLabService::new(logs, MemoryMetrics::new(), tasks).share();
     let advertise = std::env::var("A2A_TCK_ADVERTISE").ok();
     let bind = if advertise.is_some() {
         "0.0.0.0:0"

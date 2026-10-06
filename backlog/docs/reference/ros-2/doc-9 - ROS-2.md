@@ -17,13 +17,13 @@ Tasks follow this path:
 ```mermaid
 flowchart TD
   accTitle: ROS 2 task call path
-  accDescr: LabService connects to Ros2Tasks. Ros2Tasks connects to Ros2Graph. Ros2Graph connects to MemoryRos2.
-  labService["LabService"] --> rosTasks["Ros2Tasks"]
+  accDescr: A2aLabService connects to Ros2Tasks. Ros2Tasks connects to Ros2Graph. Ros2Graph connects to MemoryRos2.
+  labService["A2aLabService"] --> rosTasks["Ros2Tasks"]
   rosTasks --> actionApi["Ros2Graph"]
   actionApi --> memoryRos["MemoryRos2"]
 ```
 
-LabService connects to Ros2Tasks. Ros2Tasks connects to Ros2Graph. Ros2Graph connects to MemoryRos2.
+`A2aLabService` connects to `Ros2Tasks`. `Ros2Tasks` connects to `Ros2Graph`. `Ros2Graph` connects to `MemoryRos2`.
 
 ## What this crate implements
 
@@ -58,7 +58,7 @@ The crate root re-exports these types:
 - `MemoryRos2`, with `new`, `advertise`, and `set_status`
 - `Ros2Action`, `Ros2Goal`, and `Ros2GoalStatus`
 
-Pass `Ros2Tasks` to `LabService::new` as the task provider. `Ros2Tasks::graph` returns the graph so the caller can advertise actions and update goals.
+Pass `Ros2Tasks` to `A2aLabService::new` as the task provider. `Ros2Tasks::graph` returns the graph so the caller can advertise actions and update goals.
 
 ## Related
 

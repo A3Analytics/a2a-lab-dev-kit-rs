@@ -113,7 +113,7 @@ enum StoredBody {
 }
 
 /// Routes lab commands to the three provider traits.
-pub struct LabService<L, M, W> {
+pub struct A2aLabService<L, M, W> {
     logs: L,
     metrics: M,
     tasks: W,
@@ -121,7 +121,7 @@ pub struct LabService<L, M, W> {
     ids: AtomicU64,
 }
 
-impl<L, M, W> LabService<L, M, W>
+impl<L, M, W> A2aLabService<L, M, W>
 where
     L: LogProvider,
     M: MetricProvider,
@@ -282,26 +282,26 @@ where
     }
 }
 
-impl<L, M, W> LabApi for LabService<L, M, W>
+impl<L, M, W> LabApi for A2aLabService<L, M, W>
 where
     L: LogProvider + 'static,
     M: MetricProvider + 'static,
     W: TaskProvider + 'static,
 {
     fn execute(&self, command: LabCommand) -> LabFuture<'_, Result<LabOutcome, A2aLabError>> {
-        Box::pin(LabService::execute(self, command))
+        Box::pin(A2aLabService::execute(self, command))
     }
 
     fn task<'a>(&'a self, task_id: &str) -> LabFuture<'a, Result<TaskSnapshot, A2aLabError>> {
         let task_id = task_id.to_owned();
-        Box::pin(async move { LabService::task(self, &task_id).await })
+        Box::pin(async move { A2aLabService::task(self, &task_id).await })
     }
 
     fn cancel(
         &self,
         request: GetTaskStatusRequest,
     ) -> LabFuture<'_, Result<TaskSnapshot, A2aLabError>> {
-        Box::pin(LabService::cancel(self, request))
+        Box::pin(A2aLabService::cancel(self, request))
     }
 }
 

@@ -21,8 +21,8 @@ The following diagram shows how the industry standards interface with A2A-Lab:
 ```mermaid
 flowchart LR
   accTitle: A2A-LAB devkit
-  accDescr: A2A, MCP, and SiLA 2 call the lab service. The lab service uses AAS, OPC UA, and ROS 2.
-  a2a["A2A"] --> lab["Lab service"]
+  accDescr: A2A, MCP, and SiLA 2 call A2aLabService. A2aLabService uses AAS, OPC UA, and ROS 2.
+  a2a["A2A"] --> lab["A2aLabService"]
   mcp["MCP"] --> lab
   sila["SiLA 2"] --> lab
   lab --> aas["AAS"]
@@ -46,6 +46,8 @@ Run these commands from the repository root.
    mise exec -- cargo run --example memory_lab
    ```
 
+[a2a-lab-ot2](https://github.com/A3Analytics/a2a-lab-ot2) is an example implementation. It wraps an Opentrons OT-2 simulator.
+
 ## Public documentation
 
 These pages are the public documentation:
@@ -55,8 +57,8 @@ These pages are the public documentation:
 | [A2A-LAB devkit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)                                |
 | [Run the memory lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-the-memory-lab)                       |
 | [Serve A2A and MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Serve-A2A-and-MCP)                         |
-| [Run a scripted industrial lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-a-scripted-industrial-lab) |
 | [Expose ROS 2 actions as tasks](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Expose-ROS-2-actions-as-tasks) |
+| [A2A-LAB primitives](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Primitives)                               |
 | [A2A](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A)                                                     |
 | [MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/MCP)                                                     |
 | [Asset Administration Shell](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/AAS)                              |

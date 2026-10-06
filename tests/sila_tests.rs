@@ -17,7 +17,7 @@ use a2a_lab_dev_kit::sila::{
     SilaCertificate, SilaIdentity, SilaServer, certificate_matches_profile,
 };
 use a2a_lab_dev_kit::{
-    JsonObject, LabService, LogLevel, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    JsonObject, A2aLabService, LogLevel, LogRecord, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
     MetricDescriptor, MetricId, MetricPoint, SourceId, TaskDefinition, TaskId, UtcTimestamp,
 };
 use tonic::transport::Channel;
@@ -50,7 +50,7 @@ async fn plaintext_server_lists_starts_and_cancels_a_task() {
             semantic_id: None,
         })
         .await;
-    let lab = LabService::new(MemoryLogs::new(), MemoryMetrics::new(), tasks).share();
+    let lab = A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), tasks).share();
     let server = SilaServer::new(
         SilaIdentity::lab_dev_kit("11111111-1111-1111-1111-111111111111").unwrap(),
         Arc::clone(&lab),
@@ -122,7 +122,7 @@ async fn plaintext_server_lists_starts_and_cancels_a_task() {
 #[tokio::test]
 async fn service_identity_and_feature_definition_follow_the_constraints() {
     let server = plain_server(
-        LabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new()).share(),
+        A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new()).share(),
     )
     .await;
     let mut service = SiLaServiceClient::new(channel(&server).await);
@@ -191,7 +191,7 @@ async fn service_identity_and_feature_definition_follow_the_constraints() {
 #[tokio::test]
 async fn lab_queries_return_records_and_reject_missing_ids() {
     let (logs, metrics) = demo_observations().await;
-    let server = plain_server(LabService::new(logs, metrics, MemoryTasks::new()).share()).await;
+    let server = plain_server(A2aLabService::new(logs, metrics, MemoryTasks::new()).share()).await;
     let mut lab = LabOperationsClient::new(channel(&server).await);
     assert_eq!(
         lab.list_log_sources(ListLogSourcesParameters {
@@ -273,7 +273,7 @@ async fn connection_configuration_rejects_an_unusable_client() {
     let _ = std::fs::remove_file(&path);
     let server = SilaServer::new(
         SilaIdentity::lab_dev_kit("11111111-1111-1111-1111-111111111111").unwrap(),
-        LabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new()).share(),
+        A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new()).share(),
     )
     .plaintext()
     .cloud_plaintext()

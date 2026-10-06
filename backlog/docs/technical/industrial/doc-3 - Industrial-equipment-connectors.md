@@ -22,7 +22,7 @@ SiLA support is the Feature Provider in `sila::SilaServer`. It serves `LabOperat
 
 Agent-facing identifiers stay short lab tokens. A shell id is stored on `AssetKey`. `SemanticId` is an IRI, an IRDI, or a custom value. A `Binding` connects one lab token to one OPC UA node.
 
-`IndustrialLabBuilder` shares one catalog and one live source across `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks`. Those providers implement the traits `LabService::new` accepts. The `LiveSource` implemented in this crate is `ScriptedLive`.
+`IndustrialLabBuilder` shares one catalog and one live source across `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks`. Those providers implement the traits `A2aLabService::new` accepts. The `LiveSource` implemented in this crate is `ScriptedLive`.
 
 ## Features
 

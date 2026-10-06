@@ -3,7 +3,7 @@ id: doc-13
 title: Serve A2A and MCP
 type: guide
 audience: public
-created_date: '2026-10-06 20:11'
+created_date: "2026-10-06 20:11"
 ---
 
 # Serve A2A and MCP
@@ -12,13 +12,13 @@ Serve one lab on Model Context Protocol (MCP), then call it from Agent2Agent (A2
 
 ## Steps
 
-The steps in [a2a_and_mcp.rs](<../../../../examples/a2a_and_mcp.rs>) are:
+The steps in [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs) are:
 
 1. Insert a log source with id `app` into `MemoryLogs`.
-2. Build a `LabService` from those logs, `MemoryMetrics`, and `MemoryTasks`.
+2. Build an `A2aLabService` from those logs, `MemoryMetrics`, and `MemoryTasks`.
 3. Bind an A2A listener with `bind_local`.
 4. Bind an MCP listener with `bind_local`.
-5. Serve the `LabService` on the MCP listener with `McpServer::serve_http`.
+5. Serve the `A2aLabService` on the MCP listener with `McpServer::serve_http`.
 6. Connect `McpLab` to that MCP server at `/mcp`.
 7. Serve the `McpLab` on the A2A listener with `A2aServer::listen`.
 8. Call `list_log_sources` with `A2aClient`.

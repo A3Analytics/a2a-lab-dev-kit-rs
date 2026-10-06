@@ -3,7 +3,7 @@ use std::time::Duration;
 use a2a_client::A2AClient;
 use a2a_grpc::GrpcTransport;
 use a2a_lab_dev_kit::{
-    A2A_PROTOCOL_VERSION, A2aServer, LabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
+    A2A_PROTOCOL_VERSION, A2aServer, A2aLabService, LogSource, MemoryLogs, MemoryMetrics, MemoryTasks,
     SourceId, TaskDefinition, TaskId, bind_local,
 };
 use a2a_types::{
@@ -33,7 +33,7 @@ async fn serve() -> String {
             semantic_id: None,
         })
         .await;
-    let service = LabService::new(logs, MemoryMetrics::new(), tasks).share();
+    let service = A2aLabService::new(logs, MemoryMetrics::new(), tasks).share();
     let (listener, address) = bind_local().await.unwrap();
     tokio::spawn(async move {
         A2aServer::new(&service).listen(listener).await.unwrap();

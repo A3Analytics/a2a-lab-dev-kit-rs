@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aClient, A2aServer, JsonObject, LabService, ListLogSourcesRequest, LogSource, McpLab,
+    A2aClient, A2aServer, JsonObject, A2aLabService, ListLogSourcesRequest, LogSource, McpLab,
     McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
     StartTaskRequest, TaskDefinition, TaskId, bind_local,
 };
@@ -43,7 +43,7 @@ async fn service() -> Arc<dyn a2a_lab_dev_kit::LabApi> {
             semantic_id: None,
         })
         .await;
-    LabService::new(logs, MemoryMetrics::new(), tasks).share()
+    A2aLabService::new(logs, MemoryMetrics::new(), tasks).share()
 }
 
 async fn assert_lab_tools(client: &impl ToolClient) {
