@@ -10,7 +10,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Robot Operating System 2 (ROS 2) fulfills the task primitive. `Ros2Tasks` turns advertised actions into tasks for `A2aLabService`. Logs and metrics stay with the other providers.
+Robot Operating System 2 (ROS 2) fulfills the task primitive. `Ros2Tasks` turns advertised actions into tasks for `A2aLabService`.
 
 The following diagram shows that mapping:
 
@@ -64,6 +64,5 @@ Pass `Ros2Tasks` to `A2aLabService::new` as the task provider. `Ros2Tasks::graph
 ## Related
 
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
-- [A2A](<../a2a/doc-4 - A2A.md>)
-- [MCP](<../mcp/doc-5 - MCP.md>)
+- [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
 - [Expose ROS 2 actions as tasks](<../../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)

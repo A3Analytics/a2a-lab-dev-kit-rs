@@ -79,5 +79,4 @@ These helpers stay in the `opcua` module. `Endpoint::OpcUa` is re-exported and c
 ## Related
 
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
-- [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
-- [Standardization in Lab Automation (SiLA) 2](<../sila-2/doc-8 - SiLA-2.md>)
+- [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)

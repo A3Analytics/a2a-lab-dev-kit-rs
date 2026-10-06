@@ -57,12 +57,7 @@ The catalog read follows these rules:
 - `list_bindings` pages every binding.
 - `get_asset` looks up the cached shell id.
 
-Binding elements describe an Open Platform Communications Unified Architecture (OPC UA) endpoint. Each element supplies:
-
-- `labId`
-- `role` of `log_source`, `metric`, or `task`
-- `protocol` `opc_ua`
-- the fields `Endpoint::OpcUa` requires
+Each binding element supplies `labId`, a `role` of `log_source`, `metric`, or `task`, and the equipment endpoint.
 
 The binding semantic id is an IRI from the element, or the binding semantic id when the element has none.
 
@@ -86,5 +81,4 @@ With the `aas` feature:
 ## Related
 
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
-- [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
-- [Standardization in Lab Automation (SiLA) 2](<../sila-2/doc-8 - SiLA-2.md>)
+- [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)

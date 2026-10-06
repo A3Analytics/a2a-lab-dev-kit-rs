@@ -10,22 +10,19 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Standardization in Lab Automation (SiLA) 2 is an inbound Feature Provider. `SilaServer` uses the same `A2aLabApi` as A2A and MCP.
+Standardization in Lab Automation (SiLA) 2 serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) to SiLA clients. `SilaServer` reads `A2aLabApi` and publishes those operations as a Feature Provider.
 
-One `A2aLabApi` reaches the agent protocols and `SilaServer`:
+The following diagram shows that path:
 
 ```mermaid
 flowchart LR
-  accTitle: Shared lab interface
-  accDescr: Equipment adapters feed A2aLabApi. A2aLabApi serves A2A, MCP, and SilaServer. SilaServer serves SiLA clients.
-  adapters["Equipment adapters"] --> lab["A2aLabApi"]
-  lab --> a2a["A2A"]
-  lab --> mcp["MCP"]
-  lab --> sila["SilaServer"]
+  accTitle: SiLA 2 serves the lab primitives
+  accDescr: A2aLabApi feeds SilaServer. SilaServer serves SiLA clients the log, metric, and task operations.
+  lab["A2aLabApi"] --> sila["SilaServer"]
   sila --> clients["SiLA clients"]
 ```
 
-Equipment adapters feed `A2aLabApi`. `A2aLabApi` serves A2A. `A2aLabApi` serves MCP. `A2aLabApi` serves `SilaServer`. `SilaServer` serves SiLA clients.
+In the preceding diagram, `A2aLabApi` feeds `SilaServer`. `SilaServer` serves SiLA clients.
 
 ## What this crate serves
 
@@ -81,10 +78,9 @@ With the `sila2` feature:
 - `sila::SilaIdentity`
 - `sila::SilaCertificate`
 
-These types stay in the `sila` module. The [SiLA server example](../../../../examples/sila2_server.rs) (`examples/sila2_server.rs`) serves one lab over A2A, MCP, and SiLA.
+These types stay in the `sila` module. The [SiLA server example](../../../../examples/sila2_server.rs) (`examples/sila2_server.rs`) runs this Feature Provider.
 
 ## Related
 
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
-- [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
-- [Open Platform Communications Unified Architecture (OPC UA)](<../opc-ua/doc-7 - OPC-UA.md>)
+- [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>)
