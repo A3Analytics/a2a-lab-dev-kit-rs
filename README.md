@@ -17,7 +17,7 @@ Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of
 6. `start_task` starts a task with a JSON object and waits until the run is terminal. Set `wait` to false to return as soon as the run is accepted.
 7. `get_task_status` reads one run.
 
-`A2aServer::with_message_handler` adds `agent-message`. A `ROLE_USER` message whose parts are all `text/plain` uses that handler. A later message reuses the returned A2A `contextId` and can pass `referenceTaskIds` for earlier tasks. Each message keeps the sender's unique message id. Lab data parts stay on the seven operations. `with_security` requires the declared credential and shows each context only to the caller that created it.
+`A2aServer::with_message_handler` adds `agent-message`. A `ROLE_USER` message whose parts are all `text/plain` uses that handler. A later message reuses the returned A2A `contextId` and can pass `referenceTaskIds` for earlier tasks. Each message keeps the sender's unique message id. Lab data parts stay on the seven operations. `with_security` requires the declared credential and shows each context only to the caller that created it. OAuth2 and OpenID Connect also need `with_authenticator`. `OidcAuthenticator` validates RS256 access tokens. Obtain a client-credentials token from the issuer, then pass it to `A2aClient::with_bearer_token`.
 
 A2A skill ids are hyphenated (`list-log-sources`). MCP tool names match the Rust names (`list_log_sources`).
 
@@ -95,6 +95,6 @@ mise run test
 mise run quality
 ```
 
-`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, tests, and the official A2A TCK for HTTP+JSON, JSON-RPC, and gRPC. In-process wire checks live in `tests/a2a_compliance.rs`.
+`mise run quality` checks formatting, the Wiki stage, complexity, duplication, compilation, Clippy, tests, and the official A2A TCK for HTTP+JSON, JSON-RPC, and gRPC. In-process wire checks live in `tests/a2a_compliance.rs`. `mise run test` starts a pre-seeded Keycloak container for the OIDC tests and removes it when the run finishes. The pinned official TCK does not execute its `AUTH-*` requirements; local authentication coverage is `tests/a2a_authentication.rs`.
 
 Wiki pages are generated from public Backlog docs and published by the Wiki GitHub Action. Do not publish from a local checkout. GitHub's `GITHUB_TOKEN` cannot write Wikis, so add a `WIKI_TOKEN` repository secret with Wikis read/write. Create the first GitHub Wiki page once so `.wiki.git` exists, then re-run the Action.

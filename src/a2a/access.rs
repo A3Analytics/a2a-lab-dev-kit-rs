@@ -6,11 +6,16 @@ use std::sync::{Arc, Mutex};
 
 use a2a_server::{InMemoryTaskStore, RequestAuthorizer, ServiceParams, TaskStore};
 use a2a_types::{
-    A2AError, ApiKeySecurityScheme, ListTasksRequest, ListTasksResponse, SecurityRequirement,
-    SecurityScheme, Task,
+    A2AError, ApiKeySecurityScheme, ListTasksRequest, ListTasksResponse, PROTOCOL_DOMAIN,
+    SecurityRequirement, SecurityScheme, Task, TypedDetail,
 };
 use async_trait::async_trait;
-use axum::http::HeaderMap;
+use axum::http::header::{CONTENT_TYPE, WWW_AUTHENTICATE};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::Response;
+use sha2::{Digest, Sha256};
+
+use super::auth::{AuthError, Authenticator, Principal};
 
 const ANONYMOUS: &str = "anonymous";
 
@@ -28,45 +33,88 @@ struct AccessInner {
     enforced: bool,
     schemes: HashMap<String, SecurityScheme>,
     requirements: Vec<SecurityRequirement>,
+    authenticator: Option<std::sync::Arc<dyn Authenticator>>,
+    challenge: String,
+}
+
+#[derive(Debug)]
+pub(crate) enum AccessError {
+    Unauthenticated { message: String, challenge: String },
+    Forbidden { message: String },
+    Unavailable { message: String },
 }
 
 impl AccessGate {
     pub(crate) fn new(
         schemes: Option<HashMap<String, SecurityScheme>>,
         requirements: Option<Vec<SecurityRequirement>>,
+        authenticator: Option<std::sync::Arc<dyn Authenticator>>,
     ) -> Self {
         let requirements = requirements.unwrap_or_default();
+        let schemes = schemes.unwrap_or_default();
+        let challenge = challenge_header(&schemes);
         Self {
             inner: Arc::new(AccessInner {
                 enforced: !requirements.is_empty(),
-                schemes: schemes.unwrap_or_default(),
+                schemes,
                 requirements,
+                authenticator,
+                challenge,
             }),
         }
     }
 
-    /// Credential identity for this request, when security requirements are active.
+    /// Principal for this request, when security requirements are active.
     ///
-    /// HTTP bearer, HTTP basic, API key, OAuth2, and OpenID Connect credentials are
-    /// the caller. This server does not contact an identity provider. Mutual TLS is
-    /// not accepted here, so a card that requires only mutual TLS fails closed.
-    pub(crate) fn caller(&self, headers: &HeaderMap, query: Option<&str>) -> Option<String> {
+    /// OAuth2 and OpenID Connect bearer tokens are validated. Other declared
+    /// credentials identify a caller only after the secret is reduced to a
+    /// fingerprint. Mutual TLS is not accepted here, so a card that requires
+    /// only mutual TLS fails closed.
+    pub(crate) async fn authenticate(
+        &self,
+        headers: &HeaderMap,
+        query: Option<&str>,
+    ) -> Result<Option<String>, AccessError> {
         if !self.inner.enforced {
-            return None;
+            return Ok(None);
         }
         let mut anonymous = false;
+        let mut forbidden = None;
+        let mut unauthenticated = None;
         for requirement in &self.inner.requirements {
             if requirement.is_empty() {
                 anonymous = true;
                 continue;
             }
-            if let Some(caller) =
-                requirement_caller(requirement, &self.inner.schemes, headers, query)
-            {
-                return Some(caller);
+            match requirement_principal(requirement, &self.inner, headers, query).await {
+                Ok(caller) => return Ok(Some(caller)),
+                Err(RequirementError::Unavailable(message)) => {
+                    return Err(AccessError::Unavailable { message });
+                }
+                Err(RequirementError::Forbidden(message)) => forbidden = Some(message),
+                Err(RequirementError::Unauthenticated(message)) => {
+                    unauthenticated = Some(message);
+                }
+                Err(RequirementError::Missing) => {}
             }
         }
-        anonymous.then(|| ANONYMOUS.to_owned())
+        if let Some(message) = forbidden {
+            return Err(AccessError::Forbidden { message });
+        }
+        if let Some(message) = unauthenticated {
+            return Err(self.unauthenticated(message));
+        }
+        if anonymous {
+            return Ok(Some(ANONYMOUS.to_owned()));
+        }
+        Err(self.unauthenticated("authentication required"))
+    }
+
+    fn unauthenticated(&self, message: impl Into<String>) -> AccessError {
+        AccessError::Unauthenticated {
+            message: message.into(),
+            challenge: self.inner.challenge.clone(),
+        }
     }
 
     pub(crate) fn enforced(&self) -> bool {
@@ -117,21 +165,246 @@ fn current_caller() -> Option<String> {
     CALLER.try_with(Clone::clone).ok()
 }
 
-fn requirement_caller(
-    requirement: &SecurityRequirement,
+enum RequirementError {
+    Missing,
+    Unauthenticated(String),
+    Forbidden(String),
+    Unavailable(String),
+}
+
+enum SchemeOutcome {
+    Missing,
+    Ready(String),
+    Unauthenticated(String),
+    Forbidden(String),
+    Unavailable(String),
+}
+
+pub(crate) fn security_configuration_error(
     schemes: &HashMap<String, SecurityScheme>,
+    requirements: &[SecurityRequirement],
+    has_authenticator: bool,
+) -> Result<(), String> {
+    for requirement in requirements {
+        for (name, scopes) in requirement {
+            let Some(scheme) = schemes.get(name) else {
+                return Err(format!("unknown security scheme {name}"));
+            };
+            if matches!(
+                scheme,
+                SecurityScheme::OAuth2(_) | SecurityScheme::OpenIdConnect(_)
+            ) && !has_authenticator
+            {
+                return Err(
+                    "openid connect and oauth2 requirements need an authenticator".to_owned(),
+                );
+            }
+            if !scopes.is_empty() && !has_authenticator {
+                return Err("scope requirements need an authenticator".to_owned());
+            }
+            if !scopes.is_empty() && !bearer_scheme(scheme) {
+                return Err(format!("scheme {name} cannot enforce scopes"));
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn requirement_principal(
+    requirement: &SecurityRequirement,
+    access: &AccessInner,
     headers: &HeaderMap,
     query: Option<&str>,
-) -> Option<String> {
+) -> Result<String, RequirementError> {
     let mut names: Vec<_> = requirement.keys().cloned().collect();
     names.sort();
     let mut parts = Vec::with_capacity(names.len());
+    let mut failure: Option<RequirementError> = None;
     for name in names {
-        let scheme = schemes.get(&name)?;
-        let credential = scheme_credential(scheme, headers, query)?;
-        parts.push(format!("{name}:{credential}"));
+        let Some(scheme) = access.schemes.get(&name) else {
+            remember(&mut failure, RequirementError::Missing);
+            continue;
+        };
+        let required = requirement.get(&name).map_or(&[][..], Vec::as_slice);
+        match scheme_principal(&name, scheme, required, access, headers, query).await {
+            SchemeOutcome::Ready(subject) => parts.push((name, subject)),
+            SchemeOutcome::Missing => remember(&mut failure, RequirementError::Missing),
+            SchemeOutcome::Unauthenticated(message) => {
+                remember(&mut failure, RequirementError::Unauthenticated(message));
+            }
+            SchemeOutcome::Forbidden(message) => {
+                remember(&mut failure, RequirementError::Forbidden(message));
+            }
+            SchemeOutcome::Unavailable(message) => {
+                return Err(RequirementError::Unavailable(message));
+            }
+        }
     }
-    Some(parts.join("\n"))
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(identity(parts))
+}
+
+fn remember(current: &mut Option<RequirementError>, next: RequirementError) {
+    let replace = matches!(
+        (&*current, &next),
+        (None | Some(RequirementError::Missing), _)
+            | (
+                Some(RequirementError::Unauthenticated(_)),
+                RequirementError::Forbidden(_)
+            )
+    );
+    if replace {
+        *current = Some(next);
+    }
+}
+
+fn identity(parts: Vec<(String, String)>) -> String {
+    if parts.len() == 1 {
+        return parts
+            .into_iter()
+            .next()
+            .map(|(_, subject)| subject)
+            .unwrap_or_default();
+    }
+    parts
+        .into_iter()
+        .map(|(name, subject)| format!("{name}={subject}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn scheme_principal(
+    name: &str,
+    scheme: &SecurityScheme,
+    required: &[String],
+    access: &AccessInner,
+    headers: &HeaderMap,
+    query: Option<&str>,
+) -> SchemeOutcome {
+    let Some(secret) = scheme_credential(scheme, headers, query) else {
+        return SchemeOutcome::Missing;
+    };
+    if bearer_scheme(scheme)
+        && let Some(authenticator) = &access.authenticator
+    {
+        return match authenticator.authenticate(&secret).await {
+            Ok(principal) => scoped(&principal, required),
+            Err(AuthError::Unauthenticated { message }) => SchemeOutcome::Unauthenticated(message),
+            Err(AuthError::Forbidden { message }) => SchemeOutcome::Forbidden(message),
+            Err(AuthError::Unavailable { message }) => SchemeOutcome::Unavailable(message),
+        };
+    }
+    if !required.is_empty() {
+        return SchemeOutcome::Forbidden("insufficient scope".to_owned());
+    }
+    SchemeOutcome::Ready(credential_id(name, &secret))
+}
+
+fn scoped(principal: &Principal, required: &[String]) -> SchemeOutcome {
+    if principal.has_scopes(required) {
+        SchemeOutcome::Ready(principal.subject().to_owned())
+    } else {
+        SchemeOutcome::Forbidden("insufficient scope".to_owned())
+    }
+}
+
+fn bearer_scheme(scheme: &SecurityScheme) -> bool {
+    match scheme {
+        SecurityScheme::OAuth2(_) | SecurityScheme::OpenIdConnect(_) => true,
+        SecurityScheme::HttpAuth(scheme) => scheme.scheme.eq_ignore_ascii_case("bearer"),
+        SecurityScheme::ApiKey(_) | SecurityScheme::MutualTls(_) => false,
+    }
+}
+
+fn credential_id(scheme: &str, secret: &str) -> String {
+    use std::fmt::Write;
+    let digest = Sha256::digest(secret.as_bytes());
+    let mut hex = String::with_capacity(16);
+    for byte in digest.iter().take(8) {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    format!("{scheme}:{hex}")
+}
+
+fn challenge_header(schemes: &HashMap<String, SecurityScheme>) -> String {
+    if schemes.values().any(bearer_scheme) {
+        return "Bearer realm=\"a2a\"".to_owned();
+    }
+    if schemes.values().any(|scheme| {
+        matches!(scheme, SecurityScheme::HttpAuth(scheme) if scheme.scheme.eq_ignore_ascii_case("basic"))
+    }) {
+        return "Basic realm=\"a2a\"".to_owned();
+    }
+    String::new()
+}
+
+pub(crate) fn auth_response(error: &AccessError) -> Response {
+    let (status, grpc_status, reason, message, challenge) = match error {
+        AccessError::Unauthenticated { message, challenge } => (
+            StatusCode::UNAUTHORIZED,
+            "UNAUTHENTICATED",
+            "INVALID_REQUEST",
+            message.as_str(),
+            Some(challenge.as_str()),
+        ),
+        AccessError::Forbidden { message } => (
+            StatusCode::FORBIDDEN,
+            "PERMISSION_DENIED",
+            "INSUFFICIENT_SCOPE",
+            message.as_str(),
+            None,
+        ),
+        AccessError::Unavailable { message } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "UNAVAILABLE",
+            "INTERNAL_ERROR",
+            message.as_str(),
+            None,
+        ),
+    };
+    let detail = TypedDetail::error_info(reason, PROTOCOL_DOMAIN, None);
+    let body = serde_json::json!({
+        "error": {
+            "code": status.as_u16(),
+            "status": grpc_status,
+            "message": message,
+            "details": [detail],
+        }
+    });
+    let mut response = Response::new(axum::body::Body::from(body.to_string()));
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    if let Some(challenge) = challenge.filter(|value| !value.is_empty())
+        && let Ok(value) = HeaderValue::from_str(challenge)
+    {
+        response.headers_mut().insert(WWW_AUTHENTICATE, value);
+    }
+    response
+}
+
+pub(crate) fn grpc_auth_status(error: &AccessError) -> (&'static str, String) {
+    match error {
+        AccessError::Unauthenticated { message, .. } => ("16", percent_encode(message)),
+        AccessError::Forbidden { message } => ("7", percent_encode(message)),
+        AccessError::Unavailable { message } => ("14", percent_encode(message)),
+    }
+}
+
+fn percent_encode(value: &str) -> String {
+    use std::fmt::Write;
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
 }
 
 fn scheme_credential(
@@ -394,43 +667,179 @@ fn empty_list(page_size: i32) -> ListTasksResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use a2a_types::HttpAuthSecurityScheme;
+    use a2a_types::{ApiKeySecurityScheme, HttpAuthSecurityScheme};
     use axum::http::HeaderValue;
+    use std::collections::HashMap as Map;
+    use std::sync::Arc;
+
+    struct Tokens(Map<String, Result<Principal, AuthError>>);
+
+    #[async_trait]
+    impl Authenticator for Tokens {
+        async fn authenticate(&self, token: &str) -> Result<Principal, AuthError> {
+            self.0
+                .get(token)
+                .cloned()
+                .unwrap_or_else(|| Err(AuthError::unauthenticated("token rejected")))
+        }
+    }
+
+    fn bearer_scheme() -> SecurityScheme {
+        SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
+            scheme: "bearer".to_owned(),
+            description: None,
+            bearer_format: None,
+        })
+    }
+
+    fn api_key(name: &str) -> SecurityScheme {
+        SecurityScheme::ApiKey(ApiKeySecurityScheme {
+            location: "header".to_owned(),
+            name: name.to_owned(),
+            description: None,
+        })
+    }
 
     fn bearer_gate() -> AccessGate {
         AccessGate::new(
-            Some(
-                [(
-                    "bearerAuth".to_owned(),
-                    SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
-                        scheme: "bearer".to_owned(),
-                        description: None,
-                        bearer_format: None,
-                    }),
-                )]
-                .into(),
-            ),
+            Some([("bearerAuth".to_owned(), bearer_scheme())].into()),
             Some(vec![[("bearerAuth".to_owned(), Vec::new())].into()]),
+            None,
         )
     }
 
-    #[test]
-    fn bearer_token_identifies_the_caller() {
-        let gate = bearer_gate();
+    fn bearer(value: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(
             "authorization",
-            HeaderValue::from_static("Bearer alice-token"),
+            HeaderValue::from_str(&format!("Bearer {value}")).unwrap(),
         );
+        headers
+    }
+
+    #[tokio::test]
+    async fn bearer_token_does_not_keep_the_secret_as_the_caller() {
+        let gate = bearer_gate();
+        let headers = bearer("alice-token");
+        let first = gate.authenticate(&headers, None).await.unwrap();
+        let second = gate.authenticate(&headers, None).await.unwrap();
+        assert_eq!(first, second);
+        let caller = first.unwrap();
+        assert!(!caller.contains("alice-token"));
+        assert!(caller.starts_with("bearerAuth:"));
+    }
+
+    #[tokio::test]
+    async fn missing_credential_has_no_caller() {
+        let gate = bearer_gate();
+        let error = gate
+            .authenticate(&HeaderMap::new(), None)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AccessError::Unauthenticated { .. }));
+    }
+
+    #[tokio::test]
+    async fn requirements_are_alternatives_and_scopes_are_enforced() {
+        let authenticator = Arc::new(Tokens(
+            [(
+                "writer".to_owned(),
+                Ok(Principal::new("writer-client").with_scopes(["write"])),
+            )]
+            .into(),
+        ));
+        let gate = AccessGate::new(
+            Some(
+                [
+                    ("api".to_owned(), api_key("x-api-key")),
+                    ("bearerAuth".to_owned(), bearer_scheme()),
+                ]
+                .into(),
+            ),
+            Some(vec![
+                [("api".to_owned(), Vec::new())].into(),
+                [("bearerAuth".to_owned(), vec!["write".to_owned()])].into(),
+            ]),
+            Some(authenticator),
+        );
+        let mut api_headers = HeaderMap::new();
+        api_headers.insert("x-api-key", HeaderValue::from_static("secret-key"));
+        let api_caller = gate
+            .authenticate(&api_headers, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(api_caller.starts_with("api:"));
+        assert!(!api_caller.contains("secret-key"));
         assert_eq!(
-            gate.caller(&headers, None).as_deref(),
-            Some("bearerAuth:alice-token")
+            gate.authenticate(&bearer("writer"), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("writer-client")
         );
+        let reader = AccessGate::new(
+            Some([("bearerAuth".to_owned(), bearer_scheme())].into()),
+            Some(vec![
+                [("bearerAuth".to_owned(), vec!["admin".to_owned()])].into(),
+            ]),
+            Some(Arc::new(Tokens(
+                [(
+                    "writer".to_owned(),
+                    Ok(Principal::new("writer-client").with_scopes(["write"])),
+                )]
+                .into(),
+            ))),
+        );
+        let forbidden = reader
+            .authenticate(&bearer("writer"), None)
+            .await
+            .unwrap_err();
+        assert!(matches!(forbidden, AccessError::Forbidden { .. }));
+    }
+
+    #[tokio::test]
+    async fn and_requirement_needs_every_scheme() {
+        let gate = AccessGate::new(
+            Some(
+                [
+                    ("left".to_owned(), api_key("x-left")),
+                    ("right".to_owned(), api_key("x-right")),
+                ]
+                .into(),
+            ),
+            Some(vec![
+                [
+                    ("left".to_owned(), Vec::new()),
+                    ("right".to_owned(), Vec::new()),
+                ]
+                .into(),
+            ]),
+            None,
+        );
+        let mut one = HeaderMap::new();
+        one.insert("x-left", HeaderValue::from_static("left-secret"));
+        assert!(matches!(
+            gate.authenticate(&one, None).await.unwrap_err(),
+            AccessError::Unauthenticated { .. }
+        ));
+        let mut both = one;
+        both.insert("x-right", HeaderValue::from_static("right-secret"));
+        let caller = gate.authenticate(&both, None).await.unwrap().unwrap();
+        assert!(caller.contains("left=") && caller.contains("right="));
+        assert!(!caller.contains("left-secret"));
+        assert!(!caller.contains("right-secret"));
     }
 
     #[test]
-    fn missing_credential_has_no_caller() {
-        let gate = bearer_gate();
-        assert!(gate.caller(&HeaderMap::new(), None).is_none());
+    fn oauth_and_scopes_require_an_authenticator() {
+        let oauth = SecurityScheme::OpenIdConnect(a2a_types::OpenIdConnectSecurityScheme {
+            open_id_connect_url: "http://issuer/.well-known/openid-configuration".to_owned(),
+            description: None,
+        });
+        let schemes = [("oidc".to_owned(), oauth)].into();
+        let requirements = vec![[("oidc".to_owned(), vec!["a2a.invoke".to_owned()])].into()];
+        assert!(security_configuration_error(&schemes, &requirements, false).is_err());
+        assert!(security_configuration_error(&schemes, &requirements, true).is_ok());
     }
 }

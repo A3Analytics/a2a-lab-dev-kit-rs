@@ -31,7 +31,11 @@ use tower_service::Service;
 use crate::error::A2aLabError;
 use crate::service::LabApi;
 
-use super::access::{AccessGate, OwnedTaskStore, with_caller};
+use super::access::{
+    AccessError, AccessGate, OwnedTaskStore, auth_response, grpc_auth_status,
+    security_configuration_error, with_caller,
+};
+use super::auth::Authenticator;
 use super::card::{accepted_modes, agent_card};
 use super::executor::LabExecutor;
 use super::message::AgentMessageHandler;
@@ -50,6 +54,7 @@ pub struct A2aServer {
     extended_card: Option<AgentCard>,
     security_schemes: Option<HashMap<String, SecurityScheme>>,
     security_requirements: Option<Vec<SecurityRequirement>>,
+    authenticator: Option<Arc<dyn Authenticator>>,
     messages: Option<Arc<dyn AgentMessageHandler>>,
 }
 
@@ -66,6 +71,7 @@ impl A2aServer {
             extended_card: None,
             security_schemes: None,
             security_requirements: None,
+            authenticator: None,
             messages: None,
         }
     }
@@ -127,11 +133,30 @@ impl A2aServer {
         self
     }
 
+    /// Validates bearer tokens for OAuth2, OpenID Connect, and HTTP bearer schemes.
+    #[must_use]
+    pub fn with_authenticator(mut self, authenticator: Arc<dyn Authenticator>) -> Self {
+        self.authenticator = Some(authenticator);
+        self
+    }
+
     /// Serves the Agent Card, HTTP+JSON routes, JSON-RPC `POST /`, and gRPC.
     ///
     /// `listener` defaults to `127.0.0.1:31000` when it is `None`. gRPC binds
     /// `127.0.0.1:0`. The Agent Card `GRPC` interface URL is that socket.
     pub async fn listen(self, listener: impl Into<Option<TcpListener>>) -> Result<(), A2aLabError> {
+        security_configuration_error(
+            self.security_schemes.as_ref().unwrap_or(&HashMap::new()),
+            self.security_requirements.as_deref().unwrap_or(&[]),
+            self.authenticator.is_some(),
+        )
+        .map_err(|message| A2aLabError::invalid("security", message))?;
+        if let Some(authenticator) = &self.authenticator {
+            authenticator
+                .warm()
+                .await
+                .map_err(|error| A2aLabError::unavailable(error.to_string()))?;
+        }
         let listener = match listener.into() {
             Some(listener) => listener,
             None => TcpListener::bind(DEFAULT_ADDRESS)
@@ -198,6 +223,7 @@ fn router(
     let gate = AccessGate::new(
         server.security_schemes.clone(),
         server.security_requirements.clone(),
+        server.authenticator.clone(),
     );
     let card = agent_card(
         public_url,
@@ -249,8 +275,16 @@ fn router(
         .layer(from_fn(move |request: Request, next: Next| {
             let gate = http_gate.clone();
             async move {
-                let caller = gate.caller(request.headers(), request.uri().query());
-                with_caller(caller, normalize_a2a_json(request, next)).await
+                if request.uri().path() == "/.well-known/agent-card.json" {
+                    return normalize_a2a_json(request, next).await;
+                }
+                match gate
+                    .authenticate(request.headers(), request.uri().query())
+                    .await
+                {
+                    Ok(caller) => with_caller(caller, normalize_a2a_json(request, next)).await,
+                    Err(error) => auth_response(&error),
+                }
             }
         }));
     (app, handler, gate)
@@ -334,7 +368,7 @@ where
     ReqBody: Send + 'static,
     ResBody: Body + Unpin + Send + 'static,
 {
-    type Response = HttpResponse<RemapBody<ResBody>>;
+    type Response = HttpResponse<GatedBody<ResBody>>;
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -347,17 +381,80 @@ where
         let mut inner = std::mem::replace(&mut self.inner, clone);
         let gate = self.gate.clone();
         Box::pin(async move {
-            let caller = gate.caller(request.headers(), request.uri().query());
-            let response = with_caller(caller, inner.call(request)).await?;
-            let (mut parts, body) = response.into_parts();
-            remap_grpc_status(&mut parts.headers);
-            Ok(HttpResponse::from_parts(parts, RemapBody { inner: body }))
+            match gate
+                .authenticate(request.headers(), request.uri().query())
+                .await
+            {
+                Ok(caller) => {
+                    let response = with_caller(caller, inner.call(request)).await?;
+                    let (mut parts, body) = response.into_parts();
+                    remap_grpc_status(&mut parts.headers);
+                    Ok(HttpResponse::from_parts(
+                        parts,
+                        GatedBody::Inner(RemapBody { inner: body }),
+                    ))
+                }
+                Err(error) => Ok(grpc_auth_response(&error)),
+            }
         })
     }
 }
 
+fn grpc_auth_response<B>(error: &AccessError) -> HttpResponse<GatedBody<B>> {
+    let (code, message) = grpc_auth_status(error);
+    let mut response = HttpResponse::new(GatedBody::Empty);
+    *response.status_mut() = StatusCode::OK;
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("application/grpc"));
+    if let Ok(status) = HeaderValue::from_str(code) {
+        response.headers_mut().insert("grpc-status", status);
+    }
+    if let Ok(message) = HeaderValue::from_str(&message) {
+        response.headers_mut().insert("grpc-message", message);
+    }
+    response
+}
+
+enum GatedBody<B> {
+    Empty,
+    Inner(RemapBody<B>),
+}
+
 struct RemapBody<B> {
     inner: B,
+}
+
+impl<B> Body for GatedBody<B>
+where
+    B: Body + Unpin,
+{
+    type Data = B::Data;
+    type Error = B::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        match self.get_mut() {
+            GatedBody::Empty => Poll::Ready(None),
+            GatedBody::Inner(body) => Pin::new(body).poll_frame(cx),
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        match self {
+            GatedBody::Empty => true,
+            GatedBody::Inner(body) => body.is_end_stream(),
+        }
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        match self {
+            GatedBody::Empty => http_body::SizeHint::with_exact(0),
+            GatedBody::Inner(body) => body.size_hint(),
+        }
+    }
 }
 
 impl<B> Body for RemapBody<B>

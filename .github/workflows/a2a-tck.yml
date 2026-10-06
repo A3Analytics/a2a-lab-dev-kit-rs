@@ -23,7 +23,17 @@ jobs:
 
       - uses: jdx/mise-action@v2
         with:
-          install_args: rust
+          install_args: rust cargo:cargo-nextest
+
+      - name: Test
+        run: mise run test
+
+      - name: Show Keycloak log
+        if: always()
+        run: |
+          if [ -f target/a2a-auth-keycloak.log ]; then
+            cat target/a2a-auth-keycloak.log
+          fi
 
       - name: Official A2A TCK
         run: bash .mise/scripts/a2a-tck.sh

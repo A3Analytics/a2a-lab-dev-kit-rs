@@ -43,7 +43,7 @@ case "$mode" in
     step duplication bash .mise/scripts/duplication.sh
     step check check_warnings
     step clippy clippy_warnings
-    step nextest cargo nextest run --workspace --all-features
+    step nextest bash .mise/scripts/test.sh
     step tck bash .mise/scripts/a2a-tck.sh
     step sila2-interop bash .mise/scripts/sila2-interop.sh
     step sila2-communication bash .mise/scripts/sila2-communication.sh

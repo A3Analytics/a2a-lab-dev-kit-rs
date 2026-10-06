@@ -77,4 +77,22 @@ for requirement_id, result in requirements:
         )
         + " |"
     )
+
+auth = [
+    (requirement_id, result["status"])
+    for requirement_id, result in requirements
+    if requirement_id.startswith("AUTH-")
+]
+print()
+print("## Official AUTH requirements")
+print()
+if auth:
+    print("The pinned A2A TCK does not execute AUTH tests. These requirements stay upstream NOT TESTED:")
+    print()
+    for requirement_id, status in auth:
+        print(f"- `{cell(requirement_id)}`: {cell(status)}")
+else:
+    print("The pinned A2A TCK did not report AUTH requirements.")
+print()
+print("Local OIDC coverage runs inside `mise run test`. A future TCK pin can run authenticated only after it injects `A2A_AUTH_*` credentials and ships executable AUTH tests.")
 PY

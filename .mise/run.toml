@@ -25,8 +25,8 @@ env = { CARGO_TARGET_DIR = "{{config_root}}/../target/quality" }
 run = "cargo clippy --all-targets --all-features -- -D warnings"
 
 [test]
-description = "Run the workspace test suite"
-run = "cargo nextest run --workspace --all-features"
+description = "Run the workspace test suite, including OIDC checks against an ephemeral Keycloak container"
+run = "bash .mise/scripts/test.sh"
 
 [kiss]
 description = "Check Rust complexity, excluding duplication and orphan-module findings"
@@ -69,5 +69,5 @@ description = "Run the pinned official SiLA communication tester against the con
 run = "bash .mise/scripts/sila2-communication.sh"
 
 [quality]
-description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, clippy, test, A2A TCK, and SiLA provider checks"
+description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, clippy, tests, the A2A TCK, and SiLA provider checks"
 run = "bash .mise/scripts/quality.sh"
