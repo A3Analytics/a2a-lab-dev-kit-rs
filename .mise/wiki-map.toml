@@ -23,6 +23,10 @@ source = "reference/primitives"
 wiki = "Primitives.md"
 
 [[page]]
+source = "reference/implementations"
+wiki = "Implementations.md"
+
+[[page]]
 source = "reference/a2a"
 wiki = "A2A.md"
 

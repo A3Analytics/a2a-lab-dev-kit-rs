@@ -52,11 +52,10 @@ Time ranges are half-open Coordinated Universal Time (UTC) intervals, `[start, e
 
 ## Related pages
 
-Read these guides:
+Read these pages:
 
 - [Run the memory lab](<../guide/memory-lab/doc-12 - Run-the-memory-lab.md>)
 - [Serve A2A and MCP](<../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
 - [Expose ROS 2 actions as tasks](<../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)
+- [Implementations](<../reference/implementations/doc-18 - Implementations.md>)
 - [README](../../../README.md)
-
-[a2a-lab-ot2](https://github.com/A3Analytics/a2a-lab-ot2) is an example implementation. It wraps an Opentrons OT-2 simulator.

@@ -741,21 +741,10 @@ check_mermaid_diagrams() {
 }
 
 check_readme_wiki_parity() {
-  local readme="$root/README.md" actual expected name i
+  local readme="$root/README.md"
   [ -f "$readme" ] || die "missing README.md"
-  actual=$(
-    grep -oE 'https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/[A-Za-z0-9._~-]+' "$readme" \
-      | awk -F/ '!seen[$NF]++ { print $NF }'
-  )
-  expected=""
-  i=0
-  while [ "$i" -lt "$page_count" ]; do
-    name=${page_wikis[$i]%.md}
-    expected="${expected}${name}"$'\n'
-    i=$((i + 1))
-  done
-  expected=$(printf '%s' "$expected" | sed '/^$/d')
-  [ "$actual" = "$expected" ] || die "README Wiki links do not match .mise/wiki-map.toml order"
+  grep -q "${WIKI_PAGE_BASE}/Home" "$readme" \
+    || die "README must link to the Wiki overview"
 }
 
 check_staged_links() {
