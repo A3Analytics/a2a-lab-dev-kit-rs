@@ -10,19 +10,19 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Standardization in Lab Automation (SiLA) 2 is an interface. A SiLA client calls `SilaServer`. `SilaServer` calls `A2aLabApi` and serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
+Standardization in Lab Automation (SiLA) 2 is an interface. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
 
 The following diagram shows that path:
 
 ```mermaid
 flowchart LR
-  accTitle: SiLA 2 interface
-  accDescr: A SiLA client calls SilaServer. SilaServer calls A2aLabApi.
-  client["SiLA client"] --> sila["SilaServer"]
-  sila --> api["A2aLabApi"]
+  accTitle: A2aLabApi fulfills SilaServer
+  accDescr: A SiLA client calls SilaServer. A2aLabApi fulfills SilaServer.
+  client["SiLA client"] -->|"calls"| sila["SilaServer"]
+  api["A2aLabApi"] -->|"fulfills"| sila
 ```
 
-In the preceding diagram, a SiLA client calls `SilaServer`. `SilaServer` calls `A2aLabApi`.
+In the preceding diagram, a SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer`.
 
 ## What this crate serves
 
