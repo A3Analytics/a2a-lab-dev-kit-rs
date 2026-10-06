@@ -250,4 +250,4 @@ Poll that run with `get_task_status`.
 
 Error data includes the `A2aLabError` code.
 
-The architecture is described in [Lab dev kit architecture](<../architecture/doc-1 - Lab-dev-kit-architecture.md>).
+The architecture is described in [A2A-LAB devkit architecture](<../architecture/doc-1 - Lab-dev-kit-architecture.md>).

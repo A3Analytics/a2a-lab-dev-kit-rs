@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # ROS 2
 
-## Role in this dev kit
+## Role in A2A-LAB devkit
 
 `Ros2Tasks` exposes Robot Operating System 2 (ROS 2) actions as lab tasks. `Ros2Tasks` implements `TaskProvider`. It does not implement `LogProvider` or `MetricProvider`, and it is not an A2A or MCP adapter.
 
@@ -64,7 +64,7 @@ A ROS 2 graph backed by DDS or RCL.
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A](<../a2a/doc-4 - A2A.md>)
 - [MCP](<../mcp/doc-5 - MCP.md>)
 - [Expose ROS 2 actions as tasks](<../../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)

@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # OPC UA
 
-## Role in this dev kit
+## Role in A2A-LAB devkit
 
 Open Platform Communications Unified Architecture (OPC UA) is an outbound history client. Industrial providers read history only through `LiveSource`. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient::read_history` is a separate helper and is not a `LiveSource`.
 
@@ -77,7 +77,7 @@ Live OPC UA readings through `LiveSource`.
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [Standardization in Lab Automation (SiLA) 2](<../sila-2/doc-8 - SiLA-2.md>)
 - [Run a scripted industrial lab](<../../guide/scripted-industrial/doc-14 - Run-a-scripted-industrial-lab.md>)

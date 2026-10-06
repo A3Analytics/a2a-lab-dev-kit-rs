@@ -50,6 +50,6 @@ mcp list_log_sources: app
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [A2A](<../../reference/a2a/doc-4 - A2A.md>)
 - [MCP](<../../reference/mcp/doc-5 - MCP.md>)

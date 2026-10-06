@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # SiLA 2
 
-## Role in this dev kit
+## Role in A2A-LAB devkit
 
 Standardization in Lab Automation (SiLA) 2 is an inbound Feature Provider. `SilaServer` uses the same `LabApi` as A2A and MCP.
 
@@ -85,6 +85,6 @@ These types stay in the `sila` module. The [SiLA server example](../../../../exa
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [Open Platform Communications Unified Architecture (OPC UA)](<../opc-ua/doc-7 - OPC-UA.md>)

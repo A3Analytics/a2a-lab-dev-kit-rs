@@ -34,6 +34,6 @@ The ROS 2 reference defines task ids and goal status.
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [ROS 2](<../../reference/ros-2/doc-9 - ROS-2.md>)
 - [ROS 2 task example](../../../../examples/ros2_tasks.rs)

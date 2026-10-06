@@ -62,7 +62,7 @@ Task `build` reports run `run-1` in state `Completed`.
 
 ## Related pages
 
-Read the crate overview and the repository README:
+Read the A2A-LAB devkit overview and the repository README:
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [README](../../../../README.md)

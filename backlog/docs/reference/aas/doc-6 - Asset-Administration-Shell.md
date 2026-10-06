@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # Asset Administration Shell
 
-## Role in this dev kit
+## Role in A2A-LAB devkit
 
 The Asset Administration Shell (AAS) HTTP repository is an outbound asset catalog. `AasClient` implements `AssetCatalogProvider`. Industrial log, metric, and task providers read bindings from that catalog. AAS is not one of the seven agent operations.
 
@@ -81,7 +81,7 @@ With the `aas` feature:
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
 - [Standardization in Lab Automation (SiLA) 2](<../sila-2/doc-8 - SiLA-2.md>)
 - [Run a scripted industrial lab](<../../guide/scripted-industrial/doc-14 - Run-a-scripted-industrial-lab.md>)

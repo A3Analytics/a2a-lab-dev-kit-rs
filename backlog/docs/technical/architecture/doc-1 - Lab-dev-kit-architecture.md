@@ -1,16 +1,16 @@
 ---
 id: doc-1
-title: Lab dev kit architecture
+title: A2A-LAB devkit architecture
 type: technical
 audience: technical
 created_date: "2026-09-29 23:40"
 ---
 
-# Lab dev kit architecture
+# A2A-LAB devkit architecture
 
 ## Purpose
 
-`a2a-lab-dev-kit` gives an automated lab agent one Rust API for logs, metrics, and tasks. Protocol adapters call that API. They do not own the data.
+A2A-LAB devkit gives an automated lab agent one Rust API for logs, metrics, and tasks. Protocol adapters call that API. They do not own the data.
 
 ## Providers
 

@@ -139,7 +139,7 @@ In-process coverage is `tests/a2a_compliance.rs` and `tests/a2a_authentication.r
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [MCP](<../mcp/doc-5 - MCP.md>)
 - [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
 - [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs)

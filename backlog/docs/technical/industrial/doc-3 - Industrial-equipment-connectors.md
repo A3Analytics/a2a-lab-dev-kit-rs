@@ -28,4 +28,4 @@ Agent-facing identifiers stay short lab tokens. A shell id is stored on `AssetKe
 
 The `aas`, `opcua`, and `sila2` features are part of the default build. `sila2` serves the lab. `Ros2Tasks` is a separate in-process task provider and is not one of these clients.
 
-See [Lab dev kit architecture](<../architecture/doc-1 - Lab-dev-kit-architecture.md>).
+See [A2A-LAB devkit architecture](<../architecture/doc-1 - Lab-dev-kit-architecture.md>).

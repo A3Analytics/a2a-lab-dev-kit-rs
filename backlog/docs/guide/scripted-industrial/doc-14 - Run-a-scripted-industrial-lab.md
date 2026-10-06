@@ -28,6 +28,6 @@ scripted temperature sample 21.5
 
 ## Related
 
-- [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
+- [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [Asset Administration Shell](<../../reference/aas/doc-6 - Asset-Administration-Shell.md>)
 - [OPC UA](<../../reference/opc-ua/doc-7 - OPC-UA.md>)

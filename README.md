@@ -1,9 +1,9 @@
-# a2a-lab-dev-kit
+# A2A-LAB devkit
 
 [![A2A 1.0](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml)
 [![SiLA 2 provider](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml)
 
-`a2a-lab-dev-kit` is a Rust library for lab logs, metrics, and tasks.
+A2A-LAB devkit is a Rust library for lab logs, metrics, and tasks. The crate name is `a2a-lab-dev-kit`.
 
 Provider traits are the source of truth.
 
@@ -70,7 +70,7 @@ These pages are the public documentation:
 
 | Page                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------- |
-| [Lab dev kit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)                                   |
+| [A2A-LAB devkit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)                                   |
 | [Run the memory lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-the-memory-lab)                       |
 | [Serve A2A and MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Serve-A2A-and-MCP)                         |
 | [Run a scripted industrial lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-a-scripted-industrial-lab) |

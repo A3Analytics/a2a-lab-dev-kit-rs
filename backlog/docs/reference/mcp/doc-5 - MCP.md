@@ -20,7 +20,7 @@ The instructions are `Lab logs, metrics, and tasks`.
 
 The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`.
 
-What each tool does is on the [Lab dev kit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>).
+What each tool does is on the [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>).
 
 `McpLab::connect` implements `LabApi` over Streamable HTTP.
 
