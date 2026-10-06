@@ -8,7 +8,9 @@ created_date: "2026-09-30 17:38"
 
 # A2A
 
-Agent2Agent (A2A) is an interface. `A2aServer` accepts any `A2aLabApi` and serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
+[Agent2Agent (A2A)](https://a2a-protocol.org/) is an open protocol that lets agents discover each other, delegate tasks, and share results.
+
+A2A is an interface. `A2aServer` accepts any `A2aLabApi` and serves the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
 
 ## Role
 

@@ -8,9 +8,11 @@ created_date: "2026-09-30 17:38"
 
 # ROS 2
 
+[Robot Operating System 2 (ROS 2)](https://docs.ros.org/) is an open set of libraries and tools for building robot applications.
+
 ## Role in A2A-LAB devkit
 
-Robot Operating System 2 (ROS 2) is a provider for tasks. It does not supply logs or metrics. `Ros2Tasks` turns advertised actions into task definitions and task runs.
+ROS 2 is a provider for tasks. It does not supply logs or metrics. `Ros2Tasks` turns advertised actions into task definitions and task runs.
 
 The following diagram shows that mapping:
 

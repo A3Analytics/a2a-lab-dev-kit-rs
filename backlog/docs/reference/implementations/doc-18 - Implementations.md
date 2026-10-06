@@ -28,7 +28,7 @@ flowchart LR
 In the preceding diagram, `A2aLabService` uses memory providers, industrial providers, and `Ros2Tasks`. Industrial providers use `AasClient` and `ScriptedLive`.
 
 - Memory: `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryCatalog` store the lab in memory.
-- Industrial: `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` use one catalog and one `LiveSource`. `AasClient` reads an Asset Administration Shell catalog. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` supplies live Open Platform Communications Unified Architecture (OPC UA) readings through `LiveSource`. [Upcoming]
+- Industrial: `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` use one catalog and one `LiveSource`. `AasClient` reads an AAS catalog. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` supplies live Open Platform Communications Unified Architecture (OPC UA) readings through `LiveSource`. [Upcoming]
 - Robot Operating System 2 (ROS 2): `Ros2Tasks` exposes ROS 2 actions as tasks. `MemoryRos2` is the in-process graph.
 
 ## Example

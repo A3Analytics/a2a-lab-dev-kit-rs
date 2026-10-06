@@ -37,7 +37,7 @@ These interfaces are supported:
 
 These providers are supported:
 
-- [Asset Administration Shell](<../aas/doc-6 - Asset-Administration-Shell.md>)
+- [AAS](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
 - [ROS 2](<../ros-2/doc-9 - ROS-2.md>)
 

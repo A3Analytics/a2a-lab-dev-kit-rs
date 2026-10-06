@@ -8,9 +8,11 @@ created_date: "2026-09-30 17:38"
 
 # OPC UA
 
+[Open Platform Communications Unified Architecture (OPC UA)](https://opcfoundation.org/) is an open industrial standard for exchanging equipment data.
+
 ## Role in A2A-LAB devkit
 
-Open Platform Communications Unified Architecture (OPC UA) is a provider. It supplies values for the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). A catalog binding names the OPC UA node. `LiveSource` reads that node.
+OPC UA is a provider. It supplies values for the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). A catalog binding names the OPC UA node. `LiveSource` reads that node.
 
 The following diagram shows that mapping:
 

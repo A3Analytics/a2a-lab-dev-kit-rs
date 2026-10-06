@@ -8,9 +8,11 @@ created_date: "2026-09-30 17:38"
 
 # SiLA 2
 
+[Standardization in Lab Automation (SiLA) 2](https://sila-standard.com/) is an open standard for connecting lab instruments and software.
+
 ## Role in A2A-LAB devkit
 
-Standardization in Lab Automation (SiLA) 2 is an interface. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
+SiLA 2 is an interface. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
 
 The following diagram shows that path:
 

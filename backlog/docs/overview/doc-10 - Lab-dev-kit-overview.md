@@ -37,7 +37,7 @@ flowchart LR
   lab --> ros
 ```
 
-In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 are interfaces. They call `A2aLabService`. The Asset Administration Shell (AAS), Open Platform Communications Unified Architecture (OPC UA), and Robot Operating System 2 (ROS 2) are providers. `A2aLabService` uses those providers.
+In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 are interfaces. They call `A2aLabService`. AAS, Open Platform Communications Unified Architecture (OPC UA), and Robot Operating System 2 (ROS 2) are providers. `A2aLabService` uses those providers.
 
 ## Related pages
 

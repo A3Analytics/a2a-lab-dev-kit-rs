@@ -8,7 +8,9 @@ created_date: "2026-09-30 17:38"
 
 # MCP
 
-Model Context Protocol (MCP) is an interface. `McpServer` registers the seven lab operations as tools on `A2aLabApi`.
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard for connecting AI applications to external systems.
+
+MCP is an interface. `McpServer` registers the seven lab operations as tools on `A2aLabApi`.
 
 ## Role
 

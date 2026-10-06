@@ -9,7 +9,7 @@ A2A-LAB devkit is a Rust crate for lab logs, metrics, and tasks over A2A, MCP, S
 
 - Supports lab logs, metrics, and tasks over Agent2Agent (A2A) and Model Context Protocol (MCP).
 - Serves that lab to Standardization in Lab Automation (SiLA) 2 clients.
-- Reads equipment from an Asset Administration Shell (AAS) catalog.
+- Reads equipment from an AAS catalog.
 - Reads Open Platform Communications Unified Architecture (OPC UA) equipment history.
 - Supplies live OPC UA readings through `LiveSource`. [Upcoming]
 - Exposes Robot Operating System 2 (ROS 2) actions as lab tasks.

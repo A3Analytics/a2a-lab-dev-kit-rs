@@ -1,16 +1,18 @@
 ---
 id: doc-6
-title: Asset Administration Shell
+title: AAS
 type: reference
 audience: public
 created_date: "2026-09-30 17:38"
 ---
 
-# Asset Administration Shell
+# AAS
+
+[AAS](https://industrialdigitaltwin.org/en/) is the open standard for an industrial digital twin. It describes an asset and the data that asset exposes.
 
 ## Role in A2A-LAB devkit
 
-The Asset Administration Shell (AAS) is a provider. It names the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `AasClient` reads the bindings. Industrial providers turn each binding into a log source, a metric, or a task.
+AAS is a provider. It names the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `AasClient` reads the bindings. Industrial providers turn each binding into a log source, a metric, or a task.
 
 The following diagram shows that mapping:
 
