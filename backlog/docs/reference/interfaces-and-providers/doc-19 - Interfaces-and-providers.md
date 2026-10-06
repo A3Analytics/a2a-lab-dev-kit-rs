@@ -40,12 +40,7 @@ These providers are supported:
 - [AAS](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
 - [ROS 2](<../ros-2/doc-9 - ROS-2.md>)
-
-## Custom providers
-
-A machine without a supported standard uses a custom provider. Implement `LogProvider`, `MetricProvider`, `TaskProvider`, or a combination of those traits. Pass the implementations to `A2aLabService`. A service can mix built-in providers and custom providers.
-
-The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that contract. [Implementations](<../implementations/doc-18 - Implementations.md>) lists the built-in providers.
+- [Custom](<../custom/doc-20 - Custom.md>)
 
 ## Related
 
