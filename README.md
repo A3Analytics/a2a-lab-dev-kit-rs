@@ -62,7 +62,7 @@ They enable Asset Administration Shell (AAS), Open Platform Communications Unifi
 
 Robot Operating System 2 (ROS 2) code in the `ros2` module is always compiled.
 
-`OpcUaClient` is not a `LiveSource`. See the OPC UA page in the following table.
+`OpcUaClient` supplies live OPC UA readings through `LiveSource`. [Upcoming] See the OPC UA page in the following table.
 
 ## Public documentation
 
@@ -70,7 +70,7 @@ These pages are the public documentation:
 
 | Page                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------- |
-| [A2A-LAB devkit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)                                   |
+| [A2A-LAB devkit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home)                                |
 | [Run the memory lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-the-memory-lab)                       |
 | [Serve A2A and MCP](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Serve-A2A-and-MCP)                         |
 | [Run a scripted industrial lab](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Run-a-scripted-industrial-lab) |

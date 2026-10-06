@@ -27,7 +27,9 @@ LabService connects to Ros2Tasks. Ros2Tasks connects to Ros2Graph. Ros2Graph con
 
 ## What this crate implements
 
-The graph is the in-process `Ros2Graph` trait. `MemoryRos2` is the implementation in this crate. There is no Data Distribution Service (DDS) link and no link to the ROS Client Library (RCL). The crate includes the `ros2` module in every build.
+The graph is the `Ros2Graph` trait. `MemoryRos2` is the in-process graph in this crate. The crate includes the `ros2` module in every build.
+
+`Ros2Tasks` sends goals through a ROS 2 graph over Data Distribution Service (DDS) and the ROS Client Library (RCL). [Upcoming]
 
 Action names become task ids. Goal status maps to `TaskState`. The task name stays the action name. The description and `semantic_id` are the action type name. `asset_id` is absent.
 
@@ -57,10 +59,6 @@ The crate root re-exports these types:
 - `Ros2Action`, `Ros2Goal`, and `Ros2GoalStatus`
 
 Pass `Ros2Tasks` to `LabService::new` as the task provider. `Ros2Tasks::graph` returns the graph so the caller can advertise actions and update goals.
-
-## Future work
-
-A ROS 2 graph backed by DDS or RCL.
 
 ## Related
 

@@ -10,24 +10,23 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-Open Platform Communications Unified Architecture (OPC UA) is an outbound history client. Industrial providers read history only through `LiveSource`. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient::read_history` is a separate helper and is not a `LiveSource`.
+Open Platform Communications Unified Architecture (OPC UA) is an outbound equipment client. Industrial providers read live samples through `LiveSource`. `OpcUaClient` implements that source and returns samples inside the half-open range. [Upcoming]
 
-Catalog bindings point a lab token at an `Endpoint::OpcUa` node. The industrial providers pass that endpoint to `LiveSource`. The helper reads one node on its own.
+`ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient::read_history` reads raw history for one node.
 
-Industrial history and `OpcUaClient::read_history` follow different paths:
+A catalog binding reaches the industrial providers through this path:
 
 ```mermaid
 flowchart TD
-  accTitle: Live source and history helper
-  accDescr: A catalog binding reaches IndustrialLogs and IndustrialMetrics. Those providers call LiveSource, and ScriptedLive implements it. An endpoint reaches OpcUaClient read_history on a separate path and returns metric points.
-  binding["Catalog binding"] --> providers["IndustrialLogs and IndustrialMetrics"]
+  accTitle: OPC UA live readings
+  accDescr: A catalog binding reaches the industrial providers. Those providers call LiveSource. OpcUaClient implements LiveSource and returns metric points. That connection is upcoming.
+  binding["Catalog binding"] --> providers["Industrial providers"]
   providers --> live["LiveSource"]
-  live --> scripted["ScriptedLive"]
-  endpoint["Endpoint::OpcUa"] -.-> helper["OpcUaClient::read_history"]
-  helper --> points["Metric points in the half-open range"]
+  live --> client["OpcUaClient"]
+  client --> points["Metric points in the half-open range"]
 ```
 
-A catalog binding reaches `IndustrialLogs` and `IndustrialMetrics`. Those providers call `LiveSource`. `ScriptedLive` implements `LiveSource`. An `Endpoint::OpcUa` value reaches `OpcUaClient::read_history` on a separate path. That helper returns metric points inside the half-open range.
+A catalog binding reaches the industrial providers. Those providers call `LiveSource`. `OpcUaClient` implements `LiveSource` and returns the metric points. [Upcoming]
 
 ## What this crate implements
 
@@ -70,10 +69,6 @@ These helpers stay in the `opcua` module. `Endpoint::OpcUa` is re-exported and c
 - `node_id`
 - `namespace_uri`
 - `browse_path`
-
-## Future work
-
-Live OPC UA readings through `LiveSource`.
 
 ## Related
 
