@@ -13,10 +13,16 @@ mkdir -p "$out/certs"
 cd "$root"
 
 if [ ! -d "$source_dir/.git" ]; then
-  git clone --depth 1 --branch 'v.10.3.2' https://gitlab.com/SiLA2/sila_csharp.git "$source_dir"
+  git clone --depth 1 --recurse-submodules --shallow-submodules --branch 'v.10.3.2' \
+    https://gitlab.com/SiLA2/sila_csharp.git "$source_dir"
 fi
 if [ "$(git -C "$source_dir" rev-parse HEAD)" != "$commit" ]; then
   echo "sila_csharp checkout is not $commit" >&2
+  exit 1
+fi
+git -C "$source_dir" submodule update --init --recursive --depth 1
+if [ ! -f "$source_dir/src/sila_base/protobuf/SiLAFramework.proto" ]; then
+  echo "sila_csharp is missing the sila_base protobufs" >&2
   exit 1
 fi
 
