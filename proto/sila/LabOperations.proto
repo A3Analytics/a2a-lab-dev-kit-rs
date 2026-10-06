@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.com.a3analytics.lab.laboperations.v1;
+
+/* Exposes the seven lab operations of the devkit that represents the equipment. */
+service LabOperations {
+  /* Returns one page of log sources. */
+  rpc ListLogSources (sila2.com.a3analytics.lab.laboperations.v1.ListLogSources_Parameters) returns (sila2.com.a3analytics.lab.laboperations.v1.ListLogSources_Responses) {}
+  /* Returns log records in a half-open UTC range. */
+  rpc QueryLogs (sila2.com.a3analytics.lab.laboperations.v1.QueryLogs_Parameters) returns (sila2.com.a3analytics.lab.laboperations.v1.QueryLogs_Responses) {}
+  /* Returns one page of metric descriptors. */
+  rpc ListMetrics (sila2.com.a3analytics.lab.laboperations.v1.ListMetrics_Parameters) returns (sila2.com.a3analytics.lab.laboperations.v1.ListMetrics_Responses) {}
+  /* Returns metric samples in a half-open UTC range. */
+  rpc QueryMetric (sila2.com.a3analytics.lab.laboperations.v1.QueryMetric_Parameters) returns (sila2.com.a3analytics.lab.laboperations.v1.QueryMetric_Responses) {}
+  /* Returns one page of task definitions. */
+  rpc ListTasks (sila2.com.a3analytics.lab.laboperations.v1.ListTasks_Parameters) returns (sila2.com.a3analytics.lab.laboperations.v1.ListTasks_Responses) {}
+  /* Returns one task run. */
+  rpc GetTaskStatus (sila2.com.a3analytics.lab.laboperations.v1.GetTaskStatus_Parameters) returns (sila2.com.a3analytics.lab.laboperations.v1.GetTaskStatus_Responses) {}
+  /* Starts a task and reports execution status until it is terminal. */
+  rpc StartTask (sila2.com.a3analytics.lab.laboperations.v1.StartTask_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of StartTask */
+  rpc StartTask_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of StartTask */
+  rpc StartTask_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.com.a3analytics.lab.laboperations.v1.StartTask_Responses) {}
+}
+
+/* Cursor and page size. */
+message DataType_PageRequest {
+  message PageRequest_Struct {
+    sila2.org.silastandard.Boolean HasCursor = 1;  /* True when Cursor is set. */
+    sila2.org.silastandard.String Cursor = 2;  /* Opaque numeric cursor. Empty when HasCursor is false. */
+    sila2.org.silastandard.Integer Limit = 3;  /* Page size from 1 to 1000. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_PageRequest.PageRequest_Struct PageRequest = 1;  /* Cursor and page size. */
+}
+
+/* Half-open UTC interval. */
+message DataType_TimeRange {
+  message TimeRange_Struct {
+    sila2.org.silastandard.Timestamp Start = 1;  /* Inclusive start. */
+    sila2.org.silastandard.Timestamp End = 2;  /* Exclusive end. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TimeRange.TimeRange_Struct TimeRange = 1;  /* Half-open UTC interval. */
+}
+
+/* A log source the equipment exposes. */
+message DataType_LogSource {
+  message LogSource_Struct {
+    sila2.org.silastandard.String Id = 1;  /* Source identifier. */
+    sila2.org.silastandard.String Name = 2;  /* Human-readable name. */
+    sila2.org.silastandard.String Description = 3;  /* What the source contains. */
+    sila2.org.silastandard.Boolean HasAssetId = 4;  /* True when AssetId is set. */
+    sila2.org.silastandard.String AssetId = 5;  /* Optional asset identifier. */
+    sila2.org.silastandard.Boolean HasSemanticId = 6;  /* True when SemanticId is set. */
+    sila2.org.silastandard.String SemanticId = 7;  /* Optional semantic identifier. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_LogSource.LogSource_Struct LogSource = 1;  /* A log source the equipment exposes. */
+}
+
+/* One structured log record. */
+message DataType_LogRecord {
+  message LogRecord_Struct {
+    sila2.org.silastandard.String SourceId = 1;  /* Source that emitted the record. */
+    sila2.org.silastandard.Timestamp Timestamp = 2;  /* When the record was emitted. */
+    sila2.org.silastandard.String Level = 3;  /* Severity. */
+    sila2.org.silastandard.String Message = 4;  /* Rendered message. */
+    sila2.org.silastandard.String Attributes = 5;  /* JSON object of structured attributes. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_LogRecord.LogRecord_Struct LogRecord = 1;  /* One structured log record. */
+}
+
+/* A metric the equipment exposes. */
+message DataType_MetricDescriptor {
+  message MetricDescriptor_Struct {
+    sila2.org.silastandard.String Id = 1;  /* Metric identifier. */
+    sila2.org.silastandard.String Name = 2;  /* Human-readable name. */
+    sila2.org.silastandard.String Description = 3;  /* What the metric measures. */
+    sila2.org.silastandard.String Unit = 4;  /* Unit of the sample value. */
+    sila2.org.silastandard.Boolean HasAssetId = 5;  /* True when AssetId is set. */
+    sila2.org.silastandard.String AssetId = 6;  /* Optional asset identifier. */
+    sila2.org.silastandard.Boolean HasSemanticId = 7;  /* True when SemanticId is set. */
+    sila2.org.silastandard.String SemanticId = 8;  /* Optional semantic identifier. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_MetricDescriptor.MetricDescriptor_Struct MetricDescriptor = 1;  /* A metric the equipment exposes. */
+}
+
+/* One finite sample. */
+message DataType_MetricPoint {
+  message MetricPoint_Struct {
+    sila2.org.silastandard.Timestamp Timestamp = 1;  /* When the sample was taken. */
+    sila2.org.silastandard.Real Value = 2;  /* Finite numeric value. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_MetricPoint.MetricPoint_Struct MetricPoint = 1;  /* One finite sample. */
+}
+
+/* A task the equipment can start. */
+message DataType_TaskDefinition {
+  message TaskDefinition_Struct {
+    sila2.org.silastandard.String Id = 1;  /* Task identifier. */
+    sila2.org.silastandard.String Name = 2;  /* Human-readable name. */
+    sila2.org.silastandard.String Description = 3;  /* What the task does. */
+    sila2.org.silastandard.Boolean HasAssetId = 4;  /* True when AssetId is set. */
+    sila2.org.silastandard.String AssetId = 5;  /* Optional asset identifier. */
+    sila2.org.silastandard.Boolean HasSemanticId = 6;  /* True when SemanticId is set. */
+    sila2.org.silastandard.String SemanticId = 7;  /* Optional semantic identifier. */
+    sila2.org.silastandard.Boolean HasInputSchema = 8;  /* True when InputSchema is set. */
+    sila2.org.silastandard.String InputSchema = 9;  /* JSON Schema for the task input. */
+    sila2.org.silastandard.Boolean HasOutputSchema = 10;  /* True when OutputSchema is set. */
+    sila2.org.silastandard.String OutputSchema = 11;  /* JSON Schema for the task result. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TaskDefinition.TaskDefinition_Struct TaskDefinition = 1;  /* A task the equipment can start. */
+}
+
+/* A started task. */
+message DataType_TaskRun {
+  message TaskRun_Struct {
+    sila2.org.silastandard.String Id = 1;  /* Run identifier. */
+    sila2.org.silastandard.String TaskId = 2;  /* Definition that was started. */
+    sila2.org.silastandard.String State = 3;  /* Run state. */
+    sila2.org.silastandard.String Input = 4;  /* JSON object supplied at start. */
+    sila2.org.silastandard.Boolean HasMessage = 5;  /* True when Message is set. */
+    sila2.org.silastandard.String Message = 6;  /* Optional status detail. */
+  }
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TaskRun.TaskRun_Struct TaskRun = 1;  /* A started task. */
+}
+
+/* Parameters for ListLogSources */
+message ListLogSources_Parameters {
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_PageRequest Page = 1;  /* Page bounds. */
+}
+
+/* Responses of ListLogSources */
+message ListLogSources_Responses {
+  repeated sila2.com.a3analytics.lab.laboperations.v1.DataType_LogSource Sources = 1;  /* Log sources on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. Empty when HasNextCursor is false. */
+}
+
+/* Parameters for QueryLogs */
+message QueryLogs_Parameters {
+  sila2.org.silastandard.String SourceId = 1;  /* Log source identifier. */
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TimeRange Range = 2;  /* Half-open UTC interval. */
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_PageRequest Page = 3;  /* Page bounds. */
+}
+
+/* Responses of QueryLogs */
+message QueryLogs_Responses {
+  repeated sila2.com.a3analytics.lab.laboperations.v1.DataType_LogRecord Records = 1;  /* Log records on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. */
+}
+
+/* Parameters for ListMetrics */
+message ListMetrics_Parameters {
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_PageRequest Page = 1;  /* Page bounds. */
+}
+
+/* Responses of ListMetrics */
+message ListMetrics_Responses {
+  repeated sila2.com.a3analytics.lab.laboperations.v1.DataType_MetricDescriptor Metrics = 1;  /* Metric descriptors on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. */
+}
+
+/* Parameters for QueryMetric */
+message QueryMetric_Parameters {
+  sila2.org.silastandard.String MetricId = 1;  /* Metric identifier. */
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TimeRange Range = 2;  /* Half-open UTC interval. */
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_PageRequest Page = 3;  /* Page bounds. */
+}
+
+/* Responses of QueryMetric */
+message QueryMetric_Responses {
+  repeated sila2.com.a3analytics.lab.laboperations.v1.DataType_MetricPoint Points = 1;  /* Samples on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. */
+}
+
+/* Parameters for ListTasks */
+message ListTasks_Parameters {
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_PageRequest Page = 1;  /* Page bounds. */
+}
+
+/* Responses of ListTasks */
+message ListTasks_Responses {
+  repeated sila2.com.a3analytics.lab.laboperations.v1.DataType_TaskDefinition Tasks = 1;  /* Task definitions on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. */
+}
+
+/* Parameters for GetTaskStatus */
+message GetTaskStatus_Parameters {
+  sila2.org.silastandard.String RunId = 1;  /* Run identifier assigned at start. */
+}
+
+/* Responses of GetTaskStatus */
+message GetTaskStatus_Responses {
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TaskRun Run = 1;  /* Current task run. */
+}
+
+/* Parameters for StartTask */
+message StartTask_Parameters {
+  sila2.org.silastandard.String TaskId = 1;  /* Task definition identifier. */
+  sila2.org.silastandard.String Input = 2;  /* JSON object passed to the task. */
+}
+
+/* Responses of StartTask */
+message StartTask_Responses {
+  sila2.com.a3analytics.lab.laboperations.v1.DataType_TaskRun Run = 1;  /* Terminal task run. */
+}

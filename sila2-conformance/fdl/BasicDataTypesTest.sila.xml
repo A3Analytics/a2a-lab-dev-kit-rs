@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>BasicDataTypesTest</Identifier>
+  <DisplayName>Basic Data Types Test</DisplayName>
+  <Description>
+    Provides commands and properties to set or respectively get all SiLA Basic Data Types via command parameters or property responses respectively.
+  </Description>
+
+  <!-- Data type String -->
+  <Command>
+    <Identifier>EchoStringValue</Identifier>
+    <DisplayName>Echo String Value</DisplayName>
+    <Description>Receives a String value and returns the String value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>StringValue</Identifier>
+      <DisplayName>String Value</DisplayName>
+      <Description>The String value to be returned.</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The String value that has been received.</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>StringValue</Identifier>
+    <DisplayName>String Value</DisplayName>
+    <Description>Returns the String value 'SiLA2_Test_String_Value'.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>String</Basic>
+    </DataType>
+  </Property>
+
+  <!-- Data type Integer -->
+  <Command>
+    <Identifier>EchoIntegerValue</Identifier>
+    <DisplayName>Echo Integer Value</DisplayName>
+    <Description>Receives an Integer value and returns the Integer value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>IntegerValue</Identifier>
+      <DisplayName>Integer Value</DisplayName>
+      <Description>The Integer value to be returned.</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Integer value that has been received.</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>IntegerValue</Identifier>
+    <DisplayName>Integer Value</DisplayName>
+    <Description>Returns the Integer value 5124.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Integer</Basic>
+    </DataType>
+  </Property>
+
+  <!-- Data type Real -->
+  <Command>
+    <Identifier>EchoRealValue</Identifier>
+    <DisplayName>Echo Real Value</DisplayName>
+    <Description>Receives a Real value and returns the Real value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>RealValue</Identifier>
+      <DisplayName>Real Value</DisplayName>
+      <Description>The Real value to be returned.</Description>
+      <DataType>
+        <Basic>Real</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Real value that has been received.</Description>
+      <DataType>
+        <Basic>Real</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>RealValue</Identifier>
+    <DisplayName>Real Value</DisplayName>
+    <Description>Returns the Real value 3.1415926.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Real</Basic>
+    </DataType>
+  </Property>
+
+  <!-- Data type Boolean -->
+  <Command>
+    <Identifier>EchoBooleanValue</Identifier>
+    <DisplayName>Echo Boolean Value</DisplayName>
+    <Description>Receives a Boolean value and returns the Boolean value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>BooleanValue</Identifier>
+      <DisplayName>Boolean Value</DisplayName>
+      <Description>The Boolean value to be returned.</Description>
+      <DataType>
+        <Basic>Boolean</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Boolean value that has been received.</Description>
+      <DataType>
+        <Basic>Boolean</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>BooleanValue</Identifier>
+    <DisplayName>Boolean Value</DisplayName>
+    <Description>Returns the Boolean value true.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Boolean</Basic>
+    </DataType>
+  </Property>
+
+  <!-- Data type Date -->
+  <Command>
+    <Identifier>EchoDateValue</Identifier>
+    <DisplayName>Echo Date Value</DisplayName>
+    <Description>Receives a Date value and returns the Date value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>DateValue</Identifier>
+      <DisplayName>Date Value</DisplayName>
+      <Description>The Date value to be returned.</Description>
+      <DataType>
+        <Basic>Date</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Date value that has been received.</Description>
+      <DataType>
+        <Basic>Date</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>DateValue</Identifier>
+    <DisplayName>Date Value</DisplayName>
+    <Description>Returns the Date value 05.08.2022 respective 08/05/2018, timezone +2.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Date</Basic>
+    </DataType>
+  </Property>
+
+  <!-- Data type Time -->
+  <Command>
+    <Identifier>EchoTimeValue</Identifier>
+    <DisplayName>Echo Time Value</DisplayName>
+    <Description>Receives a Time value and returns the Time value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>TimeValue</Identifier>
+      <DisplayName>Time Value</DisplayName>
+      <Description>The Time value to be returned.</Description>
+      <DataType>
+        <Basic>Time</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Time value that has been received.</Description>
+      <DataType>
+        <Basic>Time</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>TimeValue</Identifier>
+    <DisplayName>Time Value</DisplayName>
+    <Description>Returns the Time value 12:34:56.789, timezone +2.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Time</Basic>
+    </DataType>
+  </Property>
+
+  <!-- Data type TimeStamp -->
+  <Command>
+    <Identifier>EchoTimestampValue</Identifier>
+    <DisplayName>Echo Timestamp Value</DisplayName>
+    <Description>Receives a Timestamp value and returns a message containing the Timestamp value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>TimestampValue</Identifier>
+      <DisplayName>Timestamp Value</DisplayName>
+      <Description>The Timestamp value to be returned.</Description>
+      <DataType>
+        <Basic>Timestamp</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Timestamp value that has been received.</Description>
+      <DataType>
+        <Basic>Timestamp</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>TimestampValue</Identifier>
+    <DisplayName>Timestamp Value</DisplayName>
+    <Description>Returns the Timestamp value 2022-08-05 12:34:56.789, timezone +2.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Timestamp</Basic>
+    </DataType>
+  </Property>
+</Feature>

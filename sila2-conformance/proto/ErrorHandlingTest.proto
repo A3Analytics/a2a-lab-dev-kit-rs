@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.errorhandlingtest.v1;
+
+/* Tests that errors are propagated correctly */
+service ErrorHandlingTest {
+  /* Raises the "Test Error" with the error message 'SiLA2_test_error_message' */
+  rpc RaiseDefinedExecutionError (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseDefinedExecutionError_Parameters) returns (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseDefinedExecutionError_Responses) {}
+  /* Raises the "Test Error" with the error message 'SiLA2_test_error_message' */
+  rpc RaiseDefinedExecutionErrorObservably (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseDefinedExecutionErrorObservably_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of RaiseDefinedExecutionErrorObservably */
+  rpc RaiseDefinedExecutionErrorObservably_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of RaiseDefinedExecutionErrorObservably */
+  rpc RaiseDefinedExecutionErrorObservably_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseDefinedExecutionErrorObservably_Responses) {}
+  /* Raises an Undefined Execution Error with the error message 'SiLA2_test_error_message' */
+  rpc RaiseUndefinedExecutionError (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseUndefinedExecutionError_Parameters) returns (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseUndefinedExecutionError_Responses) {}
+  /* Raises an Undefined Execution Error with the error message 'SiLA2_test_error_message' */
+  rpc RaiseUndefinedExecutionErrorObservably (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseUndefinedExecutionErrorObservably_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of RaiseUndefinedExecutionErrorObservably */
+  rpc RaiseUndefinedExecutionErrorObservably_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of RaiseUndefinedExecutionErrorObservably */
+  rpc RaiseUndefinedExecutionErrorObservably_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.errorhandlingtest.v1.RaiseUndefinedExecutionErrorObservably_Responses) {}
+  /* A property that raises a "Test Error" on get with the error message 'SiLA2_test_error_message' */
+  rpc Get_RaiseDefinedExecutionErrorOnGet (sila2.org.silastandard.test.errorhandlingtest.v1.Get_RaiseDefinedExecutionErrorOnGet_Parameters) returns (sila2.org.silastandard.test.errorhandlingtest.v1.Get_RaiseDefinedExecutionErrorOnGet_Responses) {}
+  /* A property that raises a "Test Error" on subscribe with the error message 'SiLA2_test_error_message' */
+  rpc Subscribe_RaiseDefinedExecutionErrorOnSubscribe (sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseDefinedExecutionErrorOnSubscribe_Parameters) returns (stream sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseDefinedExecutionErrorOnSubscribe_Responses) {}
+  /* A property that raises an Undefined Execution Error on get with the error message 'SiLA2_test_error_message' */
+  rpc Get_RaiseUndefinedExecutionErrorOnGet (sila2.org.silastandard.test.errorhandlingtest.v1.Get_RaiseUndefinedExecutionErrorOnGet_Parameters) returns (sila2.org.silastandard.test.errorhandlingtest.v1.Get_RaiseUndefinedExecutionErrorOnGet_Responses) {}
+  /* A property that raises an Undefined Execution Error on subscribe with the error message 'SiLA2_test_error_message' */
+  rpc Subscribe_RaiseUndefinedExecutionErrorOnSubscribe (sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseUndefinedExecutionErrorOnSubscribe_Parameters) returns (stream sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseUndefinedExecutionErrorOnSubscribe_Responses) {}
+  /* A property that first sends the integer value 1 and then raises a Defined Execution Error with the error message 'SiLA2_test_error_message' */
+  rpc Subscribe_RaiseDefinedExecutionErrorAfterValueWasSent (sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseDefinedExecutionErrorAfterValueWasSent_Parameters) returns (stream sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseDefinedExecutionErrorAfterValueWasSent_Responses) {}
+  /* A property that first sends the integer value 1 and then raises a Undefined Execution Error with the error message 'SiLA2_test_error_message' */
+  rpc Subscribe_RaiseUndefinedExecutionErrorAfterValueWasSent (sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseUndefinedExecutionErrorAfterValueWasSent_Parameters) returns (stream sila2.org.silastandard.test.errorhandlingtest.v1.Subscribe_RaiseUndefinedExecutionErrorAfterValueWasSent_Responses) {}
+}
+
+/* Parameters for RaiseDefinedExecutionError */
+message RaiseDefinedExecutionError_Parameters {
+}
+
+/* Responses of RaiseDefinedExecutionError */
+message RaiseDefinedExecutionError_Responses {
+}
+
+/* Parameters for RaiseDefinedExecutionErrorObservably */
+message RaiseDefinedExecutionErrorObservably_Parameters {
+}
+
+/* Responses of RaiseDefinedExecutionErrorObservably */
+message RaiseDefinedExecutionErrorObservably_Responses {
+}
+
+/* Parameters for RaiseUndefinedExecutionError */
+message RaiseUndefinedExecutionError_Parameters {
+}
+
+/* Responses of RaiseUndefinedExecutionError */
+message RaiseUndefinedExecutionError_Responses {
+}
+
+/* Parameters for RaiseUndefinedExecutionErrorObservably */
+message RaiseUndefinedExecutionErrorObservably_Parameters {
+}
+
+/* Responses of RaiseUndefinedExecutionErrorObservably */
+message RaiseUndefinedExecutionErrorObservably_Responses {
+}
+
+/* Parameters for RaiseDefinedExecutionErrorOnGet */
+message Get_RaiseDefinedExecutionErrorOnGet_Parameters {
+}
+
+/* Responses of RaiseDefinedExecutionErrorOnGet */
+message Get_RaiseDefinedExecutionErrorOnGet_Responses {
+  sila2.org.silastandard.Integer RaiseDefinedExecutionErrorOnGet = 1;  /* A property that raises a "Test Error" on get with the error message 'SiLA2_test_error_message' */
+}
+
+/* Parameters for RaiseDefinedExecutionErrorOnSubscribe */
+message Subscribe_RaiseDefinedExecutionErrorOnSubscribe_Parameters {
+}
+
+/* Responses of RaiseDefinedExecutionErrorOnSubscribe */
+message Subscribe_RaiseDefinedExecutionErrorOnSubscribe_Responses {
+  sila2.org.silastandard.Integer RaiseDefinedExecutionErrorOnSubscribe = 1;  /* A property that raises a "Test Error" on subscribe with the error message 'SiLA2_test_error_message' */
+}
+
+/* Parameters for RaiseUndefinedExecutionErrorOnGet */
+message Get_RaiseUndefinedExecutionErrorOnGet_Parameters {
+}
+
+/* Responses of RaiseUndefinedExecutionErrorOnGet */
+message Get_RaiseUndefinedExecutionErrorOnGet_Responses {
+  sila2.org.silastandard.Integer RaiseUndefinedExecutionErrorOnGet = 1;  /* A property that raises an Undefined Execution Error on get with the error message 'SiLA2_test_error_message' */
+}
+
+/* Parameters for RaiseUndefinedExecutionErrorOnSubscribe */
+message Subscribe_RaiseUndefinedExecutionErrorOnSubscribe_Parameters {
+}
+
+/* Responses of RaiseUndefinedExecutionErrorOnSubscribe */
+message Subscribe_RaiseUndefinedExecutionErrorOnSubscribe_Responses {
+  sila2.org.silastandard.Integer RaiseUndefinedExecutionErrorOnSubscribe = 1;  /* A property that raises an Undefined Execution Error on subscribe with the error message 'SiLA2_test_error_message' */
+}
+
+/* Parameters for RaiseDefinedExecutionErrorAfterValueWasSent */
+message Subscribe_RaiseDefinedExecutionErrorAfterValueWasSent_Parameters {
+}
+
+/* Responses of RaiseDefinedExecutionErrorAfterValueWasSent */
+message Subscribe_RaiseDefinedExecutionErrorAfterValueWasSent_Responses {
+  sila2.org.silastandard.Integer RaiseDefinedExecutionErrorAfterValueWasSent = 1;  /* A property that first sends the integer value 1 and then raises a Defined Execution Error with the error message 'SiLA2_test_error_message' */
+}
+
+/* Parameters for RaiseUndefinedExecutionErrorAfterValueWasSent */
+message Subscribe_RaiseUndefinedExecutionErrorAfterValueWasSent_Parameters {
+}
+
+/* Responses of RaiseUndefinedExecutionErrorAfterValueWasSent */
+message Subscribe_RaiseUndefinedExecutionErrorAfterValueWasSent_Responses {
+  sila2.org.silastandard.Integer RaiseUndefinedExecutionErrorAfterValueWasSent = 1;  /* A property that first sends the integer value 1 and then raises a Undefined Execution Error with the error message 'SiLA2_test_error_message' */
+}

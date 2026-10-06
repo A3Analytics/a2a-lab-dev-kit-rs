@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>MetadataConsumerTest</Identifier>
+  <DisplayName>Metadata Consumer Test</DisplayName>
+  <Description>This feature consumes SiLA Client Metadata from the "Metadata Provider" feature.</Description>
+  <Command>
+    <Identifier>EchoStringMetadata</Identifier>
+    <DisplayName>Echo String Metadata</DisplayName>
+    <Description>Expects the "String Metadata" metadata from the "Metadata Provider" feature and responds with the metadata value.</Description>
+    <Observable>No</Observable>
+    <Response>
+      <Identifier>ReceivedStringMetadata</Identifier>
+      <DisplayName>Received String Metadata</DisplayName>
+      <Description>The received string metadata</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Command>
+    <Identifier>UnpackMetadata</Identifier>
+    <DisplayName>Unpack Metadata</DisplayName>
+    <Description>Expects the "String Metadata" and "Two Integers Metadata" metadata from the "Metadata Provider" feature and responds with all three data items.</Description>
+    <Observable>No</Observable>
+    <Response>
+      <Identifier>ReceivedString</Identifier>
+      <DisplayName>Received String</DisplayName>
+      <Description>The received string (via "String Metadata")</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+    <Response>
+      <Identifier>FirstReceivedInteger</Identifier>
+      <DisplayName>First Received Integer</DisplayName>
+      <Description>The first element of the received integer structure (via "Two Integers Metadata")</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Response>
+    <Response>
+      <Identifier>SecondReceivedInteger</Identifier>
+      <DisplayName>Second Received Integer</DisplayName>
+      <Description>The second element of the received integer structure (via "Two Integers Metadata")</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>ReceivedStringMetadata</Identifier>
+    <DisplayName>Received String Metadata</DisplayName>
+    <Description>Expects the "String Metadata" metadata from the "Metadata Provider" feature and returns the metadata value.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>String</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>ReceivedStringMetadataAsCharacters</Identifier>
+    <DisplayName>Received String Metadata As Characters</DisplayName>
+    <Description>Expects the "String Metadata" metadata from the "Metadata Provider" feature and returns all characters of its string value as separate responses.</Description>
+    <Observable>Yes</Observable>
+    <DataType>
+      <Constrained>
+        <DataType>
+          <Basic>String</Basic>
+        </DataType>
+        <Constraints>
+          <Length>1</Length>
+        </Constraints>
+      </Constrained>
+    </DataType>
+  </Property>
+</Feature>

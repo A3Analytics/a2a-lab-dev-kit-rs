@@ -1,3 +1,7 @@
+[workspace]
+resolver = "3"
+members = [".", "sila2-conformance"]
+
 [package]
 name = "a2a-lab-dev-kit"
 version = "0.1.0"
@@ -20,8 +24,10 @@ opcua = ["dep:async-opcua-client", "dep:async-opcua-types"]
 sila2 = [
     "dep:prost",
     "dep:tonic-prost",
-    "dep:mdns-sd",
+    "dep:socket2",
     "dep:rcgen",
+    "dep:rustls",
+    "dep:uuid",
     "dep:tonic-prost-build",
     "dep:protoc-bin-vendored",
 ]
@@ -43,9 +49,11 @@ axum = "0.8.9"
 futures-util = "0.3.34"
 http-body = "1"
 jiff = { version = "0.2.37", features = ["serde"] }
-mdns-sd = { version = "0.21.4", optional = true }
+socket2 = { version = "0.6.5", optional = true }
 prost = { version = "0.14.4", optional = true }
 rcgen = { version = "0.14.10", optional = true }
+rustls = { version = "0.23.45", optional = true, default-features = false, features = ["ring"] }
+uuid = { version = "1.26.1", optional = true, features = ["v4"] }
 reqwest = { version = "0.13.5", features = ["json", "stream"] }
 rmcp = { version = "3.5.0", features = [
     "server",

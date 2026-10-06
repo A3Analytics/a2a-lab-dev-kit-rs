@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>StructureDataTypeTest</Identifier>
+  <DisplayName>Structure Data Type Test</DisplayName>
+  <Description>
+    Provides commands and properties to set or respectively get SiLA Structure Data Type values via command parameters or property responses respectively.
+  </Description>
+
+  <!-- Simple Structure type -->
+  <Command>
+    <Identifier>EchoStructureValue</Identifier>
+    <DisplayName>Echo Structure Value</DisplayName>
+    <Description>Receives a structure value and returns the structure that has been received (binary value is expected to be an embedded value, any typer value is expected to be a Basic type).</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>StructureValue</Identifier>
+      <DisplayName>Structure Value</DisplayName>
+      <Description>The Structure value to be returned.</Description>
+      <DataType>
+        <DataTypeIdentifier>TestStructure</DataTypeIdentifier>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValues</Identifier>
+      <DisplayName>Received Values</DisplayName>
+      <Description>The structure that has been received.</Description>
+      <DataType>
+        <DataTypeIdentifier>TestStructure</DataTypeIdentifier>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>StructureValue</Identifier>
+    <DisplayName>Structure Value</DisplayName>
+    <Description>
+      Returns a structure with the following elements values:
+      - String value = 'SiLA2_Test_String_Value'
+      - Integer value = 5124
+      - Real value = 3.1415926
+      - Boolean value = true
+      - Binary value = embedded string 'SiLA2_Binary_String_Value'
+      - Date value = 05.08.2022 respective 08/05/2022
+      - Time value = 12:34:56.789
+      - Timestamp value = 2022-08-05 12:34:56.789
+      - Any type value = string 'SiLA2_Any_Type_String_Value'.
+    </Description>
+    <Observable>No</Observable>
+    <DataType>
+      <DataTypeIdentifier>TestStructure</DataTypeIdentifier>
+    </DataType>
+  </Property>
+
+  <!-- Deep Structure type -->
+  <Command>
+    <Identifier>EchoDeepStructureValue</Identifier>
+    <DisplayName>Echo Deep Structure Value</DisplayName>
+    <Description>Receives a multilevel structure value and returns the structure that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>DeepStructureValue</Identifier>
+      <DisplayName>DeepStructure Value</DisplayName>
+      <Description>The deep Structure value to be set.</Description>
+      <DataType>
+        <DataTypeIdentifier>DeepStructure</DataTypeIdentifier>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValues</Identifier>
+      <DisplayName>Received Values</DisplayName>
+      <Description>The structure that has been received.</Description>
+      <DataType>
+        <DataTypeIdentifier>DeepStructure</DataTypeIdentifier>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>DeepStructureValue</Identifier>
+    <DisplayName>Deep Structure Value</DisplayName>
+    <Description>
+      Returns a multilevel structure with the following values:
+      - string value = 'Outer_Test_String'
+      - integer value = 1111
+      - middle structure value =
+        - string value = 'Middle_Test_String'
+        - integer value = 2222
+        - inner structure value =
+          - string value = 'Inner_Test_String'
+          - integer value = 3333.
+    </Description>
+    <Observable>No</Observable>
+    <DataType>
+      <DataTypeIdentifier>DeepStructure</DataTypeIdentifier>
+    </DataType>
+  </Property>
+
+  <!-- Data type definitions -->
+  <DataTypeDefinition>
+    <Identifier>TestStructure</Identifier>
+    <DisplayName>Test Structure</DisplayName>
+    <Description>An example Structure data type containing all SiLA basic types.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>StringTypeValue</Identifier>
+          <DisplayName>String Type Value</DisplayName>
+          <Description>A value of SiLA data type String.</Description>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>IntegerTypeValue</Identifier>
+          <DisplayName>Integer Type Value</DisplayName>
+          <Description>A value of SiLA data type Integer.</Description>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>RealTypeValue</Identifier>
+          <DisplayName>Real Type Value</DisplayName>
+          <Description>A value of SiLA data type Real.</Description>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>BooleanTypeValue</Identifier>
+          <DisplayName>Boolean Type Value</DisplayName>
+          <Description>A value of SiLA data type Boolean.</Description>
+          <DataType>
+            <Basic>Boolean</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>BinaryTypeValue</Identifier>
+          <DisplayName>Binary Type Value</DisplayName>
+          <Description>A value of SiLA data type Binary.</Description>
+          <DataType>
+            <Basic>Binary</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>DateTypeValue</Identifier>
+          <DisplayName>Date Type Value</DisplayName>
+          <Description>A value of SiLA data type Date.</Description>
+          <DataType>
+            <Basic>Date</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>TimeTypeValue</Identifier>
+          <DisplayName>Time Type Value</DisplayName>
+          <Description>A value of SiLA data type Time.</Description>
+          <DataType>
+            <Basic>Time</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>TimestampTypeValue</Identifier>
+          <DisplayName>Timestamp Type Value</DisplayName>
+          <Description>A value of SiLA data type Timestamp.</Description>
+          <DataType>
+            <Basic>Timestamp</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>AnyTypeValue</Identifier>
+          <DisplayName>Any Type Value</DisplayName>
+          <Description>A value of SiLA data type Any.</Description>
+          <DataType>
+            <Basic>Any</Basic>
+          </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+  <DataTypeDefinition>
+    <Identifier>DeepStructure</Identifier>
+    <DisplayName>Deep Structure</DisplayName>
+    <Description>An example Structure data type that contains other structures within.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>OuterStringTypeValue</Identifier>
+          <DisplayName>Outer String Type Value</DisplayName>
+          <Description>A value of SiLA data type String contained in the topmost structure.</Description>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>OuterIntegerTypeValue</Identifier>
+          <DisplayName>Outer Integer Type Value</DisplayName>
+          <Description>A value of SiLA data type Integer contained in the topmost structure.</Description>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>MiddleStructure</Identifier>
+          <DisplayName>Middle Structure</DisplayName>
+          <Description>Another structure type that is part of the outer structure.</Description>
+          <DataType>
+            <Structure>
+              <Element>
+                <Identifier>MiddleStringTypeValue</Identifier>
+                <DisplayName>Middle String Type Value</DisplayName>
+                <Description>A value of SiLA data type String contained in the middle structure.</Description>
+                <DataType>
+                  <Basic>String</Basic>
+                </DataType>
+              </Element>
+              <Element>
+                <Identifier>MiddleIntegerTypeValue</Identifier>
+                <DisplayName>Middle Integer Type Value</DisplayName>
+                <Description>A value of SiLA data type Integer contained in the middle structure.</Description>
+                <DataType>
+                  <Basic>Integer</Basic>
+                </DataType>
+              </Element>
+              <Element>
+                <Identifier>InnerStructure</Identifier>
+                <DisplayName>Inner Structure</DisplayName>
+                <Description>A structure type that is part of the middle structure.</Description>
+                <DataType>
+                  <Structure>
+                    <Element>
+                      <Identifier>InnerStringTypeValue</Identifier>
+                      <DisplayName>Inner String Type Value</DisplayName>
+                      <Description>A value of SiLA data type String contained in the innermost structure.</Description>
+                      <DataType>
+                        <Basic>String</Basic>
+                      </DataType>
+                    </Element>
+                    <Element>
+                      <Identifier>InnerIntegerTypeValue</Identifier>
+                      <DisplayName>Inner Integer Type Value</DisplayName>
+                      <Description>A value of SiLA data type Integer contained in the innermost structure.</Description>
+                      <DataType>
+                        <Basic>Integer</Basic>
+                      </DataType>
+                    </Element>
+                  </Structure>
+                </DataType>
+              </Element>
+            </Structure>
+          </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+</Feature>

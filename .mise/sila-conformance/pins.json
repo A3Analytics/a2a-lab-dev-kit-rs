@@ -1,0 +1,19 @@
+{
+  "specification": "SiLA 2 Part A and Part B v1.1",
+  "sila_base": {
+    "repository": "https://gitlab.com/SiLA2/sila_base",
+    "tag": "v1.2",
+    "commit": "37c400faa5036af2da6244529283d3017f34d4cd"
+  },
+  "sila_csharp": {
+    "repository": "https://gitlab.com/SiLA2/sila_csharp",
+    "tag": "v.10.3.2",
+    "commit": "2625cce6541c501cb951f2eea95d490a2efd12c0"
+  },
+  "communication_tester": {
+    "repository": "https://gitlab.com/SiLA2/sila_interoperability",
+    "distribution": "sila2-interop-communication-tester",
+    "version": "0.10.3",
+    "commit": "ebaa33759fec74b39b413e86361922b8159b1833"
+  }
+}

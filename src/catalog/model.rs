@@ -14,8 +14,6 @@ use crate::page::PageRequest;
 pub enum ProtocolKind {
     /// OPC UA session.
     OpcUa,
-    /// Generated SiLA 2 client.
-    Sila2,
 }
 
 /// Role a binding plays in the lab API.
@@ -71,19 +69,6 @@ pub enum Endpoint {
         /// Optional browse path.
         browse_path: String,
     },
-    /// SiLA 2 feature member served by a generated client.
-    Sila2 {
-        /// Server host.
-        host: String,
-        /// gRPC port.
-        port: u16,
-        /// Fully qualified feature identifier.
-        feature: String,
-        /// Command or property name.
-        member: String,
-        /// Feature major version.
-        version: String,
-    },
 }
 
 impl Endpoint {
@@ -92,7 +77,6 @@ impl Endpoint {
     pub const fn protocol(&self) -> ProtocolKind {
         match self {
             Self::OpcUa { .. } => ProtocolKind::OpcUa,
-            Self::Sila2 { .. } => ProtocolKind::Sila2,
         }
     }
 
@@ -116,21 +100,6 @@ impl Endpoint {
                         "unsecured OPC UA sessions are rejected",
                     ));
                 }
-            }
-            Self::Sila2 {
-                host,
-                port,
-                feature,
-                member,
-                version,
-            } => {
-                required("sila_host", host)?;
-                if *port == 0 {
-                    return Err(A2aLabError::invalid("sila_port", "must be non-zero"));
-                }
-                required("sila_feature", feature)?;
-                required("sila_member", member)?;
-                required("sila_version", version)?;
             }
         }
         Ok(())

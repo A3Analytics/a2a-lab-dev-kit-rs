@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.binarytransfertest.v1;
+
+/* Provides commands and properties to set or respectively get the SiLA Basic Data Type Binary via command parameters or property responses respectively. */
+service BinaryTransferTest {
+  /* Receives a Binary value (transmitted either directly or via binary transfer) and returns the received value. */
+  rpc EchoBinaryValue (sila2.org.silastandard.test.binarytransfertest.v1.EchoBinaryValue_Parameters) returns (sila2.org.silastandard.test.binarytransfertest.v1.EchoBinaryValue_Responses) {}
+  /* Receives a list of binaries, echoes them individually as intermediate responses with a delay of 1 second, and then returns them as a single joint binary */
+  rpc EchoBinariesObservably (sila2.org.silastandard.test.binarytransfertest.v1.EchoBinariesObservably_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of EchoBinariesObservably */
+  rpc EchoBinariesObservably_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve intermediate responses of EchoBinariesObservably */
+  rpc EchoBinariesObservably_Intermediate (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.test.binarytransfertest.v1.EchoBinariesObservably_IntermediateResponses) {}
+  /* Retrieve result of EchoBinariesObservably */
+  rpc EchoBinariesObservably_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.binarytransfertest.v1.EchoBinariesObservably_Responses) {}
+  /* Receives a Binary and requires String Metadata, returns both */
+  rpc EchoBinaryAndMetadataString (sila2.org.silastandard.test.binarytransfertest.v1.EchoBinaryAndMetadataString_Parameters) returns (sila2.org.silastandard.test.binarytransfertest.v1.EchoBinaryAndMetadataString_Responses) {}
+  /* Returns the UTF-8 encoded string 'SiLA2_Test_String_Value' directly transmitted as Binary value. */
+  rpc Get_BinaryValueDirectly (sila2.org.silastandard.test.binarytransfertest.v1.Get_BinaryValueDirectly_Parameters) returns (sila2.org.silastandard.test.binarytransfertest.v1.Get_BinaryValueDirectly_Responses) {}
+  /* 
+      Returns the Binary Transfer UUID to be used to download the binary data which is the UTF-8 encoded string
+      'A_slightly_longer_SiLA2_Test_String_Value_used_to_demonstrate_the_binary_download', repeated 100,000 times.
+     */
+  rpc Get_BinaryValueDownload (sila2.org.silastandard.test.binarytransfertest.v1.Get_BinaryValueDownload_Parameters) returns (sila2.org.silastandard.test.binarytransfertest.v1.Get_BinaryValueDownload_Responses) {}
+  /* Get fully qualified identifiers of all features, commands and properties affected by String */
+  rpc Get_FCPAffectedByMetadata_String (sila2.org.silastandard.test.binarytransfertest.v1.Get_FCPAffectedByMetadata_String_Parameters) returns (sila2.org.silastandard.test.binarytransfertest.v1.Get_FCPAffectedByMetadata_String_Responses) {}
+}
+
+/* Parameters for EchoBinaryValue */
+message EchoBinaryValue_Parameters {
+  sila2.org.silastandard.Binary BinaryValue = 1;  /* The Binary value to be returned. */
+}
+
+/* Responses of EchoBinaryValue */
+message EchoBinaryValue_Responses {
+  sila2.org.silastandard.Binary ReceivedValue = 1;  /* The received Binary value transmitted in the same way it has been received. */
+}
+
+/* Parameters for EchoBinariesObservably */
+message EchoBinariesObservably_Parameters {
+  repeated sila2.org.silastandard.Binary Binaries = 1;  /* List of binaries to echo */
+}
+
+/* Responses of EchoBinariesObservably */
+message EchoBinariesObservably_Responses {
+  sila2.org.silastandard.Binary JointBinary = 1;  /* A single binary comprised of binaries received as parameter */
+}
+
+/* Intermediate responses of EchoBinariesObservably */
+message EchoBinariesObservably_IntermediateResponses {
+  sila2.org.silastandard.Binary Binary = 1;  /* Single binary from the parameter list */
+}
+
+/* Parameters for EchoBinaryAndMetadataString */
+message EchoBinaryAndMetadataString_Parameters {
+  sila2.org.silastandard.Binary Binary = 1;  /* The binary to echo */
+}
+
+/* Responses of EchoBinaryAndMetadataString */
+message EchoBinaryAndMetadataString_Responses {
+  sila2.org.silastandard.Binary Binary = 1;  /* The received binary */
+  sila2.org.silastandard.String StringMetadata = 2;  /* The received String Metadata */
+}
+
+/* Parameters for BinaryValueDirectly */
+message Get_BinaryValueDirectly_Parameters {
+}
+
+/* Responses of BinaryValueDirectly */
+message Get_BinaryValueDirectly_Responses {
+  sila2.org.silastandard.Binary BinaryValueDirectly = 1;  /* Returns the UTF-8 encoded string 'SiLA2_Test_String_Value' directly transmitted as Binary value. */
+}
+
+/* Parameters for BinaryValueDownload */
+message Get_BinaryValueDownload_Parameters {
+}
+
+/* Responses of BinaryValueDownload */
+message Get_BinaryValueDownload_Responses {
+  sila2.org.silastandard.Binary BinaryValueDownload = 1;  /* Returns the Binary Transfer UUID to be used to download the binary data which is the UTF-8 encoded string 'A_slightly_longer_SiLA2_Test_String_Value_used_to_demonstrate_the_binary_download', repeated 100,000 times. */
+}
+
+/* Parameters for Get_FCPAffectedByMetadata_String */
+message Get_FCPAffectedByMetadata_String_Parameters {
+}
+
+/* Responses of Get_FCPAffectedByMetadata_String */
+message Get_FCPAffectedByMetadata_String_Responses {
+  repeated sila2.org.silastandard.String AffectedCalls = 1;  /* Fully qualified identifiers of all features, commands and properties affected by String */
+}
+
+/* A string */
+message Metadata_String {
+  sila2.org.silastandard.String String = 1;  /* A string */
+}

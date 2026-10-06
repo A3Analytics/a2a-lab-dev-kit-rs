@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.authenticationtest.v1;
+
+/* Contains commands that require authentication. A client should be able to obtain an Authorization Token through the Login command of the Authentication Service feature using the following credentials: username: 'test', password: 'test' */
+service AuthenticationTest {
+  /* Requires an authorization token in order to be executed */
+  rpc RequiresToken (sila2.org.silastandard.test.authenticationtest.v1.RequiresToken_Parameters) returns (sila2.org.silastandard.test.authenticationtest.v1.RequiresToken_Responses) {}
+  /* Requires an authorization token in order to be executed and to upload a binary parameter */
+  rpc RequiresTokenForBinaryUpload (sila2.org.silastandard.test.authenticationtest.v1.RequiresTokenForBinaryUpload_Parameters) returns (sila2.org.silastandard.test.authenticationtest.v1.RequiresTokenForBinaryUpload_Responses) {}
+}
+
+/* Parameters for RequiresToken */
+message RequiresToken_Parameters {
+}
+
+/* Responses of RequiresToken */
+message RequiresToken_Responses {
+}
+
+/* Parameters for RequiresTokenForBinaryUpload */
+message RequiresTokenForBinaryUpload_Parameters {
+  sila2.org.silastandard.Binary BinaryToUpload = 1;  /* A binary that needs to be uploaded */
+}
+
+/* Responses of RequiresTokenForBinaryUpload */
+message RequiresTokenForBinaryUpload_Responses {
+}

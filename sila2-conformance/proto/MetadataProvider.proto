@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.metadataprovider.v1;
+
+/* This feature provides SiLA Client Metadata to the "Metadata Consumer Test" feature. */
+service MetadataProvider {
+  /* Get fully qualified identifiers of all features, commands and properties affected by StringMetadata */
+  rpc Get_FCPAffectedByMetadata_StringMetadata (sila2.org.silastandard.test.metadataprovider.v1.Get_FCPAffectedByMetadata_StringMetadata_Parameters) returns (sila2.org.silastandard.test.metadataprovider.v1.Get_FCPAffectedByMetadata_StringMetadata_Responses) {}
+  /* Get fully qualified identifiers of all features, commands and properties affected by TwoIntegersMetadata */
+  rpc Get_FCPAffectedByMetadata_TwoIntegersMetadata (sila2.org.silastandard.test.metadataprovider.v1.Get_FCPAffectedByMetadata_TwoIntegersMetadata_Parameters) returns (sila2.org.silastandard.test.metadataprovider.v1.Get_FCPAffectedByMetadata_TwoIntegersMetadata_Responses) {}
+}
+
+/* Parameters for Get_FCPAffectedByMetadata_StringMetadata */
+message Get_FCPAffectedByMetadata_StringMetadata_Parameters {
+}
+
+/* Responses of Get_FCPAffectedByMetadata_StringMetadata */
+message Get_FCPAffectedByMetadata_StringMetadata_Responses {
+  repeated sila2.org.silastandard.String AffectedCalls = 1;  /* Fully qualified identifiers of all features, commands and properties affected by StringMetadata */
+}
+
+/* A metadata consisting of a string. It affects the full "Metadata Consumer Test" feature. */
+message Metadata_StringMetadata {
+  sila2.org.silastandard.String StringMetadata = 1;  /* A metadata consisting of a string. It affects the full "Metadata Consumer Test" feature. */
+}
+
+/* Parameters for Get_FCPAffectedByMetadata_TwoIntegersMetadata */
+message Get_FCPAffectedByMetadata_TwoIntegersMetadata_Parameters {
+}
+
+/* Responses of Get_FCPAffectedByMetadata_TwoIntegersMetadata */
+message Get_FCPAffectedByMetadata_TwoIntegersMetadata_Responses {
+  repeated sila2.org.silastandard.String AffectedCalls = 1;  /* Fully qualified identifiers of all features, commands and properties affected by TwoIntegersMetadata */
+}
+
+/* A metadata consisting of a structure with two integers. It affects only the command "Unpack Metadata" of the "Metadata Consumer Test" feature. */
+message Metadata_TwoIntegersMetadata {
+  message TwoIntegersMetadata_Struct {
+    sila2.org.silastandard.Integer FirstInteger = 1;  /* The first integer */
+    sila2.org.silastandard.Integer SecondInteger = 2;  /* The second integer */
+  }
+  sila2.org.silastandard.test.metadataprovider.v1.Metadata_TwoIntegersMetadata.TwoIntegersMetadata_Struct TwoIntegersMetadata = 1;  /* A metadata consisting of a structure with two integers. It affects only the command "Unpack Metadata" of the "Metadata Consumer Test" feature. */
+}

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>ObservableCommandTest</Identifier>
+  <DisplayName>Observable Command Test</DisplayName>
+  <Description>
+    This is a test feature to test observable commands.
+    It specifies various observable commands and returns defined answers to validate against.
+  </Description>
+
+  <Command>
+    <Identifier>Count</Identifier>
+    <DisplayName>Count</DisplayName>
+    <Description>Count from 0 to N-1 and return the current number as intermediate response.</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>N</Identifier>
+      <DisplayName>N</DisplayName>
+      <Description>Number to count to</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Delay</Identifier>
+      <DisplayName>Delay</DisplayName>
+      <Description>The delay for each iteration</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+          <Constraints>
+            <Unit>
+              <Label>s</Label>
+              <Factor>1</Factor>
+              <Offset>0</Offset>
+              <UnitComponent>
+                <SIUnit>Second</SIUnit>
+                <Exponent>1</Exponent>
+              </UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>IterationResponse</Identifier>
+      <DisplayName>Iteration Response</DisplayName>
+      <Description>The last number (N-1)</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Response>
+    <IntermediateResponse>
+      <Identifier>CurrentIteration</Identifier>
+      <DisplayName>Current Iteration</DisplayName>
+      <Description>The current number, from 0 to N-1 (excluded).</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </IntermediateResponse>
+  </Command>
+
+  <Command>
+    <Identifier>EchoValueAfterDelay</Identifier>
+    <DisplayName>Echo Value After Delay</DisplayName>
+    <Description>Echo the given value after the specified delay. The command state must be "waiting" until the delay has passed.</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>Value</Identifier>
+      <DisplayName>Value</DisplayName>
+      <Description>The value to echo</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Delay</Identifier>
+      <DisplayName>Delay</DisplayName>
+      <Description>The delay before the command execution starts</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+          <Constraints>
+            <Unit>
+              <Label>s</Label>
+              <Factor>1</Factor>
+              <Offset>0</Offset>
+              <UnitComponent>
+                <SIUnit>Second</SIUnit>
+                <Exponent>1</Exponent>
+              </UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The Received Value</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Response>
+  </Command>
+</Feature>

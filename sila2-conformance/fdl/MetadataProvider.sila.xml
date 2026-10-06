@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>MetadataProvider</Identifier>
+  <DisplayName>Metadata Provider</DisplayName>
+  <Description>This feature provides SiLA Client Metadata to the "Metadata Consumer Test" feature.</Description>
+  <Metadata>
+    <Identifier>StringMetadata</Identifier>
+    <DisplayName>String Metadata</DisplayName>
+    <Description>A metadata consisting of a string. It affects the full "Metadata Consumer Test" feature.</Description>
+    <DataType>
+      <Basic>String</Basic>
+    </DataType>
+  </Metadata>
+  <Metadata>
+    <Identifier>TwoIntegersMetadata</Identifier>
+    <DisplayName>Two Integers Metadata</DisplayName>
+    <Description>A metadata consisting of a structure with two integers. It affects only the command "Unpack Metadata" of the "Metadata Consumer Test" feature.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>FirstInteger</Identifier>
+          <DisplayName>First Integer</DisplayName>
+          <Description>The first integer</Description>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>SecondInteger</Identifier>
+          <DisplayName>Second Integer</DisplayName>
+          <Description>The second integer</Description>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </Metadata>
+</Feature>

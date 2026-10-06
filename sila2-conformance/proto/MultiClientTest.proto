@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.multiclienttest.v1;
+
+/* This is a feature to test different server behaviors when multiple clients request execution of the same command. */
+service MultiClientTest {
+  /* Multiple invocations of this command will be running in parallel */
+  rpc RunInParallel (sila2.org.silastandard.test.multiclienttest.v1.RunInParallel_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of RunInParallel */
+  rpc RunInParallel_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of RunInParallel */
+  rpc RunInParallel_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.multiclienttest.v1.RunInParallel_Responses) {}
+  /* Multiple invocations of this command will be queued */
+  rpc RunQueued (sila2.org.silastandard.test.multiclienttest.v1.RunQueued_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of RunQueued */
+  rpc RunQueued_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of RunQueued */
+  rpc RunQueued_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.multiclienttest.v1.RunQueued_Responses) {}
+  /* Invocations will be rejected, if there is another command instance already running */
+  rpc RejectParallelExecution (sila2.org.silastandard.test.multiclienttest.v1.RejectParallelExecution_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of RejectParallelExecution */
+  rpc RejectParallelExecution_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of RejectParallelExecution */
+  rpc RejectParallelExecution_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.multiclienttest.v1.RejectParallelExecution_Responses) {}
+}
+
+/* Parameters for RunInParallel */
+message RunInParallel_Parameters {
+  sila2.org.silastandard.Real Duration = 1;  /* The duration of the command execution */
+}
+
+/* Responses of RunInParallel */
+message RunInParallel_Responses {
+}
+
+/* Parameters for RunQueued */
+message RunQueued_Parameters {
+  sila2.org.silastandard.Real Duration = 1;  /* The duration of the command execution */
+}
+
+/* Responses of RunQueued */
+message RunQueued_Responses {
+}
+
+/* Parameters for RejectParallelExecution */
+message RejectParallelExecution_Parameters {
+  sila2.org.silastandard.Real Duration = 1;  /* The duration of the command execution */
+}
+
+/* Responses of RejectParallelExecution */
+message RejectParallelExecution_Responses {
+}

@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>AnyTypeTest</Identifier>
+  <DisplayName>Any Type Test</DisplayName>
+  <Description>
+    Provides commands and properties to set or respectively get SiLA Any Type values via command parameters or property responses respectively.
+  </Description>
+
+  <Command>
+    <Identifier>SetAnyTypeValue</Identifier>
+    <DisplayName>Set Any Type Value</DisplayName>
+    <Description>Receives an Any type value and returns the type and the value that has been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>AnyTypeValue</Identifier>
+      <DisplayName>Any Type Value</DisplayName>
+      <Description>The Any type value to be set.</Description>
+      <DataType>
+        <Basic>Any</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedAnyType</Identifier>
+      <DisplayName>Received Any Type</DisplayName>
+      <Description>The type that has been received.</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+          <Constraints>
+            <Schema>
+              <Type>Xml</Type>
+              <Url>https://gitlab.com/SiLA2/sila_base/-/raw/beb5d703ab62b1242695f3a591f04a07ebc7b528/schema/AnyTypeDataType.xsd</Url>
+            </Schema>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Response>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The value that has been received.</Description>
+      <DataType>
+        <Basic>Any</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>AnyTypeStringValue</Identifier>
+    <DisplayName>Any Type String Value</DisplayName>
+    <Description>Returns the Any type String value 'SiLA_Any_type_of_String_type'.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeIntegerValue</Identifier>
+    <DisplayName>Any Type Integer Value</DisplayName>
+    <Description>Returns the Any type Integer value 5124.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeRealValue</Identifier>
+    <DisplayName>Any Type Real Value</DisplayName>
+    <Description>Returns an Any type Real value 3.1415926.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeBooleanValue</Identifier>
+    <DisplayName>Any Type Boolean Value</DisplayName>
+    <Description>Returns the Any type Boolean value true.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeBinaryValue</Identifier>
+    <DisplayName>Any Type Binary Value</DisplayName>
+    <Description>Returns the Any type ASCII-encoded string value 'SiLA_Any_type_of_Binary_type' as Binary.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeDateValue</Identifier>
+    <DisplayName>Any Type Date Value</DisplayName>
+    <Description>Returns the Any type Date value 05.08.2022 respective 08/05/2022, timezone +2.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeTimeValue</Identifier>
+    <DisplayName>Any Type Time Value</DisplayName>
+    <Description>Returns the Any type Time value 12:34:56.789, timezone +2.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeTimestampValue</Identifier>
+    <DisplayName>Any Type Timestamp Value</DisplayName>
+    <Description>Returns the Any type Timestamp value 2022-08-05 12:34:56.789, timezone +2.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeListValue</Identifier>
+    <DisplayName>Any Type List Value</DisplayName>
+    <Description>Returns the Any type String List value ('SiLA 2', 'Any', 'Type', 'String', 'List')</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>AnyTypeStructureValue</Identifier>
+    <DisplayName>Any Type Structure Value</DisplayName>
+    <Description>
+      Returns the following Any type Structure value:
+      - String 'StringTypeValue' = 'A String value',
+      - Integer 'IntegerTypeValue' = 83737665,
+      - Date 'DateTypeValue' = 05.08.2022 respective 08/05/2022 timezone +2 )
+    </Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Any</Basic>
+    </DataType>
+  </Property>
+</Feature>

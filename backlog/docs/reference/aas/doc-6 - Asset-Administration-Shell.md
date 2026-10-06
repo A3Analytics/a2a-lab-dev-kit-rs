@@ -32,7 +32,7 @@ The `aas` feature is on by default and compiles `a2a_lab_dev_kit::aas`. `AasClie
 
 `list_assets` loads the catalog once and caches it. The client `GET`s `description`, then `shells`, then `submodels/{id}` for each submodel key. The submodel path segment is unpadded base64url of the identifier. `description.profiles` must contain a string that includes both `3.2` and `AssetAdministrationShellRepositoryServiceSpecification`. Shells are the `result` array. Each asset key is the shell `id`; `assetInformation.globalAssetId` is optional.
 
-Binding submodels are those whose `semanticId` key value is `https://a2a-lab.example/LabBindings/1/0`. Each submodel element supplies `labId`, `role` (`log_source`, `metric`, or `task`), and `protocol` (`opc_ua` or `sila2`), plus the fields required by `Endpoint::OpcUa` or `Endpoint::Sila2`. The binding semantic id is an IRI taken from the element, or the binding semantic when the element has none. `list_bindings` pages every binding. `get_asset` looks up the cached shell id.
+Binding submodels are those whose `semanticId` key value is `https://a2a-lab.example/LabBindings/1/0`. Each submodel element supplies `labId`, `role` (`log_source`, `metric`, or `task`), and `protocol` `opc_ua`, plus the fields required by `Endpoint::OpcUa`. The binding semantic id is an IRI taken from the element, or the binding semantic when the element has none. `list_bindings` pages every binding. `get_asset` looks up the cached shell id.
 
 HTTP 401 and 403 are `protocol` errors. HTTP 404 is `not_found`. Any other non-success status is `unavailable`.
 

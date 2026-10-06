@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.core.commands.cancelcontroller.v1;
+
+/* This feature offers commands to cancel/terminate Commands. Cancellation is the act of stopping the running Command execution(s), irrevocably. The SiLA Server SHOULD be able to be in a state where any further commands can be issued after a cancellation. */
+service CancelController {
+  /* Cancel a specified currently running Observable Command or cancel all currently running Observable Commands . For any canceled Observable Command the SiLA Server MUST update the Command Execution Status to "Command Finished with Error". The SiLA Server MUST throw a descriptive error message indicating cancellation as the reason for the Command execution not being able to finish successfully for any canceled Command. */
+  rpc CancelCommand (sila2.org.silastandard.core.commands.cancelcontroller.v1.CancelCommand_Parameters) returns (sila2.org.silastandard.core.commands.cancelcontroller.v1.CancelCommand_Responses) {}
+  /* Cancels all currently running Observable and Unobservable Commands running on this SiLA Server. The SiLA Server MUST throw an Execution Error indicating 'cancellation' as the reason for the Command not being able to finish successfully. */
+  rpc CancelAll (sila2.org.silastandard.core.commands.cancelcontroller.v1.CancelAll_Parameters) returns (sila2.org.silastandard.core.commands.cancelcontroller.v1.CancelAll_Responses) {}
+}
+
+/* A Universally Unique Identifier (UUID) referring to observable command executions. */
+message DataType_UUID {
+  sila2.org.silastandard.String UUID = 1;  /* A Universally Unique Identifier (UUID) referring to observable command executions. */
+}
+
+/* Parameters for CancelCommand */
+message CancelCommand_Parameters {
+  sila2.org.silastandard.core.commands.cancelcontroller.v1.DataType_UUID CommandExecutionUUID = 1;  /* The Command Execution UUID according to the SiLA Standard. */
+}
+
+/* Responses of CancelCommand */
+message CancelCommand_Responses {
+}
+
+/* Parameters for CancelAll */
+message CancelAll_Parameters {
+}
+
+/* Responses of CancelAll */
+message CancelAll_Responses {
+}

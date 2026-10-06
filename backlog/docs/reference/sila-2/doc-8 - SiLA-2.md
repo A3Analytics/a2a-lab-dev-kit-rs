@@ -10,35 +10,42 @@ created_date: "2026-09-30 17:38"
 
 ## Role in this dev kit
 
-SiLA 2 is an outbound helper surface for one checked-in lab service, not an agent-facing protocol. Catalog bindings may store an `Endpoint::Sila2` feature member. `IndustrialTasks` starts commands only through `LiveSource`. Nothing in `src/sila` implements `LiveSource`.
-
-Task bindings start through `LiveSource`. `sila::start_task` is a separate helper that maps the first `LabAutomation` status onto `TaskState`.
+SiLA 2 is an inbound Feature Provider. The devkit sits in front of lab equipment and serves that equipment to SiLA clients. `SilaServer` uses the same `LabApi` as A2A and MCP. It does not connect to a remote SiLA device.
 
 ```mermaid
-flowchart TD
-  binding["Binding role task"] --> ind["IndustrialTasks.start"]
-  ind --> live["LiveSource.start"]
-  live --> scripted["ScriptedLive"]
-  helper["sila.start_task"] --> rpc["LabAutomation.StartTask"]
-  rpc --> info["StartTaskInfo"]
-  info --> state["execution_state to TaskState"]
+flowchart LR
+  equipment["Equipment adapters"] --> labApi["LabApi"]
+  labApi --> a2a["A2A"]
+  labApi --> mcp["MCP"]
+  labApi --> sila["SilaServer"]
+  sila --> clients["SiLA clients"]
 ```
 
-## What this crate implements
+## What this crate serves
 
-The `sila2` feature is on by default. `build.rs` compiles the checked-in `proto/sila/lab.proto` into `sila::proto`. That file declares package `sila.lab` and service `LabAutomation`, with RPCs `GetAvailableTasks`, `StartTask`, `StartTaskInfo`, `StartTaskResult`, `GetTaskLogs`, `GetTaskMetrics`, `CreateBinary`, and `UploadChunk`. The proto comment says observable-command status codes follow sila_base v1.2 shapes: 0 waiting, 1 running, 2 finished successfully, 3 finished with error. The file is a custom proto, not generated from Feature XML.
+The `sila2` feature is on by default. The server implements three features:
 
-Public helpers in `sila` are:
+- `org.silastandard/core/SiLAService/v1`
+- `com.a3analytics/lab/LabOperations/v1`
+- `org.silastandard/core/commands/CancelController/v1`
 
-- `execution_state` maps status `0` to `Submitted`, `1` to `Working`, `2` to `Completed`, and `3` to `Failed`. Any other code is a protocol error.
-- `parse_discovery` accepts service type `_sila._tcp.local.` only, and requires a non-empty host, non-zero port, and non-empty server UUID. It returns a `SilaEndpoint`.
-- `certificate_accepted` requires common name `SiLA2` and equal advertised and certificate UUIDs. It compares strings.
-- `chunk_binary` splits bytes into slices of at most `MAX_CHUNK` (`2 * 1024 * 1024`). An empty input returns no chunks.
-- `start_task` calls the generated `LabAutomationClient::start_task` and `start_task_info`, then maps the first `ExecutionInfo` status with `execution_state`.
+`LabOperations` is one stable feature for the seven lab operations. `ListLogSources`, `QueryLogs`, `ListMetrics`, `QueryMetric`, `ListTasks`, and `GetTaskStatus` are unobservable commands. `StartTask` is observable. Pages, time ranges, records, and task runs are SiLA structures. Task input and log attributes are JSON strings of at most 262144 characters. The feature declares no SiLA `Binary` fields, so binary transfer is not part of this profile. Client metadata, locking, authorization, and server-initiated connections are not advertised.
+
+`CancelController.CancelCommand` cancels the lab run behind a `StartTask` execution. The execution UUID is a constrained string on that command, which is the SiLA String both this server and the official dynamic client use. A canceled execution finishes with an error. A provider that cannot cancel returns `OperationNotSupported`.
+
+## Identity and discovery
+
+`SilaIdentity` requires a stable lowercase server UUID, a server type matching `[A-Z][a-zA-Z0-9]*`, a `major.minor` version, and an `http` or `https` vendor URL. `SetServerName` updates the published name and writes it when a name file is configured.
+
+The encrypted listener is the default. Its certificate uses common name `SiLA2`, a `DNS:SiLA2` subject alternative name, and the server UUID in extension `1.3.6.1.4.1.58583`. `SilaServer::plaintext` is the explicit unencrypted listener. After the socket is bound, `announce` publishes `_sila._tcp.local.` with protocol `version=1.1`, the server name, type, description, vendor URL, and CA lines `ca0`, `ca1`, and so on. Dropping the server handle withdraws that advertisement.
+
+## Interop
+
+`mise run sila2-interop` starts this server and runs the pinned official `sila_csharp` v.10.3.2 dynamic client, commit `2625cce6541c501cb951f2eea95d490a2efd12c0`. The report records `role: feature_provider`, image ids, and a failure when a required capability fails. It does not use the official SiLA logo and it is not a certification claim.
 
 ## Entry points
 
-With the `sila2` feature, use `sila::MAX_CHUNK`, `sila::SilaEndpoint`, `sila::execution_state`, `sila::parse_discovery`, `sila::certificate_accepted`, `sila::chunk_binary`, `sila::start_task`, and the generated `sila::proto` module. These items are not re-exported at the crate root. `Endpoint::Sila2` is re-exported and stores `host`, `port`, `feature`, `member`, and `version`.
+With the `sila2` feature, use `sila::SilaServer`, `sila::SilaIdentity`, and `sila::SilaCertificate`. These items are not re-exported at the crate root. `examples/sila2_server.rs` serves one memory-backed lab over A2A, MCP, and SiLA.
 
 ## Related
 

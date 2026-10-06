@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>MultiClientTest</Identifier>
+  <DisplayName>Multi Client Test</DisplayName>
+  <Description>
+    This is a feature to test different server behaviors when multiple clients request execution of the same command.
+  </Description>
+  <Command>
+    <Identifier>RunInParallel</Identifier>
+    <DisplayName>Run In Parallel</DisplayName>
+    <Description>Multiple invocations of this command will be running in parallel</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>Duration</Identifier>
+      <DisplayName>Duration</DisplayName>
+      <Description>The duration of the command execution</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+          <Constraints>
+            <Unit>
+              <Label>s</Label>
+              <Factor>1</Factor>
+              <Offset>0</Offset>
+              <UnitComponent>
+                <SIUnit>Second</SIUnit>
+                <Exponent>1</Exponent>
+              </UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+  </Command>
+
+  <Command>
+    <Identifier>RunQueued</Identifier>
+    <DisplayName>Run Queued</DisplayName>
+    <Description>Multiple invocations of this command will be queued</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>Duration</Identifier>
+      <DisplayName>Duration</DisplayName>
+      <Description>The duration of the command execution</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+          <Constraints>
+            <Unit>
+              <Label>s</Label>
+              <Factor>1</Factor>
+              <Offset>0</Offset>
+              <UnitComponent>
+                <SIUnit>Second</SIUnit>
+                <Exponent>1</Exponent>
+              </UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+  </Command>
+
+
+  <Command>
+    <Identifier>RejectParallelExecution</Identifier>
+    <DisplayName>Reject Parallel Execution</DisplayName>
+    <Description>Invocations will be rejected, if there is another command instance already running</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>Duration</Identifier>
+      <DisplayName>Duration</DisplayName>
+      <Description>The duration of the command execution</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+          <Constraints>
+            <Unit>
+              <Label>s</Label>
+              <Factor>1</Factor>
+              <Offset>0</Offset>
+              <UnitComponent>
+                <SIUnit>Second</SIUnit>
+                <Exponent>1</Exponent>
+              </UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+  </Command>
+</Feature>

@@ -110,10 +110,7 @@ impl OpcUaClient {
             node_id,
             namespace_uri,
             ..
-        } = endpoint
-        else {
-            return Err(A2aLabError::protocol("expected an OPC UA endpoint"));
-        };
+        } = endpoint;
         if security_policy.contains("None") {
             return Err(A2aLabError::invalid(
                 "security_policy",

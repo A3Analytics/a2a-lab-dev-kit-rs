@@ -1,0 +1,21 @@
+name: SiLA 2 interop
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sila2-interop
+  cancel-in-progress: true
+
+jobs:
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: SiLA 2 Feature Provider interop
+        run: bash .mise/scripts/sila2-interop.sh

@@ -1,0 +1,18 @@
+[package]
+name = "sila2-conformance"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "SiLA server that implements the official communication-tester features"
+
+[dependencies]
+futures-util = "0.3.34"
+prost = "0.14.4"
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tonic = { version = "0.14.6", features = ["tls-ring"] }
+tonic-prost = "0.14.6"
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[build-dependencies]
+protoc-bin-vendored = "3.2.0"
+tonic-prost-build = "0.14.6"

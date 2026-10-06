@@ -1,0 +1,770 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.1" FeatureVersion="1.0" MaturityLevel="Draft" Originator="com.a3analytics" Category="lab"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>LabOperations</Identifier>
+  <DisplayName>Lab Operations</DisplayName>
+  <Description>Exposes the seven lab operations of the devkit that represents the equipment.</Description>
+
+  <Command>
+    <Identifier>ListLogSources</Identifier>
+    <DisplayName>List Log Sources</DisplayName>
+    <Description>Returns one page of log sources.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Page</Identifier>
+      <DisplayName>Page</DisplayName>
+      <Description>Page bounds.</Description>
+      <DataType><DataTypeIdentifier>PageRequest</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Sources</Identifier>
+      <DisplayName>Sources</DisplayName>
+      <Description>Log sources on this page.</Description>
+      <DataType><List><DataType><DataTypeIdentifier>LogSource</DataTypeIdentifier></DataType></List></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasNextCursor</Identifier>
+      <DisplayName>Has Next Cursor</DisplayName>
+      <Description>True when another page exists.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>NextCursor</Identifier>
+      <DisplayName>Next Cursor</DisplayName>
+      <Description>Cursor for the next page. Empty when HasNextCursor is false.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors><Identifier>ProviderUnavailable</Identifier></DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>QueryLogs</Identifier>
+    <DisplayName>Query Logs</DisplayName>
+    <Description>Returns log records in a half-open UTC range.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>SourceId</Identifier>
+      <DisplayName>Source Id</DisplayName>
+      <Description>Log source identifier.</Description>
+      <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Range</Identifier>
+      <DisplayName>Range</DisplayName>
+      <Description>Half-open UTC interval.</Description>
+      <DataType><DataTypeIdentifier>TimeRange</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Page</Identifier>
+      <DisplayName>Page</DisplayName>
+      <Description>Page bounds.</Description>
+      <DataType><DataTypeIdentifier>PageRequest</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Records</Identifier>
+      <DisplayName>Records</DisplayName>
+      <Description>Log records on this page.</Description>
+      <DataType><List><DataType><DataTypeIdentifier>LogRecord</DataTypeIdentifier></DataType></List></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasNextCursor</Identifier>
+      <DisplayName>Has Next Cursor</DisplayName>
+      <Description>True when another page exists.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>NextCursor</Identifier>
+      <DisplayName>Next Cursor</DisplayName>
+      <Description>Cursor for the next page.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>SourceNotFound</Identifier>
+      <Identifier>ProviderUnavailable</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>ListMetrics</Identifier>
+    <DisplayName>List Metrics</DisplayName>
+    <Description>Returns one page of metric descriptors.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Page</Identifier>
+      <DisplayName>Page</DisplayName>
+      <Description>Page bounds.</Description>
+      <DataType><DataTypeIdentifier>PageRequest</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Metrics</Identifier>
+      <DisplayName>Metrics</DisplayName>
+      <Description>Metric descriptors on this page.</Description>
+      <DataType><List><DataType><DataTypeIdentifier>MetricDescriptor</DataTypeIdentifier></DataType></List></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasNextCursor</Identifier>
+      <DisplayName>Has Next Cursor</DisplayName>
+      <Description>True when another page exists.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>NextCursor</Identifier>
+      <DisplayName>Next Cursor</DisplayName>
+      <Description>Cursor for the next page.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors><Identifier>ProviderUnavailable</Identifier></DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>QueryMetric</Identifier>
+    <DisplayName>Query Metric</DisplayName>
+    <Description>Returns metric samples in a half-open UTC range.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>MetricId</Identifier>
+      <DisplayName>Metric Id</DisplayName>
+      <Description>Metric identifier.</Description>
+      <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Range</Identifier>
+      <DisplayName>Range</DisplayName>
+      <Description>Half-open UTC interval.</Description>
+      <DataType><DataTypeIdentifier>TimeRange</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Page</Identifier>
+      <DisplayName>Page</DisplayName>
+      <Description>Page bounds.</Description>
+      <DataType><DataTypeIdentifier>PageRequest</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Points</Identifier>
+      <DisplayName>Points</DisplayName>
+      <Description>Samples on this page.</Description>
+      <DataType><List><DataType><DataTypeIdentifier>MetricPoint</DataTypeIdentifier></DataType></List></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasNextCursor</Identifier>
+      <DisplayName>Has Next Cursor</DisplayName>
+      <Description>True when another page exists.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>NextCursor</Identifier>
+      <DisplayName>Next Cursor</DisplayName>
+      <Description>Cursor for the next page.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>MetricNotFound</Identifier>
+      <Identifier>ProviderUnavailable</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>ListTasks</Identifier>
+    <DisplayName>List Tasks</DisplayName>
+    <Description>Returns one page of task definitions.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Page</Identifier>
+      <DisplayName>Page</DisplayName>
+      <Description>Page bounds.</Description>
+      <DataType><DataTypeIdentifier>PageRequest</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Tasks</Identifier>
+      <DisplayName>Tasks</DisplayName>
+      <Description>Task definitions on this page.</Description>
+      <DataType><List><DataType><DataTypeIdentifier>TaskDefinition</DataTypeIdentifier></DataType></List></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasNextCursor</Identifier>
+      <DisplayName>Has Next Cursor</DisplayName>
+      <Description>True when another page exists.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>NextCursor</Identifier>
+      <DisplayName>Next Cursor</DisplayName>
+      <Description>Cursor for the next page.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors><Identifier>ProviderUnavailable</Identifier></DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>GetTaskStatus</Identifier>
+    <DisplayName>Get Task Status</DisplayName>
+    <Description>Returns one task run.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>RunId</Identifier>
+      <DisplayName>Run Id</DisplayName>
+      <Description>Run identifier assigned at start.</Description>
+      <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Run</Identifier>
+      <DisplayName>Run</DisplayName>
+      <Description>Current task run.</Description>
+      <DataType><DataTypeIdentifier>TaskRun</DataTypeIdentifier></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>RunNotFound</Identifier>
+      <Identifier>ProviderUnavailable</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>StartTask</Identifier>
+    <DisplayName>Start Task</DisplayName>
+    <Description>Starts a task and reports execution status until it is terminal.</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>TaskId</Identifier>
+      <DisplayName>Task Id</DisplayName>
+      <Description>Task definition identifier.</Description>
+      <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Input</Identifier>
+      <DisplayName>Input</DisplayName>
+      <Description>JSON object passed to the task.</Description>
+      <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints><MaximalLength>262144</MaximalLength></Constraints>
+          </Constrained>
+        </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Run</Identifier>
+      <DisplayName>Run</DisplayName>
+      <Description>Terminal task run.</Description>
+      <DataType><DataTypeIdentifier>TaskRun</DataTypeIdentifier></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>TaskNotFound</Identifier>
+      <Identifier>ProviderUnavailable</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <DataTypeDefinition>
+    <Identifier>PageRequest</Identifier>
+    <DisplayName>Page Request</DisplayName>
+    <Description>Cursor and page size.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>HasCursor</Identifier>
+          <DisplayName>Has Cursor</DisplayName>
+          <Description>True when Cursor is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Cursor</Identifier>
+          <DisplayName>Cursor</DisplayName>
+          <Description>Opaque numeric cursor. Empty when HasCursor is false.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Limit</Identifier>
+          <DisplayName>Limit</DisplayName>
+          <Description>Page size from 1 to 1000.</Description>
+          <DataType>
+            <Constrained>
+              <DataType><Basic>Integer</Basic></DataType>
+              <Constraints>
+                <MinimalInclusive>1</MinimalInclusive>
+                <MaximalInclusive>1000</MaximalInclusive>
+              </Constraints>
+            </Constrained>
+          </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>TimeRange</Identifier>
+    <DisplayName>Time Range</DisplayName>
+    <Description>Half-open UTC interval.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Start</Identifier>
+          <DisplayName>Start</DisplayName>
+          <Description>Inclusive start.</Description>
+          <DataType><Basic>Timestamp</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>End</Identifier>
+          <DisplayName>End</DisplayName>
+          <Description>Exclusive end.</Description>
+          <DataType><Basic>Timestamp</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>LogSource</Identifier>
+    <DisplayName>Log Source</DisplayName>
+    <Description>A log source the equipment exposes.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Id</Identifier>
+          <DisplayName>Id</DisplayName>
+          <Description>Source identifier.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>Name</Identifier>
+          <DisplayName>Name</DisplayName>
+          <Description>Human-readable name.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Description</Identifier>
+          <DisplayName>Description</DisplayName>
+          <Description>What the source contains.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasAssetId</Identifier>
+          <DisplayName>Has Asset Id</DisplayName>
+          <Description>True when AssetId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>AssetId</Identifier>
+          <DisplayName>Asset Id</DisplayName>
+          <Description>Optional asset identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasSemanticId</Identifier>
+          <DisplayName>Has Semantic Id</DisplayName>
+          <Description>True when SemanticId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>SemanticId</Identifier>
+          <DisplayName>Semantic Id</DisplayName>
+          <Description>Optional semantic identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>LogRecord</Identifier>
+    <DisplayName>Log Record</DisplayName>
+    <Description>One structured log record.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>SourceId</Identifier>
+          <DisplayName>Source Id</DisplayName>
+          <Description>Source that emitted the record.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>Timestamp</Identifier>
+          <DisplayName>Timestamp</DisplayName>
+          <Description>When the record was emitted.</Description>
+          <DataType><Basic>Timestamp</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Level</Identifier>
+          <DisplayName>Level</DisplayName>
+          <Description>Severity.</Description>
+          <DataType>
+            <Constrained>
+              <DataType><Basic>String</Basic></DataType>
+              <Constraints>
+                <Set>
+                  <Value>trace</Value>
+                  <Value>debug</Value>
+                  <Value>info</Value>
+                  <Value>warn</Value>
+                  <Value>error</Value>
+                </Set>
+              </Constraints>
+            </Constrained>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>Message</Identifier>
+          <DisplayName>Message</DisplayName>
+          <Description>Rendered message.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Attributes</Identifier>
+          <DisplayName>Attributes</DisplayName>
+          <Description>JSON object of structured attributes.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints><MaximalLength>262144</MaximalLength></Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>MetricDescriptor</Identifier>
+    <DisplayName>Metric Descriptor</DisplayName>
+    <Description>A metric the equipment exposes.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Id</Identifier>
+          <DisplayName>Id</DisplayName>
+          <Description>Metric identifier.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>Name</Identifier>
+          <DisplayName>Name</DisplayName>
+          <Description>Human-readable name.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Description</Identifier>
+          <DisplayName>Description</DisplayName>
+          <Description>What the metric measures.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Unit</Identifier>
+          <DisplayName>Unit</DisplayName>
+          <Description>Unit of the sample value.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasAssetId</Identifier>
+          <DisplayName>Has Asset Id</DisplayName>
+          <Description>True when AssetId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>AssetId</Identifier>
+          <DisplayName>Asset Id</DisplayName>
+          <Description>Optional asset identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasSemanticId</Identifier>
+          <DisplayName>Has Semantic Id</DisplayName>
+          <Description>True when SemanticId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>SemanticId</Identifier>
+          <DisplayName>Semantic Id</DisplayName>
+          <Description>Optional semantic identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>MetricPoint</Identifier>
+    <DisplayName>Metric Point</DisplayName>
+    <Description>One finite sample.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Timestamp</Identifier>
+          <DisplayName>Timestamp</DisplayName>
+          <Description>When the sample was taken.</Description>
+          <DataType><Basic>Timestamp</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Value</Identifier>
+          <DisplayName>Value</DisplayName>
+          <Description>Finite numeric value.</Description>
+          <DataType><Basic>Real</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>TaskDefinition</Identifier>
+    <DisplayName>Task Definition</DisplayName>
+    <Description>A task the equipment can start.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Id</Identifier>
+          <DisplayName>Id</DisplayName>
+          <Description>Task identifier.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>Name</Identifier>
+          <DisplayName>Name</DisplayName>
+          <Description>Human-readable name.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Description</Identifier>
+          <DisplayName>Description</DisplayName>
+          <Description>What the task does.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasAssetId</Identifier>
+          <DisplayName>Has Asset Id</DisplayName>
+          <Description>True when AssetId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>AssetId</Identifier>
+          <DisplayName>Asset Id</DisplayName>
+          <Description>Optional asset identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasSemanticId</Identifier>
+          <DisplayName>Has Semantic Id</DisplayName>
+          <Description>True when SemanticId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>SemanticId</Identifier>
+          <DisplayName>Semantic Id</DisplayName>
+          <Description>Optional semantic identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasInputSchema</Identifier>
+          <DisplayName>Has Input Schema</DisplayName>
+          <Description>True when InputSchema is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>InputSchema</Identifier>
+          <DisplayName>Input Schema</DisplayName>
+          <Description>JSON Schema for the task input.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints><MaximalLength>262144</MaximalLength></Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>HasOutputSchema</Identifier>
+          <DisplayName>Has Output Schema</DisplayName>
+          <Description>True when OutputSchema is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>OutputSchema</Identifier>
+          <DisplayName>Output Schema</DisplayName>
+          <Description>JSON Schema for the task result.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints><MaximalLength>262144</MaximalLength></Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>TaskRun</Identifier>
+    <DisplayName>Task Run</DisplayName>
+    <Description>A started task.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Id</Identifier>
+          <DisplayName>Id</DisplayName>
+          <Description>Run identifier.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>TaskId</Identifier>
+          <DisplayName>Task Id</DisplayName>
+          <Description>Definition that was started.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints>
+              <MinimalLength>1</MinimalLength>
+              <MaximalLength>128</MaximalLength>
+              <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+            </Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>State</Identifier>
+          <DisplayName>State</DisplayName>
+          <Description>Run state.</Description>
+          <DataType>
+            <Constrained>
+              <DataType><Basic>String</Basic></DataType>
+              <Constraints>
+                <Set>
+                  <Value>submitted</Value>
+                  <Value>working</Value>
+                  <Value>completed</Value>
+                  <Value>failed</Value>
+                  <Value>canceled</Value>
+                </Set>
+              </Constraints>
+            </Constrained>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>Input</Identifier>
+          <DisplayName>Input</DisplayName>
+          <Description>JSON object supplied at start.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints><MaximalLength>262144</MaximalLength></Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>HasMessage</Identifier>
+          <DisplayName>Has Message</DisplayName>
+          <Description>True when Message is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Message</Identifier>
+          <DisplayName>Message</DisplayName>
+          <Description>Optional status detail.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DefinedExecutionError>
+    <Identifier>SourceNotFound</Identifier>
+    <DisplayName>Source Not Found</DisplayName>
+    <Description>The log source does not exist.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>MetricNotFound</Identifier>
+    <DisplayName>Metric Not Found</DisplayName>
+    <Description>The metric does not exist.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>TaskNotFound</Identifier>
+    <DisplayName>Task Not Found</DisplayName>
+    <Description>The task definition does not exist.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>RunNotFound</Identifier>
+    <DisplayName>Run Not Found</DisplayName>
+    <Description>The task run does not exist.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>ProviderUnavailable</Identifier>
+    <DisplayName>Provider Unavailable</DisplayName>
+    <Description>The equipment provider could not serve the request.</Description>
+  </DefinedExecutionError>
+</Feature>

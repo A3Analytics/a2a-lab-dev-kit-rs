@@ -40,12 +40,10 @@ fn accepts_catalog_identifiers_that_lab_tokens_reject() {
 #[test]
 fn rejects_unsecured_opcua_and_invalid_lab_ids() {
     let mut bad = endpoint();
-    if let Endpoint::OpcUa {
+    let Endpoint::OpcUa {
         security_policy, ..
-    } = &mut bad
-    {
-        *security_policy = "http://opcfoundation.org/UA/SecurityPolicy#None".to_owned();
-    }
+    } = &mut bad;
+    *security_policy = "http://opcfoundation.org/UA/SecurityPolicy#None".to_owned();
     assert!(bad.check().is_err());
     let error = Binding::new(
         "bad/id",

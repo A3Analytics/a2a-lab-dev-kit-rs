@@ -136,15 +136,6 @@ fn binding_from_element(asset: &AssetKey, element: &Value) -> Result<Binding, A2
             namespace_uri: field(&fields, "namespaceUri")?.to_owned(),
             browse_path: fields.get("browsePath").cloned().unwrap_or_default(),
         },
-        "sila2" => Endpoint::Sila2 {
-            host: field(&fields, "host")?.to_owned(),
-            port: field(&fields, "port")?
-                .parse()
-                .map_err(|_| A2aLabError::protocol("SiLA port is not a number"))?,
-            feature: field(&fields, "feature")?.to_owned(),
-            member: field(&fields, "member")?.to_owned(),
-            version: field(&fields, "version")?.to_owned(),
-        },
         other => return Err(A2aLabError::protocol(format!("unknown protocol `{other}`"))),
     };
     Binding::new(lab_id, asset.clone(), semantic, role, endpoint)

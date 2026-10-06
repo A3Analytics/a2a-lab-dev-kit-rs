@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.metadataconsumertest.v1;
+
+/* This feature consumes SiLA Client Metadata from the "Metadata Provider" feature. */
+service MetadataConsumerTest {
+  /* Expects the "String Metadata" metadata from the "Metadata Provider" feature and responds with the metadata value. */
+  rpc EchoStringMetadata (sila2.org.silastandard.test.metadataconsumertest.v1.EchoStringMetadata_Parameters) returns (sila2.org.silastandard.test.metadataconsumertest.v1.EchoStringMetadata_Responses) {}
+  /* Expects the "String Metadata" and "Two Integers Metadata" metadata from the "Metadata Provider" feature and responds with all three data items. */
+  rpc UnpackMetadata (sila2.org.silastandard.test.metadataconsumertest.v1.UnpackMetadata_Parameters) returns (sila2.org.silastandard.test.metadataconsumertest.v1.UnpackMetadata_Responses) {}
+  /* Expects the "String Metadata" metadata from the "Metadata Provider" feature and returns the metadata value. */
+  rpc Get_ReceivedStringMetadata (sila2.org.silastandard.test.metadataconsumertest.v1.Get_ReceivedStringMetadata_Parameters) returns (sila2.org.silastandard.test.metadataconsumertest.v1.Get_ReceivedStringMetadata_Responses) {}
+  /* Expects the "String Metadata" metadata from the "Metadata Provider" feature and returns all characters of its string value as separate responses. */
+  rpc Subscribe_ReceivedStringMetadataAsCharacters (sila2.org.silastandard.test.metadataconsumertest.v1.Subscribe_ReceivedStringMetadataAsCharacters_Parameters) returns (stream sila2.org.silastandard.test.metadataconsumertest.v1.Subscribe_ReceivedStringMetadataAsCharacters_Responses) {}
+}
+
+/* Parameters for EchoStringMetadata */
+message EchoStringMetadata_Parameters {
+}
+
+/* Responses of EchoStringMetadata */
+message EchoStringMetadata_Responses {
+  sila2.org.silastandard.String ReceivedStringMetadata = 1;  /* The received string metadata */
+}
+
+/* Parameters for UnpackMetadata */
+message UnpackMetadata_Parameters {
+}
+
+/* Responses of UnpackMetadata */
+message UnpackMetadata_Responses {
+  sila2.org.silastandard.String ReceivedString = 1;  /* The received string (via "String Metadata") */
+  sila2.org.silastandard.Integer FirstReceivedInteger = 2;  /* The first element of the received integer structure (via "Two Integers Metadata") */
+  sila2.org.silastandard.Integer SecondReceivedInteger = 3;  /* The second element of the received integer structure (via "Two Integers Metadata") */
+}
+
+/* Parameters for ReceivedStringMetadata */
+message Get_ReceivedStringMetadata_Parameters {
+}
+
+/* Responses of ReceivedStringMetadata */
+message Get_ReceivedStringMetadata_Responses {
+  sila2.org.silastandard.String ReceivedStringMetadata = 1;  /* Expects the "String Metadata" metadata from the "Metadata Provider" feature and returns the metadata value. */
+}
+
+/* Parameters for ReceivedStringMetadataAsCharacters */
+message Subscribe_ReceivedStringMetadataAsCharacters_Parameters {
+}
+
+/* Responses of ReceivedStringMetadataAsCharacters */
+message Subscribe_ReceivedStringMetadataAsCharacters_Responses {
+  sila2.org.silastandard.String ReceivedStringMetadataAsCharacters = 1;  /* Expects the "String Metadata" metadata from the "Metadata Provider" feature and returns all characters of its string value as separate responses. */
+}

@@ -1,6 +1,7 @@
 # a2a-lab-dev-kit
 
 [![A2A 1.0](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml)
+[![SiLA 2 provider](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/sila2-interop.yml)
 
 Rust dev kit for lab logs, metrics, and tasks. Provider traits are the source of truth. `LabService` runs seven operations. A2A HTTP+JSON, JSON-RPC, and gRPC, plus MCP, call that service.
 
@@ -70,9 +71,9 @@ A2A publishes `/.well-known/agent-card.json` and serves A2A 1.0 on HTTP+JSON (`P
 
 ## Features
 
-`aas`, `opcua`, and `sila2` are default features. They compile `aas`, `opcua`, and `sila`. `ros2` is always compiled.
+`aas`, `opcua`, and `sila2` are default features. `sila2` serves the represented equipment as a SiLA 2 Feature Provider. `ros2` is always compiled.
 
-Live OPC UA and SiLA 2 integrations are partial. `OpcUaClient` and the SiLA helpers do not implement `LiveSource`. [`examples/industrial_scripted.rs`](examples/industrial_scripted.rs) uses `ScriptedLive`. [`examples/ros2_tasks.rs`](examples/ros2_tasks.rs) uses the in-process `MemoryRos2` graph.
+Live OPC UA is partial. `OpcUaClient` does not implement `LiveSource`. [`examples/sila2_server.rs`](examples/sila2_server.rs) serves one lab over A2A, MCP, and SiLA. [`examples/industrial_scripted.rs`](examples/industrial_scripted.rs) uses `ScriptedLive`. [`examples/ros2_tasks.rs`](examples/ros2_tasks.rs) uses the in-process `MemoryRos2` graph.
 
 ## API documentation
 

@@ -23,18 +23,20 @@ fn opcua() -> Endpoint {
     }
 }
 
-fn sila() -> Endpoint {
-    Endpoint::Sila2 {
-        host: "lab.local".to_owned(),
-        port: 50052,
-        feature: "org.silastandard/core/LabAutomation/v1".to_owned(),
-        member: "StartTask".to_owned(),
-        version: "1".to_owned(),
+fn task_endpoint() -> Endpoint {
+    Endpoint::OpcUa {
+        url: "opc.tcp://lab.example:4840".to_owned(),
+        security_policy: "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256".to_owned(),
+        security_mode: SecurityMode::SignAndEncrypt,
+        identity: OpcUaIdentityKind::Certificate,
+        node_id: "s=Build".to_owned(),
+        namespace_uri: "urn:lab:equipment".to_owned(),
+        browse_path: String::new(),
     }
 }
 
 #[tokio::test]
-async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_tasks() {
+async fn a2a_uses_aas_bindings_for_opcua_metrics_and_tasks() {
     let asset = AssetKey::new("https://example.com/aas/pump").unwrap();
     let catalog = MemoryCatalog::new();
     catalog
@@ -60,7 +62,7 @@ async fn a2a_uses_aas_bindings_for_opcua_metrics_and_sila_tasks() {
                     SemanticId::new(SemanticKind::Iri, "https://example.com/semantic/build")
                         .unwrap(),
                     BindingRole::Task,
-                    sila(),
+                    task_endpoint(),
                 )
                 .unwrap(),
             ],

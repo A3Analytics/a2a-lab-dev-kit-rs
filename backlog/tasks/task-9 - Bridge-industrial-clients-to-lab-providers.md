@@ -4,7 +4,7 @@ title: Bridge industrial clients to lab providers
 status: Done
 assignee: []
 created_date: '2026-09-30 16:51'
-updated_date: '2026-09-30 16:51'
+updated_date: '2026-10-06 06:40'
 labels:
   - industrial
 dependencies:
@@ -24,6 +24,12 @@ A2A and MCP agents should keep the same seven operations when the data comes fro
 - [x] #1 IndustrialLabBuilder shares one catalog and live source across logs, metrics, and workflows
 - [x] #2 An A2A client reads an OPC UA-bound metric and starts a SiLA-bound workflow
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Superseded for SiLA: catalog bindings no longer store an outbound SiLA endpoint. SiLA is served from LabApi.
+<!-- SECTION:NOTES:END -->
 
 ## Final Summary
 

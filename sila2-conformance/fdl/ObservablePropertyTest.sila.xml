@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>ObservablePropertyTest</Identifier>
+  <DisplayName>Observable Property Test</DisplayName>
+  <Description>
+    This is a test feature to test observable properties.
+  </Description>
+
+  <Property>
+    <Identifier>FixedValue</Identifier>
+    <DisplayName>Fixed Value</DisplayName>
+    <Description>Always returns 42 and never changes.</Description>
+    <Observable>Yes</Observable>
+    <DataType>
+      <Basic>Integer</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>Alternating</Identifier>
+    <DisplayName>Alternating</DisplayName>
+    <Description>Switches every second between true and false</Description>
+    <Observable>Yes</Observable>
+    <DataType>
+      <Basic>Boolean</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>Editable</Identifier>
+    <DisplayName>Editable</DisplayName>
+    <Description>Can be set through SetValue command</Description>
+    <Observable>Yes</Observable>
+    <DataType>
+      <Basic>Integer</Basic>
+    </DataType>
+  </Property>
+  <Command>
+    <Identifier>SetValue</Identifier>
+    <DisplayName>Set Value</DisplayName>
+    <Description>Changes the value of Editable</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Value</Identifier>
+      <DisplayName>Value</DisplayName>
+      <Description>The new value</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Parameter>
+  </Command>
+</Feature>

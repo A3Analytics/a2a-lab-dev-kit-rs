@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.unobservablecommandtest.v1;
+
+/* Feature for testing unobservable commands */
+service UnobservableCommandTest {
+  /* A command that takes no parameters and returns no responses */
+  rpc CommandWithoutParametersAndResponses (sila2.org.silastandard.test.unobservablecommandtest.v1.CommandWithoutParametersAndResponses_Parameters) returns (sila2.org.silastandard.test.unobservablecommandtest.v1.CommandWithoutParametersAndResponses_Responses) {}
+  /* A command that takes one integer parameter and returns its string representation. */
+  rpc ConvertIntegerToString (sila2.org.silastandard.test.unobservablecommandtest.v1.ConvertIntegerToString_Parameters) returns (sila2.org.silastandard.test.unobservablecommandtest.v1.ConvertIntegerToString_Responses) {}
+  /* A command which takes an integer and a string parameter and returns a string with both joined (e.g. "123abc") */
+  rpc JoinIntegerAndString (sila2.org.silastandard.test.unobservablecommandtest.v1.JoinIntegerAndString_Parameters) returns (sila2.org.silastandard.test.unobservablecommandtest.v1.JoinIntegerAndString_Responses) {}
+  /* A command which splits a given string after its first character. Returns empty parts if the input was too short. */
+  rpc SplitStringAfterFirstCharacter (sila2.org.silastandard.test.unobservablecommandtest.v1.SplitStringAfterFirstCharacter_Parameters) returns (sila2.org.silastandard.test.unobservablecommandtest.v1.SplitStringAfterFirstCharacter_Responses) {}
+}
+
+/* Parameters for CommandWithoutParametersAndResponses */
+message CommandWithoutParametersAndResponses_Parameters {
+}
+
+/* Responses of CommandWithoutParametersAndResponses */
+message CommandWithoutParametersAndResponses_Responses {
+}
+
+/* Parameters for ConvertIntegerToString */
+message ConvertIntegerToString_Parameters {
+  sila2.org.silastandard.Integer Integer = 1;  /* An integer, e.g. 12345 */
+}
+
+/* Responses of ConvertIntegerToString */
+message ConvertIntegerToString_Responses {
+  sila2.org.silastandard.String StringRepresentation = 1;  /* The string representation of the given integer, e.g. '12345' */
+}
+
+/* Parameters for JoinIntegerAndString */
+message JoinIntegerAndString_Parameters {
+  sila2.org.silastandard.Integer Integer = 1;  /* An integer, e.g. 123 */
+  sila2.org.silastandard.String String = 2;  /* A string, e.g. 'abc' */
+}
+
+/* Responses of JoinIntegerAndString */
+message JoinIntegerAndString_Responses {
+  sila2.org.silastandard.String JoinedParameters = 1;  /* Both parameters joined as string (e.g. '123abc') */
+}
+
+/* Parameters for SplitStringAfterFirstCharacter */
+message SplitStringAfterFirstCharacter_Parameters {
+  sila2.org.silastandard.String String = 1;  /* A string, e.g. 'abcde' */
+}
+
+/* Responses of SplitStringAfterFirstCharacter */
+message SplitStringAfterFirstCharacter_Responses {
+  sila2.org.silastandard.String FirstCharacter = 1;  /* The first character, e.g. 'a', or an empty string if the input was empty */
+  sila2.org.silastandard.String Remainder = 2;  /* The remainder, e.g. 'bcde', or an empty string if the input was shorter that two characters */
+}

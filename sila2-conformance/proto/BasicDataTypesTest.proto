@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.basicdatatypestest.v1;
+
+/* Provides commands and properties to set or respectively get all SiLA Basic Data Types via command parameters or property responses respectively. */
+service BasicDataTypesTest {
+  /* Receives a String value and returns the String value that has been received. */
+  rpc EchoStringValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoStringValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoStringValue_Responses) {}
+  /* Receives an Integer value and returns the Integer value that has been received. */
+  rpc EchoIntegerValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoIntegerValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoIntegerValue_Responses) {}
+  /* Receives a Real value and returns the Real value that has been received. */
+  rpc EchoRealValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoRealValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoRealValue_Responses) {}
+  /* Receives a Boolean value and returns the Boolean value that has been received. */
+  rpc EchoBooleanValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoBooleanValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoBooleanValue_Responses) {}
+  /* Receives a Date value and returns the Date value that has been received. */
+  rpc EchoDateValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoDateValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoDateValue_Responses) {}
+  /* Receives a Time value and returns the Time value that has been received. */
+  rpc EchoTimeValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoTimeValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoTimeValue_Responses) {}
+  /* Receives a Timestamp value and returns a message containing the Timestamp value that has been received. */
+  rpc EchoTimestampValue (sila2.org.silastandard.test.basicdatatypestest.v1.EchoTimestampValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.EchoTimestampValue_Responses) {}
+  /* Returns the String value 'SiLA2_Test_String_Value'. */
+  rpc Get_StringValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_StringValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_StringValue_Responses) {}
+  /* Returns the Integer value 5124. */
+  rpc Get_IntegerValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_IntegerValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_IntegerValue_Responses) {}
+  /* Returns the Real value 3.1415926. */
+  rpc Get_RealValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_RealValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_RealValue_Responses) {}
+  /* Returns the Boolean value true. */
+  rpc Get_BooleanValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_BooleanValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_BooleanValue_Responses) {}
+  /* Returns the Date value 05.08.2022 respective 08/05/2018, timezone +2. */
+  rpc Get_DateValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_DateValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_DateValue_Responses) {}
+  /* Returns the Time value 12:34:56.789, timezone +2. */
+  rpc Get_TimeValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_TimeValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_TimeValue_Responses) {}
+  /* Returns the Timestamp value 2022-08-05 12:34:56.789, timezone +2. */
+  rpc Get_TimestampValue (sila2.org.silastandard.test.basicdatatypestest.v1.Get_TimestampValue_Parameters) returns (sila2.org.silastandard.test.basicdatatypestest.v1.Get_TimestampValue_Responses) {}
+}
+
+/* Parameters for EchoStringValue */
+message EchoStringValue_Parameters {
+  sila2.org.silastandard.String StringValue = 1;  /* The String value to be returned. */
+}
+
+/* Responses of EchoStringValue */
+message EchoStringValue_Responses {
+  sila2.org.silastandard.String ReceivedValue = 1;  /* The String value that has been received. */
+}
+
+/* Parameters for EchoIntegerValue */
+message EchoIntegerValue_Parameters {
+  sila2.org.silastandard.Integer IntegerValue = 1;  /* The Integer value to be returned. */
+}
+
+/* Responses of EchoIntegerValue */
+message EchoIntegerValue_Responses {
+  sila2.org.silastandard.Integer ReceivedValue = 1;  /* The Integer value that has been received. */
+}
+
+/* Parameters for EchoRealValue */
+message EchoRealValue_Parameters {
+  sila2.org.silastandard.Real RealValue = 1;  /* The Real value to be returned. */
+}
+
+/* Responses of EchoRealValue */
+message EchoRealValue_Responses {
+  sila2.org.silastandard.Real ReceivedValue = 1;  /* The Real value that has been received. */
+}
+
+/* Parameters for EchoBooleanValue */
+message EchoBooleanValue_Parameters {
+  sila2.org.silastandard.Boolean BooleanValue = 1;  /* The Boolean value to be returned. */
+}
+
+/* Responses of EchoBooleanValue */
+message EchoBooleanValue_Responses {
+  sila2.org.silastandard.Boolean ReceivedValue = 1;  /* The Boolean value that has been received. */
+}
+
+/* Parameters for EchoDateValue */
+message EchoDateValue_Parameters {
+  sila2.org.silastandard.Date DateValue = 1;  /* The Date value to be returned. */
+}
+
+/* Responses of EchoDateValue */
+message EchoDateValue_Responses {
+  sila2.org.silastandard.Date ReceivedValue = 1;  /* The Date value that has been received. */
+}
+
+/* Parameters for EchoTimeValue */
+message EchoTimeValue_Parameters {
+  sila2.org.silastandard.Time TimeValue = 1;  /* The Time value to be returned. */
+}
+
+/* Responses of EchoTimeValue */
+message EchoTimeValue_Responses {
+  sila2.org.silastandard.Time ReceivedValue = 1;  /* The Time value that has been received. */
+}
+
+/* Parameters for EchoTimestampValue */
+message EchoTimestampValue_Parameters {
+  sila2.org.silastandard.Timestamp TimestampValue = 1;  /* The Timestamp value to be returned. */
+}
+
+/* Responses of EchoTimestampValue */
+message EchoTimestampValue_Responses {
+  sila2.org.silastandard.Timestamp ReceivedValue = 1;  /* The Timestamp value that has been received. */
+}
+
+/* Parameters for StringValue */
+message Get_StringValue_Parameters {
+}
+
+/* Responses of StringValue */
+message Get_StringValue_Responses {
+  sila2.org.silastandard.String StringValue = 1;  /* Returns the String value 'SiLA2_Test_String_Value'. */
+}
+
+/* Parameters for IntegerValue */
+message Get_IntegerValue_Parameters {
+}
+
+/* Responses of IntegerValue */
+message Get_IntegerValue_Responses {
+  sila2.org.silastandard.Integer IntegerValue = 1;  /* Returns the Integer value 5124. */
+}
+
+/* Parameters for RealValue */
+message Get_RealValue_Parameters {
+}
+
+/* Responses of RealValue */
+message Get_RealValue_Responses {
+  sila2.org.silastandard.Real RealValue = 1;  /* Returns the Real value 3.1415926. */
+}
+
+/* Parameters for BooleanValue */
+message Get_BooleanValue_Parameters {
+}
+
+/* Responses of BooleanValue */
+message Get_BooleanValue_Responses {
+  sila2.org.silastandard.Boolean BooleanValue = 1;  /* Returns the Boolean value true. */
+}
+
+/* Parameters for DateValue */
+message Get_DateValue_Parameters {
+}
+
+/* Responses of DateValue */
+message Get_DateValue_Responses {
+  sila2.org.silastandard.Date DateValue = 1;  /* Returns the Date value 05.08.2022 respective 08/05/2018, timezone +2. */
+}
+
+/* Parameters for TimeValue */
+message Get_TimeValue_Parameters {
+}
+
+/* Responses of TimeValue */
+message Get_TimeValue_Responses {
+  sila2.org.silastandard.Time TimeValue = 1;  /* Returns the Time value 12:34:56.789, timezone +2. */
+}
+
+/* Parameters for TimestampValue */
+message Get_TimestampValue_Parameters {
+}
+
+/* Responses of TimestampValue */
+message Get_TimestampValue_Responses {
+  sila2.org.silastandard.Timestamp TimestampValue = 1;  /* Returns the Timestamp value 2022-08-05 12:34:56.789, timezone +2. */
+}

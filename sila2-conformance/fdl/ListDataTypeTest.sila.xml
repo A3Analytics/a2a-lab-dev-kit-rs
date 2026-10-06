@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>ListDataTypeTest</Identifier>
+  <DisplayName>List Data Type Test</DisplayName>
+  <Description>
+    Provides commands and properties to set or respectively get SiLA List Data Type values via command parameters or property responses respectively.
+  </Description>
+
+  <!-- Empty String List -->
+  <Property>
+    <Identifier>EmptyStringList</Identifier>
+    <DisplayName>Empty String List</DisplayName>
+    <Description>Returns an empty list of String type.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <List>
+        <DataType>
+          <Basic>String</Basic>
+        </DataType>
+      </List>
+    </DataType>
+  </Property>
+
+  <!-- String List type -->
+  <Command>
+    <Identifier>EchoStringList</Identifier>
+    <DisplayName>Echo String List</DisplayName>
+    <Description>Receives a list of string values and returns a list containing the string values that have been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>StringList</Identifier>
+      <DisplayName>String List</DisplayName>
+      <Description>The list of string values to be returned.</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+        </List>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValues</Identifier>
+      <DisplayName>Received Values</DisplayName>
+      <Description>A list containing the string values that have been received.</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+        </List>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>StringList</Identifier>
+    <DisplayName>String List</DisplayName>
+    <Description>Returns a list with the following string values: 'SiLA 2', 'is', 'great'.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <List>
+        <DataType>
+          <Basic>String</Basic>
+        </DataType>
+      </List>
+    </DataType>
+  </Property>
+
+  <!-- Integer List type -->
+  <Command>
+    <Identifier>EchoIntegerList</Identifier>
+    <DisplayName>Echo Integer List</DisplayName>
+    <Description>Receives a list of integer values and returns a list containing the integer values that have been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>IntegerList</Identifier>
+      <DisplayName>Integer List</DisplayName>
+      <Description>The list of integer values to be returned.</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </List>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValues</Identifier>
+      <DisplayName>Received Values</DisplayName>
+      <Description>A list containing the integer values that have been received.</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </List>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>IntegerList</Identifier>
+    <DisplayName>Integer List</DisplayName>
+    <Description>Returns a list with the following Integer values: 1, 2, 3.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <List>
+        <DataType>
+          <Basic>Integer</Basic>
+        </DataType>
+      </List>
+    </DataType>
+  </Property>
+
+  <!-- Structure List type -->
+  <Command>
+    <Identifier>EchoStructureList</Identifier>
+    <DisplayName>Echo Structure List</DisplayName>
+    <Description>Receives a list of structure values and returns a list containing the structures that have been received.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>StructureList</Identifier>
+      <DisplayName>Structure List</DisplayName>
+      <Description>The list of structure values to be returned.</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <DataTypeIdentifier>TestStructure</DataTypeIdentifier>
+          </DataType>
+        </List>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValues</Identifier>
+      <DisplayName>Received Values</DisplayName>
+      <Description>A message containing the content of all structures that have been received.</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <DataTypeIdentifier>TestStructure</DataTypeIdentifier>
+          </DataType>
+        </List>
+      </DataType>
+    </Response>
+  </Command>
+  <Property>
+    <Identifier>StructureList</Identifier>
+    <DisplayName>Structure List</DisplayName>
+    <Description>
+      Returns a list with 3 structure values, whereas the values of the first element are:
+      string value = 'SiLA2_Test_String_Value_1'
+      integer value = 5124
+      real value = 3.1415926
+      boolean value = true
+      binary value (embedded string) = 'Binary_String_Value_1'
+      date value = 05.08.2022 respective 08/05/2022
+      time value = 12:34:56.789
+      time stamp value = 2022-08-05 12:34:56.789
+      any type value (string) = 'Any_Type_String_Value_1'
+
+      For the second and third element:
+      the last character of the strings changes to '2' respective '3'
+      the numeric values are incremented by 1
+      the boolean values becomes false for element 2 and true for element 3
+      for the date value day, month and year are incremented by 1
+      for the time value milliseconds, seconds, minutes and hours are incremented by 1
+      for the time stamp value day, month, year, milliseconds, seconds, minutes and hours are incremented by 1.
+    </Description>
+    <Observable>No</Observable>
+    <DataType>
+      <List>
+        <DataType>
+          <DataTypeIdentifier>TestStructure</DataTypeIdentifier>
+        </DataType>
+      </List>
+    </DataType>
+  </Property>
+
+  <DataTypeDefinition>
+    <Identifier>TestStructure</Identifier>
+    <DisplayName>Test Structure</DisplayName>
+    <Description>An example Structure data type containing all SiLA basic types.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>StringTypeValue</Identifier>
+          <DisplayName>String Type Value</DisplayName>
+          <Description>A value of SiLA data type String.</Description>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>IntegerTypeValue</Identifier>
+          <DisplayName>Integer Type Value</DisplayName>
+          <Description>A value of SiLA data type Integer.</Description>
+          <DataType>
+            <Basic>Integer</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>RealTypeValue</Identifier>
+          <DisplayName>Real Type Value</DisplayName>
+          <Description>A value of SiLA data type Real.</Description>
+          <DataType>
+            <Basic>Real</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>BooleanTypeValue</Identifier>
+          <DisplayName>Boolean Type Value</DisplayName>
+          <Description>A value of SiLA data type Boolean.</Description>
+          <DataType>
+            <Basic>Boolean</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>BinaryTypeValue</Identifier>
+          <DisplayName>Binary Type Value</DisplayName>
+          <Description>A value of SiLA data type Binary.</Description>
+          <DataType>
+            <Basic>Binary</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>DateTypeValue</Identifier>
+          <DisplayName>Date Type Value</DisplayName>
+          <Description>A value of SiLA data type Date.</Description>
+          <DataType>
+            <Basic>Date</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>TimeTypeValue</Identifier>
+          <DisplayName>Time Type Value</DisplayName>
+          <Description>A value of SiLA data type Time.</Description>
+          <DataType>
+            <Basic>Time</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>TimestampTypeValue</Identifier>
+          <DisplayName>Timestamp Type Value</DisplayName>
+          <Description>A value of SiLA data type Timestamp.</Description>
+          <DataType>
+            <Basic>Timestamp</Basic>
+          </DataType>
+        </Element>
+        <Element>
+          <Identifier>AnyTypeValue</Identifier>
+          <DisplayName>Any Type Value</DisplayName>
+          <Description>A value of SiLA data type Any.</Description>
+          <DataType>
+            <Basic>Any</Basic>
+          </DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+</Feature>

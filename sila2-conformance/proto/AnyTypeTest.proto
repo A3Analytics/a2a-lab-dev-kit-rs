@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.anytypetest.v1;
+
+/* Provides commands and properties to set or respectively get SiLA Any Type values via command parameters or property responses respectively. */
+service AnyTypeTest {
+  /* Receives an Any type value and returns the type and the value that has been received. */
+  rpc SetAnyTypeValue (sila2.org.silastandard.test.anytypetest.v1.SetAnyTypeValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.SetAnyTypeValue_Responses) {}
+  /* Returns the Any type String value 'SiLA_Any_type_of_String_type'. */
+  rpc Get_AnyTypeStringValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeStringValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeStringValue_Responses) {}
+  /* Returns the Any type Integer value 5124. */
+  rpc Get_AnyTypeIntegerValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeIntegerValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeIntegerValue_Responses) {}
+  /* Returns an Any type Real value 3.1415926. */
+  rpc Get_AnyTypeRealValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeRealValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeRealValue_Responses) {}
+  /* Returns the Any type Boolean value true. */
+  rpc Get_AnyTypeBooleanValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeBooleanValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeBooleanValue_Responses) {}
+  /* Returns the Any type ASCII-encoded string value 'SiLA_Any_type_of_Binary_type' as Binary. */
+  rpc Get_AnyTypeBinaryValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeBinaryValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeBinaryValue_Responses) {}
+  /* Returns the Any type Date value 05.08.2022 respective 08/05/2022, timezone +2. */
+  rpc Get_AnyTypeDateValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeDateValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeDateValue_Responses) {}
+  /* Returns the Any type Time value 12:34:56.789, timezone +2. */
+  rpc Get_AnyTypeTimeValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeTimeValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeTimeValue_Responses) {}
+  /* Returns the Any type Timestamp value 2022-08-05 12:34:56.789, timezone +2. */
+  rpc Get_AnyTypeTimestampValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeTimestampValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeTimestampValue_Responses) {}
+  /* Returns the Any type String List value ('SiLA 2', 'Any', 'Type', 'String', 'List') */
+  rpc Get_AnyTypeListValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeListValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeListValue_Responses) {}
+  /* 
+      Returns the following Any type Structure value:
+      - String 'StringTypeValue' = 'A String value',
+      - Integer 'IntegerTypeValue' = 83737665,
+      - Date 'DateTypeValue' = 05.08.2022 respective 08/05/2022 timezone +2 )
+     */
+  rpc Get_AnyTypeStructureValue (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeStructureValue_Parameters) returns (sila2.org.silastandard.test.anytypetest.v1.Get_AnyTypeStructureValue_Responses) {}
+}
+
+/* Parameters for SetAnyTypeValue */
+message SetAnyTypeValue_Parameters {
+  sila2.org.silastandard.Any AnyTypeValue = 1;  /* The Any type value to be set. */
+}
+
+/* Responses of SetAnyTypeValue */
+message SetAnyTypeValue_Responses {
+  sila2.org.silastandard.String ReceivedAnyType = 1;  /* The type that has been received. */
+  sila2.org.silastandard.Any ReceivedValue = 2;  /* The value that has been received. */
+}
+
+/* Parameters for AnyTypeStringValue */
+message Get_AnyTypeStringValue_Parameters {
+}
+
+/* Responses of AnyTypeStringValue */
+message Get_AnyTypeStringValue_Responses {
+  sila2.org.silastandard.Any AnyTypeStringValue = 1;  /* Returns the Any type String value 'SiLA_Any_type_of_String_type'. */
+}
+
+/* Parameters for AnyTypeIntegerValue */
+message Get_AnyTypeIntegerValue_Parameters {
+}
+
+/* Responses of AnyTypeIntegerValue */
+message Get_AnyTypeIntegerValue_Responses {
+  sila2.org.silastandard.Any AnyTypeIntegerValue = 1;  /* Returns the Any type Integer value 5124. */
+}
+
+/* Parameters for AnyTypeRealValue */
+message Get_AnyTypeRealValue_Parameters {
+}
+
+/* Responses of AnyTypeRealValue */
+message Get_AnyTypeRealValue_Responses {
+  sila2.org.silastandard.Any AnyTypeRealValue = 1;  /* Returns an Any type Real value 3.1415926. */
+}
+
+/* Parameters for AnyTypeBooleanValue */
+message Get_AnyTypeBooleanValue_Parameters {
+}
+
+/* Responses of AnyTypeBooleanValue */
+message Get_AnyTypeBooleanValue_Responses {
+  sila2.org.silastandard.Any AnyTypeBooleanValue = 1;  /* Returns the Any type Boolean value true. */
+}
+
+/* Parameters for AnyTypeBinaryValue */
+message Get_AnyTypeBinaryValue_Parameters {
+}
+
+/* Responses of AnyTypeBinaryValue */
+message Get_AnyTypeBinaryValue_Responses {
+  sila2.org.silastandard.Any AnyTypeBinaryValue = 1;  /* Returns the Any type ASCII-encoded string value 'SiLA_Any_type_of_Binary_type' as Binary. */
+}
+
+/* Parameters for AnyTypeDateValue */
+message Get_AnyTypeDateValue_Parameters {
+}
+
+/* Responses of AnyTypeDateValue */
+message Get_AnyTypeDateValue_Responses {
+  sila2.org.silastandard.Any AnyTypeDateValue = 1;  /* Returns the Any type Date value 05.08.2022 respective 08/05/2022, timezone +2. */
+}
+
+/* Parameters for AnyTypeTimeValue */
+message Get_AnyTypeTimeValue_Parameters {
+}
+
+/* Responses of AnyTypeTimeValue */
+message Get_AnyTypeTimeValue_Responses {
+  sila2.org.silastandard.Any AnyTypeTimeValue = 1;  /* Returns the Any type Time value 12:34:56.789, timezone +2. */
+}
+
+/* Parameters for AnyTypeTimestampValue */
+message Get_AnyTypeTimestampValue_Parameters {
+}
+
+/* Responses of AnyTypeTimestampValue */
+message Get_AnyTypeTimestampValue_Responses {
+  sila2.org.silastandard.Any AnyTypeTimestampValue = 1;  /* Returns the Any type Timestamp value 2022-08-05 12:34:56.789, timezone +2. */
+}
+
+/* Parameters for AnyTypeListValue */
+message Get_AnyTypeListValue_Parameters {
+}
+
+/* Responses of AnyTypeListValue */
+message Get_AnyTypeListValue_Responses {
+  sila2.org.silastandard.Any AnyTypeListValue = 1;  /* Returns the Any type String List value ('SiLA 2', 'Any', 'Type', 'String', 'List') */
+}
+
+/* Parameters for AnyTypeStructureValue */
+message Get_AnyTypeStructureValue_Parameters {
+}
+
+/* Responses of AnyTypeStructureValue */
+message Get_AnyTypeStructureValue_Responses {
+  sila2.org.silastandard.Any AnyTypeStructureValue = 1;  /* Returns the following Any type Structure value: - String 'StringTypeValue' = 'A String value', - Integer 'IntegerTypeValue' = 83737665, - Date 'DateTypeValue' = 05.08.2022 respective 08/05/2022 timezone +2 ) */
+}

@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.structuredatatypetest.v1;
+
+/* Provides commands and properties to set or respectively get SiLA Structure Data Type values via command parameters or property responses respectively. */
+service StructureDataTypeTest {
+  /* Receives a structure value and returns the structure that has been received (binary value is expected to be an embedded value, any typer value is expected to be a Basic type). */
+  rpc EchoStructureValue (sila2.org.silastandard.test.structuredatatypetest.v1.EchoStructureValue_Parameters) returns (sila2.org.silastandard.test.structuredatatypetest.v1.EchoStructureValue_Responses) {}
+  /* Receives a multilevel structure value and returns the structure that has been received. */
+  rpc EchoDeepStructureValue (sila2.org.silastandard.test.structuredatatypetest.v1.EchoDeepStructureValue_Parameters) returns (sila2.org.silastandard.test.structuredatatypetest.v1.EchoDeepStructureValue_Responses) {}
+  /* 
+      Returns a structure with the following elements values:
+      - String value = 'SiLA2_Test_String_Value'
+      - Integer value = 5124
+      - Real value = 3.1415926
+      - Boolean value = true
+      - Binary value = embedded string 'SiLA2_Binary_String_Value'
+      - Date value = 05.08.2022 respective 08/05/2022
+      - Time value = 12:34:56.789
+      - Timestamp value = 2022-08-05 12:34:56.789
+      - Any type value = string 'SiLA2_Any_Type_String_Value'.
+     */
+  rpc Get_StructureValue (sila2.org.silastandard.test.structuredatatypetest.v1.Get_StructureValue_Parameters) returns (sila2.org.silastandard.test.structuredatatypetest.v1.Get_StructureValue_Responses) {}
+  /* 
+      Returns a multilevel structure with the following values:
+      - string value = 'Outer_Test_String'
+      - integer value = 1111
+      - middle structure value =
+        - string value = 'Middle_Test_String'
+        - integer value = 2222
+        - inner structure value =
+          - string value = 'Inner_Test_String'
+          - integer value = 3333.
+     */
+  rpc Get_DeepStructureValue (sila2.org.silastandard.test.structuredatatypetest.v1.Get_DeepStructureValue_Parameters) returns (sila2.org.silastandard.test.structuredatatypetest.v1.Get_DeepStructureValue_Responses) {}
+}
+
+/* An example Structure data type containing all SiLA basic types. */
+message DataType_TestStructure {
+  message TestStructure_Struct {
+    sila2.org.silastandard.String StringTypeValue = 1;  /* A value of SiLA data type String. */
+    sila2.org.silastandard.Integer IntegerTypeValue = 2;  /* A value of SiLA data type Integer. */
+    sila2.org.silastandard.Real RealTypeValue = 3;  /* A value of SiLA data type Real. */
+    sila2.org.silastandard.Boolean BooleanTypeValue = 4;  /* A value of SiLA data type Boolean. */
+    sila2.org.silastandard.Binary BinaryTypeValue = 5;  /* A value of SiLA data type Binary. */
+    sila2.org.silastandard.Date DateTypeValue = 6;  /* A value of SiLA data type Date. */
+    sila2.org.silastandard.Time TimeTypeValue = 7;  /* A value of SiLA data type Time. */
+    sila2.org.silastandard.Timestamp TimestampTypeValue = 8;  /* A value of SiLA data type Timestamp. */
+    sila2.org.silastandard.Any AnyTypeValue = 9;  /* A value of SiLA data type Any. */
+  }
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_TestStructure.TestStructure_Struct TestStructure = 1;  /* An example Structure data type containing all SiLA basic types. */
+}
+
+/* An example Structure data type that contains other structures within. */
+message DataType_DeepStructure {
+  message DeepStructure_Struct {
+    message MiddleStructure_Struct {
+      message InnerStructure_Struct {
+        sila2.org.silastandard.String InnerStringTypeValue = 1;  /* A value of SiLA data type String contained in the innermost structure. */
+        sila2.org.silastandard.Integer InnerIntegerTypeValue = 2;  /* A value of SiLA data type Integer contained in the innermost structure. */
+      }
+      sila2.org.silastandard.String MiddleStringTypeValue = 1;  /* A value of SiLA data type String contained in the middle structure. */
+      sila2.org.silastandard.Integer MiddleIntegerTypeValue = 2;  /* A value of SiLA data type Integer contained in the middle structure. */
+      sila2.org.silastandard.test.structuredatatypetest.v1.DataType_DeepStructure.DeepStructure_Struct.MiddleStructure_Struct.InnerStructure_Struct InnerStructure = 3;  /* A structure type that is part of the middle structure. */
+    }
+    sila2.org.silastandard.String OuterStringTypeValue = 1;  /* A value of SiLA data type String contained in the topmost structure. */
+    sila2.org.silastandard.Integer OuterIntegerTypeValue = 2;  /* A value of SiLA data type Integer contained in the topmost structure. */
+    sila2.org.silastandard.test.structuredatatypetest.v1.DataType_DeepStructure.DeepStructure_Struct.MiddleStructure_Struct MiddleStructure = 3;  /* Another structure type that is part of the outer structure. */
+  }
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_DeepStructure.DeepStructure_Struct DeepStructure = 1;  /* An example Structure data type that contains other structures within. */
+}
+
+/* Parameters for EchoStructureValue */
+message EchoStructureValue_Parameters {
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_TestStructure StructureValue = 1;  /* The Structure value to be returned. */
+}
+
+/* Responses of EchoStructureValue */
+message EchoStructureValue_Responses {
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_TestStructure ReceivedValues = 1;  /* The structure that has been received. */
+}
+
+/* Parameters for EchoDeepStructureValue */
+message EchoDeepStructureValue_Parameters {
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_DeepStructure DeepStructureValue = 1;  /* The deep Structure value to be set. */
+}
+
+/* Responses of EchoDeepStructureValue */
+message EchoDeepStructureValue_Responses {
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_DeepStructure ReceivedValues = 1;  /* The structure that has been received. */
+}
+
+/* Parameters for StructureValue */
+message Get_StructureValue_Parameters {
+}
+
+/* Responses of StructureValue */
+message Get_StructureValue_Responses {
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_TestStructure StructureValue = 1;  /* Returns a structure with the following elements values: - String value = 'SiLA2_Test_String_Value' - Integer value = 5124 - Real value = 3.1415926 - Boolean value = true - Binary value = embedded string 'SiLA2_Binary_String_Value' - Date value = 05.08.2022 respective 08/05/2022 - Time value = 12:34:56.789 - Timestamp value = 2022-08-05 12:34:56.789 - Any type value = string 'SiLA2_Any_Type_String_Value'. */
+}
+
+/* Parameters for DeepStructureValue */
+message Get_DeepStructureValue_Parameters {
+}
+
+/* Responses of DeepStructureValue */
+message Get_DeepStructureValue_Responses {
+  sila2.org.silastandard.test.structuredatatypetest.v1.DataType_DeepStructure DeepStructureValue = 1;  /* Returns a multilevel structure with the following values: - string value = 'Outer_Test_String' - integer value = 1111 - middle structure value = - string value = 'Middle_Test_String' - integer value = 2222 - inner structure value = - string value = 'Inner_Test_String' - integer value = 3333. */
+}

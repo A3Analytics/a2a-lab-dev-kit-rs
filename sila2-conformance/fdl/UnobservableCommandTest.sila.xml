@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>UnobservableCommandTest</Identifier>
+  <DisplayName>Unobservable Command Test</DisplayName>
+  <Description>Feature for testing unobservable commands</Description>
+  <Command>
+    <Identifier>CommandWithoutParametersAndResponses</Identifier>
+    <DisplayName>Command Without Parameters And Responses</DisplayName>
+    <Description>A command that takes no parameters and returns no responses</Description>
+    <Observable>No</Observable>
+  </Command>
+  <Command>
+    <Identifier>ConvertIntegerToString</Identifier>
+    <DisplayName>Convert Integer To String</DisplayName>
+    <Description>A command that takes one integer parameter and returns its string representation.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Integer</Identifier>
+      <DisplayName>Integer</DisplayName>
+      <Description>An integer, e.g. 12345</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>StringRepresentation</Identifier>
+      <DisplayName>String Representation</DisplayName>
+      <Description>The string representation of the given integer, e.g. '12345'</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Command>
+    <Identifier>JoinIntegerAndString</Identifier>
+    <DisplayName>Join Integer And String</DisplayName>
+    <Description>
+      A command which takes an integer and a string parameter and returns a string with both joined (e.g.
+      "123abc")
+    </Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Integer</Identifier>
+      <DisplayName>Integer</DisplayName>
+      <Description>An integer, e.g. 123</Description>
+      <DataType>
+        <Basic>Integer</Basic>
+      </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>String</Identifier>
+      <DisplayName>String</DisplayName>
+      <Description>A string, e.g. 'abc'</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>JoinedParameters</Identifier>
+      <DisplayName>Joined parameters</DisplayName>
+      <Description>Both parameters joined as string (e.g. '123abc')</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Command>
+    <Identifier>SplitStringAfterFirstCharacter</Identifier>
+    <DisplayName>Split String After First Character</DisplayName>
+    <Description>
+      A command which splits a given string after its first character. Returns empty parts if the input was
+      too short.
+    </Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>String</Identifier>
+      <DisplayName>String</DisplayName>
+      <Description>A string, e.g. 'abcde'</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>FirstCharacter</Identifier>
+      <DisplayName>First Character</DisplayName>
+      <Description>The first character, e.g. 'a', or an empty string if the input was empty</Description>
+      <DataType>
+        <Constrained>
+          <DataType>
+            <Basic>String</Basic>
+          </DataType>
+          <Constraints>
+            <MaximalLength>1</MaximalLength>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Response>
+    <Response>
+      <Identifier>Remainder</Identifier>
+      <DisplayName>Remainder</DisplayName>
+      <Description>The remainder, e.g. 'bcde', or an empty string if the input was shorter that two characters</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+  </Command>
+</Feature>

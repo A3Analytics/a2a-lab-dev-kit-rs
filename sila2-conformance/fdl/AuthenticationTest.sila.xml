@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>AuthenticationTest</Identifier>
+  <DisplayName>Authentication Test</DisplayName>
+  <Description>
+    Contains commands that require authentication. A client should be able to obtain an Authorization Token through the Login command of the Authentication Service feature 
+    using the following credentials: username: 'test', password: 'test'
+  </Description>
+  <Command>
+    <Identifier>RequiresToken</Identifier>
+    <DisplayName>Requires Token</DisplayName>
+    <Description>Requires an authorization token in order to be executed</Description>
+    <Observable>No</Observable>
+  </Command>
+  <Command>
+    <Identifier>RequiresTokenForBinaryUpload</Identifier>
+    <DisplayName>Requires Token For Binary Upload</DisplayName>
+    <Description>Requires an authorization token in order to be executed and to upload a binary parameter</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>BinaryToUpload</Identifier>
+      <DisplayName>Binary To Upload</DisplayName>
+      <Description>A binary that needs to be uploaded</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </Parameter>
+  </Command>
+</Feature>

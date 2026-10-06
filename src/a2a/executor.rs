@@ -273,9 +273,9 @@ async fn complete_without_command(
                 artifact_id: a2a_types::new_artifact_id(),
                 name: Some("lab-profile".to_owned()),
                 description: Some("This agent speaks the a2a-lab data profile".to_owned()),
-                parts: vec![Part::text(
-                    format!("Send a data part with media type {LAB_MEDIA_TYPE}"),
-                )],
+                parts: vec![Part::text(format!(
+                    "Send a data part with media type {LAB_MEDIA_TYPE}"
+                ))],
                 metadata: None,
                 extensions: None,
             },

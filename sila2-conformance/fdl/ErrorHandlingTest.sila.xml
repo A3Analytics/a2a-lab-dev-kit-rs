@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>ErrorHandlingTest</Identifier>
+  <DisplayName>Error Handling Test</DisplayName>
+  <Description>Tests that errors are propagated correctly</Description>
+
+  <Command>
+    <Identifier>RaiseDefinedExecutionError</Identifier>
+    <DisplayName>Raise Defined Execution Error</DisplayName>
+    <Description>Raises the "Test Error" with the error message 'SiLA2_test_error_message'</Description>
+    <Observable>No</Observable>
+    <DefinedExecutionErrors>
+      <Identifier>TestError</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+  <Command>
+    <Identifier>RaiseDefinedExecutionErrorObservably</Identifier>
+    <DisplayName>Raise Defined Execution Error Observably</DisplayName>
+    <Description>Raises the "Test Error" with the error message 'SiLA2_test_error_message'</Description>
+    <Observable>Yes</Observable>
+    <DefinedExecutionErrors>
+      <Identifier>TestError</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+  <Command>
+    <Identifier>RaiseUndefinedExecutionError</Identifier>
+    <DisplayName>Raise Undefined Execution Error</DisplayName>
+    <Description>Raises an Undefined Execution Error with the error message 'SiLA2_test_error_message'</Description>
+    <Observable>No</Observable>
+  </Command>
+  <Command>
+    <Identifier>RaiseUndefinedExecutionErrorObservably</Identifier>
+    <DisplayName>Raise Undefined Execution Error Observably</DisplayName>
+    <Description>Raises an Undefined Execution Error with the error message 'SiLA2_test_error_message'</Description>
+    <Observable>Yes</Observable>
+  </Command>
+  <Property>
+      <Identifier>RaiseDefinedExecutionErrorOnGet</Identifier>
+      <DisplayName>Raise Defined Execution Error On Get</DisplayName>
+      <Description>A property that raises a "Test Error" on get with the error message 'SiLA2_test_error_message'</Description>
+      <Observable>No</Observable>
+      <DataType>
+          <Basic>Integer</Basic>
+      </DataType>
+      <DefinedExecutionErrors>
+        <Identifier>TestError</Identifier>
+      </DefinedExecutionErrors>
+  </Property>
+  <Property>
+      <Identifier>RaiseDefinedExecutionErrorOnSubscribe</Identifier>
+      <DisplayName>Raise Defined Execution Error On Subscribe</DisplayName>
+      <Description>A property that raises a "Test Error" on subscribe with the error message 'SiLA2_test_error_message'</Description>
+      <Observable>Yes</Observable>
+      <DataType>
+          <Basic>Integer</Basic>
+      </DataType>
+      <DefinedExecutionErrors>
+        <Identifier>TestError</Identifier>
+      </DefinedExecutionErrors>
+  </Property>
+  <Property>
+      <Identifier>RaiseUndefinedExecutionErrorOnGet</Identifier>
+      <DisplayName>Raise Undefined Execution Error On Get</DisplayName>
+      <Description>A property that raises an Undefined Execution Error on get with the error message 'SiLA2_test_error_message'</Description>
+      <Observable>No</Observable>
+      <DataType>
+          <Basic>Integer</Basic>
+      </DataType>
+  </Property>
+  <Property>
+      <Identifier>RaiseUndefinedExecutionErrorOnSubscribe</Identifier>
+      <DisplayName>Raise Undefined Execution Error On Subscribe</DisplayName>
+      <Description>A property that raises an Undefined Execution Error on subscribe with the error message 'SiLA2_test_error_message'</Description>
+      <Observable>Yes</Observable>
+      <DataType>
+          <Basic>Integer</Basic>
+      </DataType>
+  </Property>
+  <Property>
+      <Identifier>RaiseDefinedExecutionErrorAfterValueWasSent</Identifier>
+      <DisplayName>Raise Defined Execution Error After Value Was Sent</DisplayName>
+      <Description>A property that first sends the integer value 1 and then raises a Defined Execution Error with the error message 'SiLA2_test_error_message'</Description>
+      <Observable>Yes</Observable>
+      <DataType>
+          <Basic>Integer</Basic>
+      </DataType>
+      <DefinedExecutionErrors>
+          <Identifier>TestError</Identifier>
+      </DefinedExecutionErrors>
+  </Property>
+  <Property>
+      <Identifier>RaiseUndefinedExecutionErrorAfterValueWasSent</Identifier>
+      <DisplayName>Raise Undefined Execution Error After Value Was Sent</DisplayName>
+      <Description>A property that first sends the integer value 1 and then raises a Undefined Execution Error with the error message 'SiLA2_test_error_message'</Description>
+      <Observable>Yes</Observable>
+      <DataType>
+          <Basic>Integer</Basic>
+      </DataType>
+  </Property>
+  <DefinedExecutionError>
+    <Identifier>TestError</Identifier>
+    <DisplayName>Test Error</DisplayName>
+    <Description>An error exclusively used for testing purposes</Description>
+  </DefinedExecutionError>
+</Feature>

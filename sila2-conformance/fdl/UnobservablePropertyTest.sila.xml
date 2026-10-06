@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>UnobservablePropertyTest</Identifier>
+  <DisplayName>Unobservable Property Test</DisplayName>
+  <Description>This feature tests a static and a dynamic unobservable property.</Description>
+  <Property>
+    <Identifier>AnswerToEverything</Identifier>
+    <DisplayName>Answer To Everything</DisplayName>
+    <Description>Returns the answer to the ultimate question of life, the universe, and everything. 42.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Integer</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>SecondsSince1970</Identifier>
+    <DisplayName>Seconds Since 1970</DisplayName>
+    <Description>Returns the unix timestamp: The time in seconds since January 1st of 1970.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Integer</Basic>
+    </DataType>
+  </Property>
+</Feature>

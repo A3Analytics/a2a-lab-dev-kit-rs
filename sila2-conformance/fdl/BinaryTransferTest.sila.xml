@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" Originator="org.silastandard" Category="test"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>BinaryTransferTest</Identifier>
+  <DisplayName>Binary Transfer Test</DisplayName>
+  <Description>
+    Provides commands and properties to set or respectively get the SiLA Basic Data Type Binary via command parameters or property responses respectively.
+  </Description>
+
+  <Command>
+    <Identifier>EchoBinaryValue</Identifier>
+    <DisplayName>Echo Binary Value</DisplayName>
+    <Description>
+      Receives a Binary value (transmitted either directly or via binary transfer) and
+      returns the received value.
+    </Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>BinaryValue</Identifier>
+      <DisplayName>Binary Value</DisplayName>
+      <Description>The Binary value to be returned.</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ReceivedValue</Identifier>
+      <DisplayName>Received Value</DisplayName>
+      <Description>The received Binary value transmitted in the same way it has been received.</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </Response>
+  </Command>
+
+  <Command>
+    <Identifier>EchoBinariesObservably</Identifier>
+    <DisplayName>Echo Binaries Observably</DisplayName>
+    <Description>Receives a list of binaries, echoes them individually as intermediate responses with a delay of 1 second, and then returns them as a single joint binary</Description>
+    <Observable>Yes</Observable>
+    <Parameter>
+      <Identifier>Binaries</Identifier>
+      <DisplayName>Binaries</DisplayName>
+      <Description>List of binaries to echo</Description>
+      <DataType>
+        <List>
+          <DataType>
+            <Basic>Binary</Basic>
+          </DataType>
+        </List>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>JointBinary</Identifier>
+      <DisplayName>Joint Binary</DisplayName>
+      <Description>A single binary comprised of binaries received as parameter</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </Response>
+    <IntermediateResponse>
+      <Identifier>Binary</Identifier>
+      <DisplayName>Binary</DisplayName>
+      <Description>Single binary from the parameter list</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </IntermediateResponse>
+  </Command>
+
+  <Property>
+    <Identifier>BinaryValueDirectly</Identifier>
+    <DisplayName>Binary Value Directly</DisplayName>
+    <Description>Returns the UTF-8 encoded string 'SiLA2_Test_String_Value' directly transmitted as Binary value.</Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Binary</Basic>
+    </DataType>
+  </Property>
+  <Property>
+    <Identifier>BinaryValueDownload</Identifier>
+    <DisplayName>Binary Value Download</DisplayName>
+    <Description>
+      Returns the Binary Transfer UUID to be used to download the binary data which is the UTF-8 encoded string
+      'A_slightly_longer_SiLA2_Test_String_Value_used_to_demonstrate_the_binary_download', repeated 100,000 times.
+    </Description>
+    <Observable>No</Observable>
+    <DataType>
+      <Basic>Binary</Basic>
+    </DataType>
+  </Property>
+
+  <Command>
+    <Identifier>EchoBinaryAndMetadataString</Identifier>
+    <DisplayName>Echo Binary And Metadata String</DisplayName>
+    <Description>Receives a Binary and requires String Metadata, returns both</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Binary</Identifier>
+      <DisplayName>Binary</DisplayName>
+      <Description>The binary to echo</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Binary</Identifier>
+      <DisplayName>Binary</DisplayName>
+      <Description>The received binary</Description>
+      <DataType>
+        <Basic>Binary</Basic>
+      </DataType>
+    </Response>
+    <Response>
+      <Identifier>StringMetadata</Identifier>
+      <DisplayName>String Metadata</DisplayName>
+      <Description>The received String Metadata</Description>
+      <DataType>
+        <Basic>String</Basic>
+      </DataType>
+    </Response>
+  </Command>
+  <Metadata>
+    <Identifier>String</Identifier>
+    <DisplayName>String</DisplayName>
+    <Description>A string</Description>
+    <DataType>
+      <Basic>String</Basic>
+    </DataType>
+  </Metadata>
+</Feature>

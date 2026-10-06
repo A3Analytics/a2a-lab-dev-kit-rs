@@ -1,0 +1,110 @@
+[
+  {
+    "id": "service-uuid",
+    "requirement": "The Server UUID is a stable lowercase UUID and is rejected when malformed.",
+    "status": "pass",
+    "test": "identity_rejects_a_non_uuid_and_certificates_carry_the_uuid",
+    "location": "src/sila/identity.rs"
+  },
+  {
+    "id": "service-constraints",
+    "requirement": "Server name, version, vendor URL, and feature identifiers follow the SiLAService constraints, including character length.",
+    "status": "pass",
+    "test": "identifiers_match_the_sila_service_patterns",
+    "location": "src/sila/constraints.rs"
+  },
+  {
+    "id": "service-operations",
+    "requirement": "SiLAService reports version and implemented features, accepts a valid rename, and rejects malformed or unimplemented feature identifiers.",
+    "status": "pass",
+    "test": "service_identity_and_feature_definition_follow_the_constraints",
+    "location": "src/sila/core.rs"
+  },
+  {
+    "id": "validation-error",
+    "requirement": "Validation errors name the fully qualified parameter and travel as a standard-base64 SiLAError on an aborted status.",
+    "status": "pass",
+    "test": "validation_errors_name_the_parameter",
+    "location": "src/sila/errors.rs"
+  },
+  {
+    "id": "no-metadata",
+    "requirement": "ASCII and binary gRPC metadata keys prefixed with sila- are rejected because this profile declares no metadata.",
+    "status": "pass",
+    "test": "sila_metadata_is_rejected",
+    "location": "src/sila/errors.rs"
+  },
+  {
+    "id": "observable-lifetime",
+    "requirement": "Observable executions advertise a lifetime on every info update and cancellation is visible before CancelCommand returns.",
+    "status": "pass",
+    "test": "plaintext_server_lists_starts_and_cancels_a_task",
+    "location": "src/sila/lab.rs"
+  },
+  {
+    "id": "lab-commands",
+    "requirement": "All seven LabOperations commands accept valid calls and reject unknown sources, metrics, and runs.",
+    "status": "pass",
+    "test": "lab_queries_return_records_and_reject_missing_ids",
+    "location": "src/sila/lab.rs"
+  },
+  {
+    "id": "cancel-controller",
+    "requirement": "CancelAll is accepted and a malformed execution UUID is a validation error.",
+    "status": "pass",
+    "test": "connection_configuration_rejects_an_unusable_client",
+    "location": "src/sila/cancel.rs"
+  },
+  {
+    "id": "tls-profile",
+    "requirement": "Generated certificates carry the SiLA2 names, CA bit, and UTF-8 UUID extension, and fail a UUID mismatch.",
+    "status": "pass",
+    "test": "identity_rejects_a_non_uuid_and_certificates_carry_the_uuid",
+    "location": "src/sila/cert.rs"
+  },
+  {
+    "id": "dns-sd",
+    "requirement": "DNS-SD goodbye records use TTL 0 and TXT values stay inside one 255-byte character string.",
+    "status": "pass",
+    "test": "goodbye_records_use_a_zero_ttl",
+    "location": "src/sila/discover.rs"
+  },
+  {
+    "id": "txt-limit",
+    "requirement": "Long Unicode server names are truncated on a character boundary before they enter a TXT record.",
+    "status": "pass",
+    "test": "txt_values_stay_within_a_single_character_string",
+    "location": "src/sila/discover.rs"
+  },
+  {
+    "id": "server-initiated",
+    "requirement": "ConnectionConfigurationService persists clients and reconnects them after the Feature Provider restarts.",
+    "status": "pass",
+    "test": "server_initiated_connection_survives_restart",
+    "location": "src/sila/connection.rs"
+  },
+  {
+    "id": "binary-transfer",
+    "requirement": "Binary upload and download.",
+    "status": "na",
+    "rationale": "The advertised LabOperations, SiLAService, CancelController, and ConnectionConfigurationService features declare no Binary parameters."
+  },
+  {
+    "id": "locking",
+    "requirement": "The Lock Controller feature.",
+    "status": "na",
+    "rationale": "No advertised feature requires a lock. The profile does not implement the optional Lock Controller."
+  },
+  {
+    "id": "authentication",
+    "requirement": "Authentication and authorization metadata.",
+    "status": "na",
+    "rationale": "No advertised feature requires an access token. Those features are exercised only by the separate communication-tester server."
+  },
+  {
+    "id": "feature-metadata",
+    "requirement": "SiLA Client Metadata affecting feature calls.",
+    "status": "na",
+    "rationale": "No advertised feature declares metadata. Undeclared sila- metadata is rejected."
+  }
+]

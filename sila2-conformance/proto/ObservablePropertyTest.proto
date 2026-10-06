@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.observablepropertytest.v1;
+
+/* This is a test feature to test observable properties. */
+service ObservablePropertyTest {
+  /* Changes the value of Editable */
+  rpc SetValue (sila2.org.silastandard.test.observablepropertytest.v1.SetValue_Parameters) returns (sila2.org.silastandard.test.observablepropertytest.v1.SetValue_Responses) {}
+  /* Always returns 42 and never changes. */
+  rpc Subscribe_FixedValue (sila2.org.silastandard.test.observablepropertytest.v1.Subscribe_FixedValue_Parameters) returns (stream sila2.org.silastandard.test.observablepropertytest.v1.Subscribe_FixedValue_Responses) {}
+  /* Switches every second between true and false */
+  rpc Subscribe_Alternating (sila2.org.silastandard.test.observablepropertytest.v1.Subscribe_Alternating_Parameters) returns (stream sila2.org.silastandard.test.observablepropertytest.v1.Subscribe_Alternating_Responses) {}
+  /* Can be set through SetValue command */
+  rpc Subscribe_Editable (sila2.org.silastandard.test.observablepropertytest.v1.Subscribe_Editable_Parameters) returns (stream sila2.org.silastandard.test.observablepropertytest.v1.Subscribe_Editable_Responses) {}
+}
+
+/* Parameters for SetValue */
+message SetValue_Parameters {
+  sila2.org.silastandard.Integer Value = 1;  /* The new value */
+}
+
+/* Responses of SetValue */
+message SetValue_Responses {
+}
+
+/* Parameters for FixedValue */
+message Subscribe_FixedValue_Parameters {
+}
+
+/* Responses of FixedValue */
+message Subscribe_FixedValue_Responses {
+  sila2.org.silastandard.Integer FixedValue = 1;  /* Always returns 42 and never changes. */
+}
+
+/* Parameters for Alternating */
+message Subscribe_Alternating_Parameters {
+}
+
+/* Responses of Alternating */
+message Subscribe_Alternating_Responses {
+  sila2.org.silastandard.Boolean Alternating = 1;  /* Switches every second between true and false */
+}
+
+/* Parameters for Editable */
+message Subscribe_Editable_Parameters {
+}
+
+/* Responses of Editable */
+message Subscribe_Editable_Responses {
+  sila2.org.silastandard.Integer Editable = 1;  /* Can be set through SetValue command */
+}

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.org.silastandard.test.observablecommandtest.v1;
+
+/* This is a test feature to test observable commands. It specifies various observable commands and returns defined answers to validate against. */
+service ObservableCommandTest {
+  /* Count from 0 to N-1 and return the current number as intermediate response. */
+  rpc Count (sila2.org.silastandard.test.observablecommandtest.v1.Count_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of Count */
+  rpc Count_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve intermediate responses of Count */
+  rpc Count_Intermediate (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.test.observablecommandtest.v1.Count_IntermediateResponses) {}
+  /* Retrieve result of Count */
+  rpc Count_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.observablecommandtest.v1.Count_Responses) {}
+  /* Echo the given value after the specified delay. The command state must be "waiting" until the delay has passed. */
+  rpc EchoValueAfterDelay (sila2.org.silastandard.test.observablecommandtest.v1.EchoValueAfterDelay_Parameters) returns (sila2.org.silastandard.CommandConfirmation) {}
+  /* Monitor the state of EchoValueAfterDelay */
+  rpc EchoValueAfterDelay_Info (sila2.org.silastandard.CommandExecutionUUID) returns (stream sila2.org.silastandard.ExecutionInfo) {}
+  /* Retrieve result of EchoValueAfterDelay */
+  rpc EchoValueAfterDelay_Result(sila2.org.silastandard.CommandExecutionUUID) returns (sila2.org.silastandard.test.observablecommandtest.v1.EchoValueAfterDelay_Responses) {}
+}
+
+/* Parameters for Count */
+message Count_Parameters {
+  sila2.org.silastandard.Integer N = 1;  /* Number to count to */
+  sila2.org.silastandard.Real Delay = 2;  /* The delay for each iteration */
+}
+
+/* Responses of Count */
+message Count_Responses {
+  sila2.org.silastandard.Integer IterationResponse = 1;  /* The last number (N-1) */
+}
+
+/* Intermediate responses of Count */
+message Count_IntermediateResponses {
+  sila2.org.silastandard.Integer CurrentIteration = 1;  /* The current number, from 0 to N-1 (excluded). */
+}
+
+/* Parameters for EchoValueAfterDelay */
+message EchoValueAfterDelay_Parameters {
+  sila2.org.silastandard.Integer Value = 1;  /* The value to echo */
+  sila2.org.silastandard.Real Delay = 2;  /* The delay before the command execution starts */
+}
+
+/* Responses of EchoValueAfterDelay */
+message EchoValueAfterDelay_Responses {
+  sila2.org.silastandard.Integer ReceivedValue = 1;  /* The Received Value */
+}
