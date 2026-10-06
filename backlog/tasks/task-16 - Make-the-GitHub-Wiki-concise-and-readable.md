@@ -1,11 +1,11 @@
 ---
 id: TASK-16
 title: Make the GitHub Wiki concise and readable
-status: In Progress
+status: Done
 assignee:
   - '@me'
 created_date: '2026-10-06 20:11'
-updated_date: '2026-10-06 20:40'
+updated_date: '2026-10-06 20:57'
 labels:
   - docs
 dependencies: []
@@ -25,7 +25,7 @@ Readers need a short README and a GitHub Wiki they can scan without duplicated c
 - [x] #2 The Wiki map publishes Home, four example guides, and the six standards pages, and the staged sidebar groups those pages.
 - [x] #3 Staged Wiki pages keep native Mermaid fences, accessibility titles and descriptions, and prose that restates each diagram.
 - [x] #4 mise run wiki-check exits 0, and a pull request runs that check without a Wiki token.
-- [ ] #5 After the Wiki workflow publishes main, mise run wiki-drift matches the remote and every published page and diagram renders.
+- [x] #5 After the Wiki workflow publishes main, mise run wiki-drift matches the remote and every published page and diagram renders.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,4 +46,15 @@ Readers need a short README and a GitHub Wiki they can scan without duplicated c
 
 - mise run quality passed.
 - The signed commit is blocked in this session because the 1Password SSH agent cannot complete the signature.
+
+- Wiki workflow 37530032030 published 11 pages and wiki-drift matched the remote.
+- Local mise run wiki-drift also matched. A2A routes keep literal {id}. All seven Mermaid diagrams render.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The README is a short landing page, and the Wiki now has an overview, four example guides, and six reference pages. GitHub renders the Mermaid diagrams from the published Markdown.
+
+The Wiki workflow published the pages and both the workflow and a local drift check matched the remote. Quality had already passed before the commit.
+<!-- SECTION:FINAL_SUMMARY:END -->
