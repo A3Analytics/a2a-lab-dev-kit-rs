@@ -36,9 +36,10 @@ use super::access::{
     security_configuration_error, with_caller,
 };
 use super::auth::Authenticator;
-use super::card::{accepted_modes, agent_card};
+use super::card::agent_card;
 use super::executor::LabExecutor;
 use super::message::AgentMessageHandler;
+use super::tck::input_modes;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31000";
 
@@ -263,7 +264,7 @@ fn router(
     }
     handler = handler
         .with_capabilities(capabilities)
-        .with_default_input_modes(accepted_modes());
+        .with_default_input_modes(input_modes());
     let handler = Arc::new(handler);
     let http_gate = gate.clone();
     let app = Router::new()
@@ -495,15 +496,6 @@ fn remap_frame<T>(frame: http_body::Frame<T>) -> http_body::Frame<T> {
 }
 
 async fn normalize_a2a_json(mut request: Request, next: Next) -> Response {
-    if let Some(value) = request.headers().get(CONTENT_TYPE)
-        && value
-            .to_str()
-            .is_ok_and(|content_type| content_type.starts_with("application/a2a+json"))
-    {
-        request
-            .headers_mut()
-            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    }
     if let Some(response) = reject_content_type(&request) {
         return response;
     }
@@ -515,6 +507,16 @@ async fn normalize_a2a_json(mut request: Request, next: Next) -> Response {
     }
     let path = request.uri().path().to_owned();
     let mut response = remap_rest_error(next.run(request).await).await;
+    if response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|content_type| content_type.starts_with("application/a2a+json"))
+    {
+        response
+            .headers_mut()
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    }
     if path == "/.well-known/agent-card.json"
         && response.headers().get("last-modified").is_none()
         && let Ok(value) = HeaderValue::from_str(&http_date())
@@ -578,7 +580,9 @@ fn rest_error_patch(bytes: &[u8]) -> Option<(StatusCode, Vec<u8>)> {
 fn reject_content_type(request: &Request) -> Option<Response> {
     let value = request.headers().get(CONTENT_TYPE)?;
     let content_type = value.to_str().ok()?;
-    if content_type.starts_with("application/json") {
+    if content_type.starts_with("application/json")
+        || content_type.starts_with("application/a2a+json")
+    {
         return None;
     }
     if request.uri().path() == "/" {

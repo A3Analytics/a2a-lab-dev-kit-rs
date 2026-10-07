@@ -46,7 +46,7 @@ Clients send a `message` to `POST /message:send` or `POST /message:stream`.
 
 Requests use the header `A2A-Version: 1.0`.
 
-The HTTP body is `application/a2a+json`.
+Requests use `application/a2a+json` or `application/json`. A successful response uses `application/json`.
 
 The lab command is a data part with media type `application/json`:
 
@@ -202,19 +202,9 @@ That file also covers issuer, audience, expiry, signature, and scope failures wi
 
 `examples/a2a_interface` stays anonymous unless `A2A_TCK_OIDC_ISSUER` is set.
 
-The pinned TCK still asserts success `Content-Type: application/json` for `HTTP_JSON-SVC-001`.
+`HTTP_JSON-SVC-001` checks that a successful response uses `Content-Type: application/json`.
 
-This crate emits `application/a2a+json`.
-
-The TCK task deselects that content-type assertion.
-
-It keeps the schema half of the requirement.
-
-A part `mediaType` other than `text/plain` or `application/json` returns `CONTENT_TYPE_NOT_SUPPORTED`.
-
-The pinned `CORE-SEND-003` runner expects that send to succeed.
-
-The TCK task deselects `CORE-SEND-003`.
+`CORE-SEND-003` sends a part whose media type is `application/x-unsupported-tck-type` and expects the send to succeed.
 
 ## MCP
 

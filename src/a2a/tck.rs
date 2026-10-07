@@ -8,7 +8,17 @@ use serde_json::json;
 
 use crate::tasks::TaskState;
 
+use super::card::accepted_modes;
 use super::wire;
+
+/// Media type sent by the pinned `CORE-SEND-003` sample.
+const UNSUPPORTED_MEDIA_TYPE: &str = "application/x-unsupported-tck-type";
+
+pub(crate) fn input_modes() -> Vec<String> {
+    let mut modes = accepted_modes();
+    modes.push(UNSUPPORTED_MEDIA_TYPE.to_owned());
+    modes
+}
 
 pub(crate) fn profile(
     message: &Message,
@@ -57,6 +67,13 @@ pub(crate) fn profile(
             task_id,
             context_id,
             Part::data(json!({"key": "value", "count": 42})),
+        ));
+    }
+    if id.starts_with("tck-send-003") {
+        return Some(complete_artifact(
+            task_id,
+            context_id,
+            Part::text("accepted"),
         ));
     }
     if id.starts_with("tck-artifact-text") {

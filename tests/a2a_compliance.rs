@@ -171,7 +171,7 @@ async fn http_json_agent_card_advertises_three_bindings() {
 }
 
 #[tokio::test]
-async fn http_json_svc_001_success_content_type_is_a2a_json() {
+async fn http_json_svc_001_success_content_type_is_json() {
     let base = serve().await;
     let response = send(&base, "content-type").await;
     assert!(response.status().is_success());
@@ -181,7 +181,7 @@ async fn http_json_svc_001_success_content_type_is_a2a_json() {
         .unwrap()
         .to_str()
         .unwrap();
-    assert!(content_type.starts_with("application/a2a+json"));
+    assert!(content_type.starts_with("application/json"));
 }
 
 #[tokio::test]
@@ -335,7 +335,7 @@ async fn http_json_status_001_error_status_mapping() {
                 "role": "ROLE_USER",
                 "parts": [{
                     "raw": "dGNr",
-                    "mediaType": "application/x-unsupported-tck-type"
+                    "mediaType": "application/octet-stream"
                 }]
             }
         }))

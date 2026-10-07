@@ -72,6 +72,11 @@ if [ "$updated" -ne 1 ]; then
 fi
 export A2A_AUTH_ISSUER="$issuer"
 
+# The all-features debug test binary exhausts the GitHub runner while linking.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  export CARGO_PROFILE_TEST_DEBUG="${CARGO_PROFILE_TEST_DEBUG:-line-tables-only}"
+fi
+
 if [ "$#" -eq 0 ]; then
   cargo nextest run --workspace --all-features
 else

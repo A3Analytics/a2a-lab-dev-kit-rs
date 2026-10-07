@@ -260,7 +260,7 @@ async fn exercises_every_operation_failure_and_stream() {
             .get("content-type")
             .and_then(|value| value.to_str().ok())
             .unwrap_or(""),
-        "application/a2a+json"
+        "application/json"
     );
     let body = raw.text().await.unwrap();
     assert!(body.contains("TASK_STATE_COMPLETED"), "{body}");
