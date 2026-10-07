@@ -32,12 +32,12 @@ else
   export A2A_TCK_ADVERTISE=host.docker.internal
 fi
 
-cargo build --example a2a_tck --quiet
+cargo build --example a2a_interface --quiet
 
 server_log="$root/target/a2a-tck-sut.log"
 mkdir -p "$root/target"
 : >"$server_log"
-"$root/target/debug/examples/a2a_tck" >"$server_log" 2>&1 &
+"$root/target/debug/examples/a2a_interface" >"$server_log" 2>&1 &
 server_pid=$!
 cleanup() {
   kill "$server_pid" >/dev/null 2>&1 || true

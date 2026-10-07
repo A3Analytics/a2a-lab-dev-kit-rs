@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@me'
 created_date: '2026-10-06 06:40'
-updated_date: '2026-10-06 07:16'
+updated_date: '2026-10-07 00:51'
 labels:
   - sila
 dependencies: []
@@ -47,5 +47,5 @@ The devkit represents equipment, so SiLA clients need to call that equipment thr
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 SilaServer is the inbound Feature Provider for the same LabApi used by A2A and MCP. It serves SiLAService, LabOperations, and CancelController. StartTask is observable, and CancelCommand cancels the lab run so the execution finishes with an error. TLS with a SiLA2 certificate is the default, and announce publishes _sila._tcp.local. at protocol version 1.1.
 
-Key files: src/sila/, proto/sila/, examples/sila2_server.rs. Verified by tests/sila_tests.rs and mise run quality.
+Key files: src/sila/, proto/sila/, examples/sila_interface.rs. Verified by tests/sila_tests.rs and mise run quality.
 <!-- SECTION:FINAL_SUMMARY:END -->

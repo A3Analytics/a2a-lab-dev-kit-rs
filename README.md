@@ -42,7 +42,7 @@ flowchart LR
 
 A2A, MCP, and SiLA 2 call `A2aLabService`. `A2aLabService` uses AAS, OPC UA, ROS 2, SiLA 2, and Custom. SiLA 2 is both the inbound interface and a remote provider.
 
-## Run the memory example
+## Run the logs, metrics, and tasks example
 
 Run these commands from the repository root.
 
@@ -52,10 +52,10 @@ Run these commands from the repository root.
    mise install
    ```
 
-2. Run the [memory lab example](examples/memory_lab.rs):
+2. Run the [logs, metrics, and tasks example](examples/logs_metrics_tasks.rs):
 
    ```bash
-   mise exec -- cargo run --example memory_lab
+   mise exec -- cargo run --example logs_metrics_tasks
    ```
 
 ## Wiki

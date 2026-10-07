@@ -178,7 +178,7 @@ Other JSON-RPC errors stay HTTP 200 with the code in the envelope.
 
 `tests/a2a_compliance.rs` checks the HTTP+JSON wire contract, JSON-RPC envelopes, gRPC calls, SSE frames, and the `tck-*` message-id profiles.
 
-`mise run tck` runs the pinned official suite in a container against `examples/a2a_tck`.
+`mise run tck` runs the pinned official suite in a container against `examples/a2a_interface`.
 
 The suite covers HTTP+JSON, JSON-RPC, and gRPC.
 
@@ -200,7 +200,7 @@ Those requirements stay upstream NOT TESTED.
 
 That file also covers issuer, audience, expiry, signature, and scope failures with a local fixture.
 
-`examples/a2a_tck` stays anonymous unless `A2A_TCK_OIDC_ISSUER` is set.
+`examples/a2a_interface` stays anonymous unless `A2A_TCK_OIDC_ISSUER` is set.
 
 The pinned TCK still asserts success `Content-Type: application/json` for `HTTP_JSON-SVC-001`.
 

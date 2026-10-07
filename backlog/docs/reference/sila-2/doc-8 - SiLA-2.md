@@ -149,7 +149,7 @@ With the `sila2` feature:
 - `sila::SilaProvider`
 - `sila::SilaProviderConfig`
 
-These types stay in the `sila` module. The [SiLA server example](../../../../examples/sila2_server.rs) (`examples/sila2_server.rs`) runs this Feature Provider.
+These types stay in the `sila` module. The [SiLA interface example](../../../../examples/sila_interface.rs) (`examples/sila_interface.rs`) serves this lab to SiLA clients.
 
 ## Related
 

@@ -121,7 +121,7 @@ let samples = metrics
 Run this command from the repository root:
 
 ```bash
-mise exec -- cargo run --example industrial_scripted
+mise exec -- cargo run --example catalog_metric
 ```
 
 The example prints:
@@ -130,7 +130,7 @@ The example prints:
 scripted temperature sample 21.5
 ```
 
-The full source is [industrial_scripted.rs](../../../../examples/industrial_scripted.rs).
+The full source is [catalog_metric.rs](../../../../examples/catalog_metric.rs).
 
 ## Related
 

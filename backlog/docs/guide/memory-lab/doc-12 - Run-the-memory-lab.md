@@ -3,12 +3,12 @@ id: doc-12
 title: Run the memory lab
 type: guide
 audience: public
-created_date: '2026-10-06 20:11'
+created_date: "2026-10-06 20:11"
 ---
 
 # Run the memory lab
 
-Run the [memory lab example](../../../../examples/memory_lab.rs) to print in-memory logs, metrics, and tasks.
+Run the [logs, metrics, and tasks example](../../../../examples/logs_metrics_tasks.rs) to print logs, metrics, and tasks.
 
 The example uses `MemoryLogs`, `MemoryMetrics`, and `MemoryTasks`.
 
@@ -22,10 +22,10 @@ Run these commands from the repository root.
    mise install
    ```
 
-2. Run the memory lab example:
+2. Run the logs, metrics, and tasks example:
 
    ```bash
-   mise exec -- cargo run --example memory_lab
+   mise exec -- cargo run --example logs_metrics_tasks
    ```
 
 ## Read the output
