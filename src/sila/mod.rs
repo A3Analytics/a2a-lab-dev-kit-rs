@@ -1,13 +1,15 @@
-//! SiLA 2 Feature Provider for the equipment represented by this devkit.
+//! SiLA 2 interface and remote provider.
 //!
 //! `SilaServer` serves `SiLAService`, `LabOperations`, and `CancelController` over the same
-//! [`A2aLabApi`](crate::service::A2aLabApi) used by A2A and MCP.
+//! [`A2aLabApi`](crate::service::A2aLabApi) used by A2A and MCP. `SilaProvider` connects to a
+//! remote SiLA server and fulfills the lab provider traits.
 
 mod cancel;
 mod cert;
 mod cloud;
 mod connection;
 mod constraints;
+mod consumer;
 mod core;
 mod discover;
 mod errors;
@@ -19,6 +21,11 @@ mod values;
 mod wire;
 
 pub use cert::{SilaCertificate, certificate_contains_uuid, certificate_matches_profile};
+pub use consumer::{
+    LogBinding, MemberKind, MetricBinding, RequestBinding, SILA_SERVICE, SilaBinding, SilaDevice,
+    SilaEndpoint, SilaMember, SilaProvider, SilaProviderConfig, SilaSession, SilaTasks, SilaTrust,
+    TaskBinding,
+};
 pub use identity::SilaIdentity;
 pub use server::{SilaServer, SilaServerHandle};
 

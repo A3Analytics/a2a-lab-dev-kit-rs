@@ -37,7 +37,7 @@ A metric descriptor names one measurement and its unit. A metric point is one fi
 
 ### Tasks
 
-A task definition is work an agent can start. A task run is one start of that definition. The run input is a JSON object.
+A task definition is work an agent can start. It can carry JSON Schema for the input and the result. A task run is one start of that definition. The run input is a JSON object. A finished run can carry a JSON result, observable progress, and a SiLA error kind and identifier.
 
 A run state is `submitted`, `working`, `completed`, `failed`, or `canceled`. `completed`, `failed`, and `canceled` are terminal.
 

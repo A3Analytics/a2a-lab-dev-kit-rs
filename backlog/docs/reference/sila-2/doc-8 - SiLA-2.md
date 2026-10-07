@@ -12,7 +12,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-SiLA 2 is an interface. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>).
+SiLA 2 is both an interface and a provider. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `SilaProvider` connects to a remote SiLA server and fulfills those same primitives.
 
 The following diagram shows that path:
 
@@ -72,6 +72,73 @@ Dropping the server handle withdraws that advertisement.
 
 `mise run sila2-interop` starts this server and runs the pinned official `sila_csharp` v.10.3.2 dynamic client, commit `2625cce6541c501cb951f2eea95d490a2efd12c0`. The report records `role: feature_provider`, image ids, and a failure when a required capability fails. It does not use the official SiLA logo and it is not a certification claim.
 
+## Remote provider
+
+The following diagram shows the provider path:
+
+```mermaid
+flowchart LR
+  accTitle: SilaProvider calls a remote SiLA server
+  accDescr: A2aLabService uses SilaProvider. SilaProvider calls a remote SiLA server.
+  lab["A2aLabService"] --> provider["SilaProvider"]
+  provider --> remote["Remote SiLA server"]
+```
+
+In the preceding diagram, `A2aLabService` uses `SilaProvider`. `SilaProvider` calls a remote SiLA server.
+
+`SilaProviderConfig` names the remote host, port, and server UUID. Encrypted connections are the default. `ca_pem` must be a SiLA certificate whose common name is `SiLA2` and whose UUID extension matches the server. `plaintext` is the unencrypted development listener.
+
+Each binding assigns one feature command or readable property to `task`, `logs`, or `metric`. The same member can appear in more than one binding. Nothing is classified automatically.
+
+A task binding uses the Feature Definition for its input and output JSON Schema. An observable command keeps progress and can be canceled. A log or metric binding calls its member when the lab query arrives. JSON pointers select the returned records or samples, and the provider keeps the requested half-open UTC range. There is no background collection.
+
+`SilaProvider` implements `LogProvider`, `MetricProvider`, and `TaskProvider`. Pass one cloned value to each argument of `A2aLabService::new`.
+
+The [SiLA provider example](../../../../examples/sila_provider.rs) (`examples/sila_provider.rs`) reads one remote log command.
+
+## Use SiLA as both provider and interface
+
+One process can consume an upstream SiLA server and serve those configured members to downstream SiLA clients:
+
+```mermaid
+flowchart LR
+  accTitle: SiLA on both sides of A2aLabService
+  accDescr: A downstream SiLA client calls SilaServer. SilaServer calls A2aLabService. A2aLabService uses SilaProvider. SilaProvider calls an upstream SiLA server.
+  client["Downstream SiLA client"] --> interface["SilaServer"]
+  interface --> lab["A2aLabService"]
+  lab --> provider["SilaProvider"]
+  provider --> remote["Upstream SiLA server"]
+```
+
+In this arrangement, `SilaProvider` is the outbound provider and `SilaServer` is the inbound interface. `A2aLabService` connects the two roles.
+
+```rust
+use a2a_lab_dev_kit::sila::{
+    SilaCertificate, SilaIdentity, SilaProvider, SilaProviderConfig, SilaServer,
+    SilaServerHandle,
+};
+use a2a_lab_dev_kit::{A2aLabError, A2aLabService};
+
+async fn serve_remote_sila(
+    config: SilaProviderConfig,
+    identity: SilaIdentity,
+    certificate: SilaCertificate,
+) -> Result<SilaServerHandle, A2aLabError> {
+    let provider = SilaProvider::connect(config).await?;
+    let lab = A2aLabService::new(provider.clone(), provider.clone(), provider).share();
+
+    SilaServer::new(identity, lab)
+        .certificate(certificate)
+        .announce()
+        .serve("0.0.0.0:50052".parse().expect("valid address"))
+        .await
+}
+```
+
+The provider configuration selects the upstream members. The server identity and certificate describe this process to downstream clients. The two server UUIDs are independent.
+
+`mise run sila2-consumer-interop` runs this consumer against the pinned official `sila_csharp` v.10.3.2 integration server, commit `2625cce6541c501cb951f2eea95d490a2efd12c0`. Its report is separate from the Feature Provider report. It does not use the official SiLA logo and it is not a certification claim.
+
 ## Entry points
 
 With the `sila2` feature:
@@ -79,6 +146,8 @@ With the `sila2` feature:
 - `sila::SilaServer`
 - `sila::SilaIdentity`
 - `sila::SilaCertificate`
+- `sila::SilaProvider`
+- `sila::SilaProviderConfig`
 
 These types stay in the `sila` module. The [SiLA server example](../../../../examples/sila2_server.rs) (`examples/sila2_server.rs`) runs this Feature Provider.
 

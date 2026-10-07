@@ -49,6 +49,8 @@ async fn plaintext_server_lists_starts_and_cancels_a_task() {
             description: "Mix the plate".to_owned(),
             asset_id: None,
             semantic_id: None,
+            input_schema: None,
+            output_schema: None,
         })
         .await;
     let lab = A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), tasks).share();

@@ -101,6 +101,10 @@ impl TaskProvider for MemoryTasks {
             state: TaskState::Submitted,
             input: request.input,
             message: None,
+            result: None,
+            progress: None,
+            error_kind: None,
+            error_identifier: None,
         };
         state.runs.push(run.clone());
         Ok(run)

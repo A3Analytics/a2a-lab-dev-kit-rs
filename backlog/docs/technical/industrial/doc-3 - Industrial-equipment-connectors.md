@@ -16,7 +16,7 @@ The seven A2A and MCP operations stay the agent-facing contract. `IndustrialLogs
 
 `OpcUaClient` exposes `read_history`, `namespace_index`, and `filter_half_open`. `read_history` reads raw history for one node and drops samples outside the half-open range. `read_history` rejects a security policy containing `None`, verifies server certificates, and authenticates with a username and password. Industrial providers read live OPC UA samples through `LiveSource`, and `OpcUaClient` implements that source. [Upcoming]
 
-SiLA support is the Feature Provider in `sila::SilaServer`. It serves `LabOperations` for the seven lab operations and does not open an outbound SiLA client. Catalog bindings therefore do not store a SiLA endpoint.
+`sila::SilaServer` is the inbound Feature Provider. It serves `LabOperations` for the seven lab operations. `sila::SilaProvider` is the outbound Feature Consumer. It connects to one configured remote server. Catalog bindings do not store a SiLA endpoint.
 
 ## Bindings
 

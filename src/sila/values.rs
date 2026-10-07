@@ -222,8 +222,10 @@ pub(crate) fn task_message(task: &TaskDefinition) -> DataTypeTaskDefinition {
     let (has_asset, asset) = optional_text(task.asset_id.is_some(), task.asset_id.as_deref());
     let (has_semantic, semantic) =
         optional_text(task.semantic_id.is_some(), task.semantic_id.as_deref());
-    let (has_input, input) = optional_text(false, None);
-    let (has_output, output) = optional_text(false, None);
+    let (has_input, input) =
+        optional_text(task.input_schema.is_some(), task.input_schema.as_deref());
+    let (has_output, output) =
+        optional_text(task.output_schema.is_some(), task.output_schema.as_deref());
     DataTypeTaskDefinition {
         task_definition: Some(TaskDefinitionStruct {
             id: Some(sila_string(task.id.as_str())),
@@ -243,6 +245,14 @@ pub(crate) fn task_message(task: &TaskDefinition) -> DataTypeTaskDefinition {
 
 pub(crate) fn run_message(run: &TaskRun) -> Result<DataTypeTaskRun, A2aLabError> {
     let (has_message, message) = optional_text(run.message.is_some(), run.message.as_deref());
+    let result = run.result.as_ref().map(ToString::to_string);
+    let (has_result, result) = optional_text(result.is_some(), result.as_deref());
+    let (has_error_kind, error_kind) =
+        optional_text(run.error_kind.is_some(), run.error_kind.as_deref());
+    let (has_error_identifier, error_identifier) = optional_text(
+        run.error_identifier.is_some(),
+        run.error_identifier.as_deref(),
+    );
     Ok(DataTypeTaskRun {
         task_run: Some(TaskRunStruct {
             id: Some(sila_string(run.id.as_str())),
@@ -251,6 +261,14 @@ pub(crate) fn run_message(run: &TaskRun) -> Result<DataTypeTaskRun, A2aLabError>
             input: Some(bounded_json(run.input.to_string())?),
             has_message: Some(has_message),
             message: Some(message),
+            has_result: Some(has_result),
+            result: Some(bounded_json(result.value)?),
+            has_progress: Some(sila_bool(run.progress.is_some())),
+            progress: Some(sila_real(run.progress.unwrap_or(0.0))),
+            has_error_kind: Some(has_error_kind),
+            error_kind: Some(error_kind),
+            has_error_identifier: Some(has_error_identifier),
+            error_identifier: Some(error_identifier),
         }),
     })
 }

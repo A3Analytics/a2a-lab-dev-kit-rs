@@ -144,6 +144,8 @@ async fn starts_a_task_and_tracks_its_status() {
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
+            input_schema: None,
+            output_schema: None,
         })
         .await;
     let listed = tasks

@@ -60,6 +60,10 @@ run = "bash .mise/scripts/a2a-tck.sh"
 description = "Run the pinned official C# dynamic client against the devkit SiLA server"
 run = "bash .mise/scripts/sila2-interop.sh"
 
+[sila2-consumer-interop]
+description = "Run the devkit SiLA consumer against the pinned official C# integration server"
+run = "bash .mise/scripts/sila2-consumer-interop.sh"
+
 [sila2-matrix]
 description = "Validate SiLA Feature definitions and the conformance matrix"
 run = "bash .mise/scripts/sila2-matrix.sh"

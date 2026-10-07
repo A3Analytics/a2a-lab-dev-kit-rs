@@ -93,6 +93,8 @@ async fn lab() -> Lab {
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
+            input_schema: None,
+            output_schema: None,
         })
         .await;
     let service = A2aLabService::new(logs.clone(), metrics, tasks.clone()).share();

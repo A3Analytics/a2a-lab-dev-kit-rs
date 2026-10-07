@@ -3,7 +3,7 @@ id: doc-18
 title: Implementations
 type: reference
 audience: public
-created_date: '2026-10-06 22:26'
+created_date: "2026-10-06 22:26"
 ---
 
 # Implementations
@@ -17,19 +17,21 @@ The following diagram shows the provider implementations:
 ```mermaid
 flowchart LR
   accTitle: Provider implementations
-  accDescr: A2aLabService uses memory providers, industrial providers, and Ros2Tasks. Industrial providers use AasClient and ScriptedLive.
+  accDescr: A2aLabService uses memory providers, industrial providers, Ros2Tasks, and SilaProvider. Industrial providers use AasClient and ScriptedLive.
   service["A2aLabService"] --> memory["Memory providers"]
   service --> industrial["Industrial providers"]
   service --> ros["Ros2Tasks"]
+  service --> sila["SilaProvider"]
   industrial --> catalog["AasClient"]
   industrial --> live["ScriptedLive"]
 ```
 
-In the preceding diagram, `A2aLabService` uses memory providers, industrial providers, and `Ros2Tasks`. Industrial providers use `AasClient` and `ScriptedLive`.
+In the preceding diagram, `A2aLabService` uses memory providers, industrial providers, `Ros2Tasks`, and `SilaProvider`. Industrial providers use `AasClient` and `ScriptedLive`.
 
 - Memory: `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryCatalog` store the lab in memory.
 - Industrial: `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` use one catalog and one `LiveSource`. `AasClient` reads an AAS catalog. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` supplies live Open Platform Communications Unified Architecture (OPC UA) readings through `LiveSource`. [Upcoming]
 - Robot Operating System 2 (ROS 2): `Ros2Tasks` exposes ROS 2 actions as tasks. `MemoryRos2` is the in-process graph.
+- SiLA 2: `SilaProvider` connects to one remote Feature Provider. Configured commands and readable properties become tasks. Configured members become logs or metrics when a query invokes them.
 
 ## Example
 

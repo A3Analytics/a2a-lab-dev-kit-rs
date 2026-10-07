@@ -73,6 +73,12 @@ pub struct TaskDefinition {
     /// Semantic identifier from the industrial catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub semantic_id: Option<String>,
+    /// JSON Schema for [`StartTaskRequest::input`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<String>,
+    /// JSON Schema for [`TaskRun::result`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<String>,
 }
 
 /// A started task. Its `id` is the A2A task id.
@@ -89,6 +95,18 @@ pub struct TaskRun {
     /// Optional status detail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Structured command or property result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<JsonObject>,
+    /// Observable command progress, from 0 through 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f64>,
+    /// SiLA error kind when the run failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_kind: Option<String>,
+    /// SiLA error identifier when the run failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_identifier: Option<String>,
 }
 
 /// Request for a page of task definitions.

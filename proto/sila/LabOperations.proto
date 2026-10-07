@@ -122,6 +122,14 @@ message DataType_TaskRun {
     sila2.org.silastandard.String Input = 4;  /* JSON object supplied at start. */
     sila2.org.silastandard.Boolean HasMessage = 5;  /* True when Message is set. */
     sila2.org.silastandard.String Message = 6;  /* Optional status detail. */
+    sila2.org.silastandard.Boolean HasResult = 7;  /* True when Result is set. */
+    sila2.org.silastandard.String Result = 8;  /* JSON object returned by the task. */
+    sila2.org.silastandard.Boolean HasProgress = 9;  /* True when Progress is set. */
+    sila2.org.silastandard.Real Progress = 10;  /* Observable progress from 0 through 1. */
+    sila2.org.silastandard.Boolean HasErrorKind = 11;  /* True when ErrorKind is set. */
+    sila2.org.silastandard.String ErrorKind = 12;  /* SiLA error kind. */
+    sila2.org.silastandard.Boolean HasErrorIdentifier = 13;  /* True when ErrorIdentifier is set. */
+    sila2.org.silastandard.String ErrorIdentifier = 14;  /* SiLA error identifier. */
   }
   sila2.com.a3analytics.lab.laboperations.v1.DataType_TaskRun.TaskRun_Struct TaskRun = 1;  /* A started task. */
 }

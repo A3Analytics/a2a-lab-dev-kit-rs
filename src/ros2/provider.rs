@@ -53,6 +53,10 @@ impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
             state: goal.status.to_task_state(),
             input: request.input,
             message: goal.message,
+            result: None,
+            progress: None,
+            error_kind: None,
+            error_identifier: None,
         })
     }
 
@@ -64,6 +68,10 @@ impl<G: Ros2Graph> TaskProvider for Ros2Tasks<G> {
             state: goal.status.to_task_state(),
             input: crate::json_object::JsonObject::empty(),
             message: goal.message,
+            result: None,
+            progress: None,
+            error_kind: None,
+            error_identifier: None,
         })
     }
 }
@@ -75,6 +83,8 @@ fn definition(action: &Ros2Action) -> Result<TaskDefinition, A2aLabError> {
         description: action.type_name.clone(),
         asset_id: None,
         semantic_id: Some(action.type_name.clone()),
+        input_schema: None,
+        output_schema: None,
     })
 }
 

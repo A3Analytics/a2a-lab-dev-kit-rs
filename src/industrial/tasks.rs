@@ -53,6 +53,8 @@ where
                 description: binding.semantic_id().as_str().to_owned(),
                 asset_id: Some(binding.asset_key().as_str().to_owned()),
                 semantic_id: Some(binding.semantic_id().as_str().to_owned()),
+                input_schema: None,
+                output_schema: None,
             });
         }
         crate::page::slice_page(&tasks, &request.page)
@@ -75,6 +77,10 @@ where
             state: run.state,
             input: request.input,
             message: run.message,
+            result: None,
+            progress: None,
+            error_kind: None,
+            error_identifier: None,
         })
     }
 
@@ -86,6 +92,10 @@ where
             state: run.state,
             input: JsonObject::empty(),
             message: run.message,
+            result: None,
+            progress: None,
+            error_kind: None,
+            error_identifier: None,
         })
     }
 }

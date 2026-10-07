@@ -29,6 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             description: "Build the lab".to_owned(),
             asset_id: None,
             semantic_id: None,
+            input_schema: None,
+            output_schema: None,
         })
         .await;
     let service = A2aLabService::new(logs, MemoryMetrics::new(), tasks).share();

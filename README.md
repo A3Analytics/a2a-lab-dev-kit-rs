@@ -9,6 +9,7 @@ A2A-LAB devkit is a Rust crate for lab logs, metrics, and tasks over A2A, MCP, S
 
 - Supports lab logs, metrics, and tasks over Agent2Agent (A2A) and Model Context Protocol (MCP).
 - Serves that lab to Standardization in Lab Automation (SiLA) 2 clients.
+- Connects to a remote SiLA 2 server and exposes configured members as lab tasks, logs, and metrics.
 - Reads equipment from an AAS catalog.
 - Reads Open Platform Communications Unified Architecture (OPC UA) equipment history.
 - Supplies live OPC UA readings through `LiveSource`. [Upcoming]
@@ -21,7 +22,7 @@ The following diagram shows the interfaces and providers around `A2aLabService`:
 ```mermaid
 flowchart LR
   accTitle: A2A-LAB devkit
-  accDescr: A2A, MCP, and SiLA 2 are interfaces to A2aLabService. A2aLabService uses AAS, OPC UA, ROS 2, and Custom as providers.
+  accDescr: A2A, MCP, and SiLA 2 call A2aLabService. A2aLabService uses AAS, OPC UA, ROS 2, SiLA 2, and Custom.
   subgraph interfaces [Interfaces]
     a2a["A2A"]
     mcp["MCP"]
@@ -32,18 +33,14 @@ flowchart LR
     aas["AAS"]
     opc["OPC UA"]
     ros["ROS 2"]
+    silaProvider["SiLA 2"]
     custom["Custom"]
   end
-  a2a --> lab
-  mcp --> lab
-  sila --> lab
-  lab --> aas
-  lab --> opc
-  lab --> ros
-  lab --> custom
+  interfaces --> lab
+  lab --> providers
 ```
 
-A2A, MCP, and SiLA 2 call `A2aLabService`. `A2aLabService` uses AAS, OPC UA, ROS 2, and Custom.
+A2A, MCP, and SiLA 2 call `A2aLabService`. `A2aLabService` uses AAS, OPC UA, ROS 2, SiLA 2, and Custom. SiLA 2 is both the inbound interface and a remote provider.
 
 ## Run the memory example
 

@@ -23,6 +23,8 @@ async fn main() -> Result<(), A2aLabError> {
             description: "Mix the represented plate.".to_owned(),
             asset_id: None,
             semantic_id: None,
+            input_schema: None,
+            output_schema: None,
         })
         .await;
     let logs = MemoryLogs::new();

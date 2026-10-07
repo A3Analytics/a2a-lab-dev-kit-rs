@@ -17,7 +17,7 @@ The following diagram shows the interfaces and providers around `A2aLabService`.
 ```mermaid
 flowchart LR
   accTitle: A2A-LAB devkit
-  accDescr: A2A, MCP, and SiLA 2 are interfaces to A2aLabService. A2aLabService uses AAS, OPC UA, ROS 2, and Custom as providers.
+  accDescr: A2A, MCP, and SiLA 2 call A2aLabService. A2aLabService uses AAS, OPC UA, ROS 2, SiLA 2, and Custom.
   subgraph interfaces [Interfaces]
     a2a["A2A"]
     mcp["MCP"]
@@ -28,18 +28,14 @@ flowchart LR
     aas["AAS"]
     opc["OPC UA"]
     ros["ROS 2"]
+    silaProvider["SiLA 2"]
     custom["Custom"]
   end
-  a2a --> lab
-  mcp --> lab
-  sila --> lab
-  lab --> aas
-  lab --> opc
-  lab --> ros
-  lab --> custom
+  interfaces --> lab
+  lab --> providers
 ```
 
-In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 are interfaces. They call `A2aLabService`. AAS, Open Platform Communications Unified Architecture (OPC UA), Robot Operating System 2 (ROS 2), and Custom are providers. `A2aLabService` uses those providers.
+In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 call `A2aLabService`. AAS, Open Platform Communications Unified Architecture (OPC UA), Robot Operating System 2 (ROS 2), SiLA 2, and Custom fulfill the lab primitives. `A2aLabService` uses those providers. SiLA 2 is both the inbound interface and a remote provider.
 
 ## Related pages
 

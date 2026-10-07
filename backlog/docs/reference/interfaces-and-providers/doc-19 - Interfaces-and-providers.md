@@ -40,6 +40,7 @@ These providers are supported:
 - [AAS](<../aas/doc-6 - Asset-Administration-Shell.md>)
 - [OPC UA](<../opc-ua/doc-7 - OPC-UA.md>)
 - [ROS 2](<../ros-2/doc-9 - ROS-2.md>)
+- [SiLA 2](<../sila-2/doc-8 - SiLA-2.md>)
 - [Custom](<../custom/doc-20 - Custom.md>)
 
 ## Related

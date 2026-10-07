@@ -3,7 +3,7 @@ id: doc-21
 title: Implement a custom provider
 type: guide
 audience: public
-created_date: '2026-10-06 23:17'
+created_date: "2026-10-06 23:17"
 ---
 
 # Implement a custom provider
@@ -79,6 +79,23 @@ The example prints this text:
 
 ```text
 log source: oven
+```
+
+## Use the SiLA provider
+
+A remote SiLA 2 server does not need a new trait implementation. `SilaProvider::connect` reads `SilaProviderConfig` and returns one value that implements `LogProvider`, `MetricProvider`, and `TaskProvider`.
+
+```rust
+let provider = SilaProvider::connect(config).await?;
+let service = A2aLabService::new(provider.clone(), provider.clone(), provider);
+```
+
+[SiLA 2](<../../reference/sila-2/doc-8 - SiLA-2.md>) defines the endpoint, certificate, and binding configuration. The [SiLA provider example](../../../../examples/sila_provider.rs) (`examples/sila_provider.rs`) prints `log record: ready`.
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example sila_provider
 ```
 
 ## Related

@@ -22,7 +22,14 @@ default = ["aas", "opcua", "sila2"]
 aas = []
 opcua = ["dep:async-opcua-client", "dep:async-opcua-types"]
 sila2 = [
+    "dep:base64",
+    "dep:http",
+    "dep:mdns-sd",
     "dep:prost",
+    "dep:prost-reflect",
+    "dep:prost-types",
+    "dep:protox",
+    "dep:quick-xml",
     "dep:tonic-prost",
     "dep:socket2",
     "dep:rcgen",
@@ -52,9 +59,20 @@ jiff = { version = "0.2.37", features = ["serde"] }
 jsonwebtoken = "9.3.1"
 sha2 = "0.10.9"
 socket2 = { version = "0.6.5", optional = true }
+base64 = { version = "0.22", optional = true }
+http = { version = "1", optional = true }
+mdns-sd = { version = "0.21", default-features = false, features = [
+    "async",
+], optional = true }
 prost = { version = "0.14.4", optional = true }
+prost-reflect = { version = "0.16", optional = true }
+prost-types = { version = "0.14", optional = true }
+protox = { version = "0.9", optional = true }
+quick-xml = { version = "0.38", optional = true }
 rcgen = { version = "0.14.10", optional = true }
-rustls = { version = "0.23.45", optional = true, default-features = false, features = ["ring"] }
+rustls = { version = "0.23.45", optional = true, default-features = false, features = [
+    "ring",
+] }
 uuid = { version = "1.26.1", optional = true, features = ["v4"] }
 reqwest = { version = "0.13.5", features = ["json", "stream"] }
 rmcp = { version = "3.5.0", features = [
@@ -87,7 +105,7 @@ tonic-prost = { version = "0.14.6", optional = true }
 a2a-client = { version = "0.2.7", package = "a2a-client-lf" }
 a2a-grpc = "0.3"
 a2a-types = { version = "0.4.1", package = "a2a-lf" }
-base64 = "0.22"
+base64 = "0.22.1"
 futures-util = "0.3.34"
 rand = "0.8"
 rsa = { version = "0.9.10", features = ["pem"] }

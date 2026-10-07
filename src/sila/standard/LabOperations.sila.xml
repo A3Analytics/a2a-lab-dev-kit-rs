@@ -738,6 +738,59 @@
           <Description>Optional status detail.</Description>
           <DataType><Basic>String</Basic></DataType>
         </Element>
+        <Element>
+          <Identifier>HasResult</Identifier>
+          <DisplayName>Has Result</DisplayName>
+          <Description>True when Result is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Result</Identifier>
+          <DisplayName>Result</DisplayName>
+          <Description>JSON object returned by the task.</Description>
+          <DataType>
+          <Constrained>
+            <DataType><Basic>String</Basic></DataType>
+            <Constraints><MaximalLength>262144</MaximalLength></Constraints>
+          </Constrained>
+        </DataType>
+        </Element>
+        <Element>
+          <Identifier>HasProgress</Identifier>
+          <DisplayName>Has Progress</DisplayName>
+          <Description>True when Progress is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Progress</Identifier>
+          <DisplayName>Progress</DisplayName>
+          <Description>Observable progress from 0 through 1.</Description>
+          <DataType><Basic>Real</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasErrorKind</Identifier>
+          <DisplayName>Has Error Kind</DisplayName>
+          <Description>True when ErrorKind is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>ErrorKind</Identifier>
+          <DisplayName>Error Kind</DisplayName>
+          <Description>SiLA error kind.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasErrorIdentifier</Identifier>
+          <DisplayName>Has Error Identifier</DisplayName>
+          <Description>True when ErrorIdentifier is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>ErrorIdentifier</Identifier>
+          <DisplayName>Error Identifier</DisplayName>
+          <Description>SiLA error identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
       </Structure>
     </DataType>
   </DataTypeDefinition>
