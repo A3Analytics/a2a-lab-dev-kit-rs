@@ -61,6 +61,54 @@ The crate root re-exports these types:
 
 Pass `Ros2Tasks` to `A2aLabService::new` as the task provider. `Ros2Tasks::graph` returns the graph so the caller can advertise actions and update goals.
 
+## Example
+
+`Ros2Tasks` uses in-process `MemoryRos2`. The example advertises `/navigate_to_pose`, starts that action, and records an executing goal and a succeeded goal. `MemoryRos2` does not speak DDS or RCL. A graph over DDS and RCL remains [Upcoming].
+
+```mermaid
+flowchart LR
+  accTitle: Ros2Tasks uses MemoryRos2
+  accDescr: Ros2Tasks uses the in-process MemoryRos2 graph.
+  rosTasks["Ros2Tasks"] --> memory["MemoryRos2"]
+```
+
+In the preceding diagram, `Ros2Tasks` uses `MemoryRos2`.
+
+```rust
+let graph = MemoryRos2::new();
+graph
+    .advertise(Ros2Action {
+        name: "/navigate_to_pose".to_owned(),
+        type_name: "nav2_msgs/action/NavigateToPose".to_owned(),
+    })
+    .await;
+
+let tasks = Ros2Tasks::new(graph.clone());
+let started = tasks
+    .start(StartTaskRequest::new(
+        TaskId::new("navigate_to_pose")?,
+        JsonObject::parse(r#"{"pose":"dock"}"#)?,
+    ))
+    .await?;
+```
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example ros2_tasks
+```
+
+The example prints:
+
+```text
+advertised navigate_to_pose (nav2_msgs/action/NavigateToPose)
+started ros2-goal-1 Submitted
+goal goal-1 Working message moving
+goal goal-1 Completed
+```
+
+The full source is [ros2_tasks.rs](../../../../examples/ros2_tasks.rs). [Expose ROS 2 actions as tasks](<../../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>) walks through the same program.
+
 ## Related
 
 - [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)

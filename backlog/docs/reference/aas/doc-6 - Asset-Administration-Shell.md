@@ -78,6 +78,71 @@ With the `aas` feature:
 - `AssetKey`
 - `SemanticId`
 
+## Example
+
+`IndustrialLabBuilder` uses the `MemoryCatalog` binding, and the metric query uses `ScriptedLive`. The binding role is `Metric` and the lab id is `temperature`. That binding stores an `Endpoint::OpcUa` as catalog data: `url` is `opc.tcp://lab.example:4840`, `security_policy` is `http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256`, `security_mode` is `SignAndEncrypt`, `identity` is `Certificate`, `node_id` is `s=Temperature`, `namespace_uri` is `urn:lab:equipment`, and `browse_path` is empty. `ScriptedLive` supplies 21.5. The example opens neither an AAS repository nor an OPC UA server.
+
+```mermaid
+flowchart LR
+  accTitle: Builder uses the catalog binding
+  accDescr: IndustrialLabBuilder uses the MemoryCatalog binding. The metric query uses ScriptedLive.
+  builder["IndustrialLabBuilder"] --> binding["MemoryCatalog binding"]
+  query["Metric query"] --> live["ScriptedLive"]
+```
+
+In the preceding diagram, `IndustrialLabBuilder` uses the `MemoryCatalog` binding, and the metric query uses `ScriptedLive`.
+
+```rust
+catalog
+    .insert(Asset::new(
+        asset.clone(),
+        None,
+        vec![Binding::new(
+            "temperature",
+            asset,
+            SemanticId::new(
+                SemanticKind::Iri,
+                "https://example.com/semantic/temperature",
+            )?,
+            BindingRole::Metric,
+            Endpoint::OpcUa {
+                url: "opc.tcp://lab.example:4840".to_owned(),
+                security_policy: "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256"
+                    .to_owned(),
+                security_mode: SecurityMode::SignAndEncrypt,
+                identity: OpcUaIdentityKind::Certificate,
+                node_id: "s=Temperature".to_owned(),
+                namespace_uri: "urn:lab:equipment".to_owned(),
+                browse_path: String::new(),
+            },
+        )?],
+    ))
+    .await;
+
+let live = ScriptedLive::new();
+live.insert_metric(MetricPoint::new(
+    UtcTimestamp::parse("2024-01-01T00:30:00Z")?,
+    21.5,
+)?)
+.await;
+
+let metrics = IndustrialLabBuilder::new(catalog, live).metrics();
+```
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example industrial_scripted
+```
+
+The example prints:
+
+```text
+scripted temperature sample 21.5
+```
+
+The full source is [industrial_scripted.rs](../../../../examples/industrial_scripted.rs).
+
 ## Related
 
 - [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)

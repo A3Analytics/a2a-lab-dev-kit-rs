@@ -30,6 +30,44 @@ In the preceding diagram, `A2aLabService` uses a custom provider. The custom pro
 
 The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that contract. [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>) shows how to write one. [Implementations](<../implementations/doc-18 - Implementations.md>) lists the built-in providers.
 
+## Example
+
+`A2aLabService` uses `OvenLogs` for logs, `MemoryMetrics` for metrics, and `MemoryTasks` for tasks.
+
+```mermaid
+flowchart LR
+  accTitle: A2aLabService uses OvenLogs and memory providers
+  accDescr: A2aLabService uses OvenLogs for logs, MemoryMetrics for metrics, and MemoryTasks for tasks.
+  service["A2aLabService"] -->|logs| oven["OvenLogs"]
+  service -->|metrics| metrics["MemoryMetrics"]
+  service -->|tasks| taskProvider["MemoryTasks"]
+```
+
+In the preceding diagram, `A2aLabService` uses `OvenLogs` for logs, `MemoryMetrics` for metrics, and `MemoryTasks` for tasks.
+
+```rust
+let service = A2aLabService::new(OvenLogs::new()?, MemoryMetrics::new(), MemoryTasks::new());
+let outcome = service
+    .execute(A2aLabCommand::ListLogSources(ListLogSourcesRequest {
+        page: PageRequest::new(None, 100)?,
+    }))
+    .await?;
+```
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example custom_provider
+```
+
+The example prints:
+
+```text
+log source: oven
+```
+
+The full source is [custom_provider.rs](../../../../examples/custom_provider.rs). [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>) walks through the same program.
+
 ## Related
 
 - [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>)

@@ -126,6 +126,57 @@ In-process coverage is `tests/a2a_compliance.rs` and `tests/a2a_authentication.r
 
 `mise run tck` runs the pinned suite.
 
+## Example
+
+An A2A client calls `A2aServer`, `A2aServer` calls `McpLab`, and `McpLab` calls the MCP server that hosts the in-memory lab. `A2aClient` calls `list_log_sources`. The same example also calls that MCP server directly, and it prints both the A2A line and the MCP line.
+
+```mermaid
+flowchart LR
+  accTitle: A2A client through McpLab
+  accDescr: The A2A client calls A2aServer. A2aServer calls McpLab. McpLab calls McpServer.
+  client["A2A client"] --> server["A2aServer"]
+  server --> lab["McpLab"]
+  lab --> mcp["McpServer"]
+```
+
+In the preceding diagram, the A2A client calls `A2aServer`, `A2aServer` calls `McpLab`, and `McpLab` calls `McpServer`.
+
+```rust
+fn spawn_a2a(
+    service: Arc<dyn A2aLabApi>,
+    listener: TcpListener,
+) -> JoinHandle<Result<(), A2aLabError>> {
+    tokio::spawn(async move { A2aServer::new(&service).listen(listener).await })
+}
+
+// ...
+
+let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp")).await?;
+let a2a = spawn_a2a(mcp_lab, a2a_listener);
+let client = A2aClient::new(&format!("http://{a2a_address}"))?;
+let sources = client
+    .list_log_sources(ListLogSourcesRequest {
+        page: PageRequest::new(None, 10)?,
+    })
+    .await?;
+println!("a2a list_log_sources: {}", sources.items()[0].id);
+```
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example a2a_and_mcp
+```
+
+The example prints:
+
+```text
+a2a list_log_sources: app
+mcp list_log_sources: app
+```
+
+The full source is [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs). [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>) walks through the same program.
+
 ## Related
 
 - [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)

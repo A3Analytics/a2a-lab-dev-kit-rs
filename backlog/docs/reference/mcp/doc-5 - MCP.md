@@ -74,6 +74,64 @@ Each error includes the `A2aLabError` code.
 
 `timeout_seconds` defaults to 60.
 
+## Example
+
+The MCP client calls `McpServer` over Streamable HTTP with the `list_log_sources` tool. `McpServer` calls `A2aLabService`. The same example also calls the lab through A2A, and it prints both the A2A line and the MCP line.
+
+```mermaid
+flowchart LR
+  accTitle: MCP client through McpServer
+  accDescr: The MCP client calls McpServer. McpServer calls A2aLabService.
+  client["MCP client"] --> server["McpServer"]
+  server --> service["A2aLabService"]
+```
+
+In the preceding diagram, the MCP client calls `McpServer`, and `McpServer` calls `A2aLabService`.
+
+```rust
+fn spawn_mcp(
+    service: Arc<dyn A2aLabApi>,
+    listener: TcpListener,
+) -> JoinHandle<Result<(), A2aLabError>> {
+    tokio::spawn(async move { McpServer::new(&service).serve_http(listener).await })
+}
+
+// ...
+
+let transport = StreamableHttpClientTransport::from_uri(format!("http://{mcp_address}/mcp"));
+let mcp_client = ClientConfig::new(
+    ClientCapabilities::default(),
+    Implementation::new("a2a-lab-example", env!("CARGO_PKG_VERSION")),
+)
+.with_protocol_version(ProtocolVersion::V_2026_07_28)
+.serve(transport)
+.await?;
+let arguments = serde_json::json!({"page": {"limit": 10}})
+    .as_object()
+    .cloned()
+    .ok_or("tool arguments must be an object")?;
+let page: Page<LogSource> = mcp_client
+    .call_tool(CallToolRequestParams::new("list_log_sources").with_arguments(arguments))
+    .await?
+    .into_typed()?;
+println!("mcp list_log_sources: {}", page.items()[0].id);
+```
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example a2a_and_mcp
+```
+
+The example prints:
+
+```text
+a2a list_log_sources: app
+mcp list_log_sources: app
+```
+
+The full source is [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs). [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>) walks through the same program.
+
 ## Related
 
 - [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)

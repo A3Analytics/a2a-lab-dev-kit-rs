@@ -75,6 +75,63 @@ These helpers stay in the `opcua` module. `Endpoint::OpcUa` is re-exported and c
 - `namespace_uri`
 - `browse_path`
 
+## Example
+
+The metric query uses `ScriptedLive`. The catalog binding stores an `Endpoint::OpcUa` as catalog data: `url` is `opc.tcp://lab.example:4840`, `security_policy` is `http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256`, `security_mode` is `SignAndEncrypt`, `identity` is `Certificate`, `node_id` is `s=Temperature`, `namespace_uri` is `urn:lab:equipment`, and `browse_path` is empty. `ScriptedLive` supplies 21.5. The example opens neither an AAS repository nor an OPC UA server. `OpcUaClient` remains [Upcoming].
+
+```mermaid
+flowchart LR
+  accTitle: Query uses ScriptedLive
+  accDescr: The metric query uses ScriptedLive.
+  query["Metric query"] --> live["ScriptedLive"]
+```
+
+In the preceding diagram, the metric query uses `ScriptedLive`.
+
+```rust
+Endpoint::OpcUa {
+    url: "opc.tcp://lab.example:4840".to_owned(),
+    security_policy: "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256".to_owned(),
+    security_mode: SecurityMode::SignAndEncrypt,
+    identity: OpcUaIdentityKind::Certificate,
+    node_id: "s=Temperature".to_owned(),
+    namespace_uri: "urn:lab:equipment".to_owned(),
+    browse_path: String::new(),
+}
+
+let live = ScriptedLive::new();
+live.insert_metric(MetricPoint::new(
+    UtcTimestamp::parse("2024-01-01T00:30:00Z")?,
+    21.5,
+)?)
+.await;
+
+let samples = metrics
+    .query(QueryMetricRequest {
+        metric_id: MetricId::new("temperature")?,
+        range: TimeRange::new(
+            UtcTimestamp::parse("2024-01-01T00:00:00Z")?,
+            UtcTimestamp::parse("2024-01-01T01:00:00Z")?,
+        )?,
+        page: PageRequest::new(None, 10)?,
+    })
+    .await?;
+```
+
+Run this command from the repository root:
+
+```bash
+mise exec -- cargo run --example industrial_scripted
+```
+
+The example prints:
+
+```text
+scripted temperature sample 21.5
+```
+
+The full source is [industrial_scripted.rs](../../../../examples/industrial_scripted.rs).
+
 ## Related
 
 - [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>)
