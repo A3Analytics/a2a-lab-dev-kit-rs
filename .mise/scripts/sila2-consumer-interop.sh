@@ -6,6 +6,7 @@ out="$root/target/sila2-consumer-interop-reports"
 source_dir="$root/target/sila-csharp"
 commit="2625cce6541c501cb951f2eea95d490a2efd12c0"
 server_name="a2a-lab-sila-consumer-csharp"
+data_volume="a2a-lab-sila-consumer-data"
 server_uuid="a82121b1-22de-4b81-a450-86fa2e5344ee"
 port=50052
 case "$(uname -m)" in
@@ -42,8 +43,20 @@ docker build \
 docker build -f .mise/sila-consumer-client.Dockerfile -t a2a-lab-sila-consumer-client "$root"
 
 docker rm -f "$server_name" >/dev/null 2>&1 || true
+docker volume rm -f "$data_volume" >/dev/null 2>&1 || true
+cleanup() {
+  docker rm -f a2a-lab-sila-consumer-caddy a2a-lab-sila-consumer-initiated "$server_name" >/dev/null 2>&1 || true
+  docker volume rm -f "$data_volume" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+docker run --rm \
+  -v "$data_volume":/data \
+  -v "$out/csharp":/certs:ro \
+  --entrypoint bash \
+  a2a-lab-sila-consumer-csharp \
+  -c 'cp /certs/ca.crt /certs/ca.key /certs/server.crt /certs/server.key /data/'
 docker run -d --name "$server_name" --network host \
-  -v "$out/csharp:/data" \
+  -v "$data_volume":/data \
   -e SILA_HOST=0.0.0.0 \
   -e SILA_PORT="$port" \
   -e SILA_SERVER_UUID="$server_uuid" \
@@ -55,7 +68,12 @@ docker run -d --name "$server_name" --network host \
 
 ready=0
 for _ in $(seq 1 90); do
-  if docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$server_name" | grep -q healthy; then
+  state="$(docker inspect --format '{{.State.Status}}' "$server_name")"
+  status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$server_name")"
+  if [ "$state" != "running" ] || [ "$status" = "unhealthy" ]; then
+    break
+  fi
+  if [ "$status" = "healthy" ]; then
     ready=1
     break
   fi
@@ -63,15 +81,11 @@ for _ in $(seq 1 90); do
 done
 if [ "$ready" -ne 1 ]; then
   docker logs "$server_name" >&2 || true
-  echo "C# SiLA server did not announce" >&2
+  echo "C# SiLA server did not become healthy (state=$state status=$status)" >&2
   exit 1
 fi
 
 docker rm -f a2a-lab-sila-consumer-caddy >/dev/null 2>&1 || true
-cleanup() {
-  docker rm -f a2a-lab-sila-consumer-caddy a2a-lab-sila-consumer-initiated "$server_name" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
 # The client and official servers share the Docker host network. Caddy has to
 # listen there too; a process on the Mac cannot see that 127.0.0.1.
 docker run -d --name a2a-lab-sila-consumer-caddy --network host \
