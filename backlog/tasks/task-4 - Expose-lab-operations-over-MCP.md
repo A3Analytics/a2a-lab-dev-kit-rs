@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@me'
 created_date: '2026-09-29 23:41'
-updated_date: '2026-09-30 15:56'
+updated_date: '2026-10-09 20:00'
 labels:
   - mcp
 dependencies:

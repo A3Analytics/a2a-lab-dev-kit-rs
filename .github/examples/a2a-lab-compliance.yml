@@ -1,7 +1,7 @@
 # Consumer badge (replace OWNER/REPOSITORY and main with the repository's default branch):
 # [![A2A-LAB Compliance](https://github.com/OWNER/REPOSITORY/actions/workflows/a2a-lab-compliance.yml/badge.svg?branch=main)](https://github.com/OWNER/REPOSITORY/actions/workflows/a2a-lab-compliance.yml?query=branch%3Amain)
 #
-# Pin the action to a full commit SHA that contains the selected suite revision.
+# Pin the standalone TCK Action to its published full commit SHA.
 # This status is not certification. It proves only that the named repository commit
 # passed the A2A-LAB full suite with profile 1.1.0 and LLM checks enabled.
 
@@ -26,10 +26,9 @@ jobs:
       - name: Start deterministic compliance fixture
         run: ./scripts/start-compliance-fixture.sh
 
-      # Replace this example SHA with a full commit SHA containing the desired suite.
       - name: Run A2A-LAB compliance
         id: compliance
-        uses: A3Analytics/a2a-lab-dev-kit-rs@0123456789abcdef0123456789abcdef01234567
+        uses: A3Analytics/a2a-lab-tck@1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd
         with:
           a2a-url: http://127.0.0.1:3000
           mcp-url: http://127.0.0.1:3001/mcp

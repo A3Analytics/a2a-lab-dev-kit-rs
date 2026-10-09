@@ -1,5 +1,5 @@
-name: A2A-LAB Compliance
-description: Run the A2A-LAB compliance suite against an A2A-LAB implementation.
+name: A2A-LAB Compliance (deprecated bridge)
+description: Deprecated compatibility bridge to the standalone A2A-LAB TCK.
 author: A3Analytics
 
 branding:
@@ -65,18 +65,21 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: compliance
-      name: Run A2A-LAB compliance suite
+    - name: Announce standalone A2A-LAB TCK migration
       shell: bash
-      env:
-        INPUT_A2A_URL: ${{ inputs.a2a-url }}
-        INPUT_MCP_URL: ${{ inputs.mcp-url }}
-        INPUT_FIXTURES: ${{ inputs.fixtures }}
-        INPUT_PROFILE: ${{ inputs.profile }}
-        INPUT_SUITE: ${{ inputs.suite }}
-        INPUT_LLM_CHECK: ${{ inputs.llm-check }}
-        INPUT_REPORT_PATH: ${{ inputs.report-path }}
-        INPUT_TIMEOUT_MILLISECONDS: ${{ inputs.timeout-milliseconds }}
-        INPUT_IMPLEMENTATION_NAME: ${{ inputs.implementation-name }}
-        INPUT_IMPLEMENTATION_VERSION: ${{ inputs.implementation-version }}
-      run: '"${{ github.action_path }}/.github/actions/a2a-lab-compliance/run.sh"'
+      run: |
+        echo "::warning title=A2A-LAB Action moved::This devkit Action is deprecated. Migrate to A3Analytics/a2a-lab-tck@1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd."
+    - id: compliance
+      name: Run standalone A2A-LAB TCK
+      uses: A3Analytics/a2a-lab-tck@1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd
+      with:
+        a2a-url: ${{ inputs.a2a-url }}
+        mcp-url: ${{ inputs.mcp-url }}
+        fixtures: ${{ inputs.fixtures }}
+        profile: ${{ inputs.profile }}
+        suite: ${{ inputs.suite }}
+        llm-check: ${{ inputs.llm-check }}
+        report-path: ${{ inputs.report-path }}
+        timeout-milliseconds: ${{ inputs.timeout-milliseconds }}
+        implementation-name: ${{ inputs.implementation-name }}
+        implementation-version: ${{ inputs.implementation-version }}

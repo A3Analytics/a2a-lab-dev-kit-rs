@@ -63,9 +63,11 @@ Run these commands from the repository root.
 
 ## Check A2A-LAB compliance
 
-A2A-LAB compliance tests deterministic lab-operation behavior and A2A/MCP parity. It is separate from the official A2A protocol TCK and does not establish certification.
+A2A-LAB compliance tests deterministic lab-operation behavior and A2A/MCP parity. The authoritative [contract](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/backlog/docs/reference/compliance/doc-1%20-%20A2A-LAB-TCK-profile.md), [runner](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/src/compliance_runner.rs), and [GitHub Action](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/action.yml) are maintained in the standalone [A2A-LAB TCK](https://github.com/A3Analytics/a2a-lab-tck). Pin consumers to the full published commit SHA `1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd`.
 
-Use [Adopt A2A-LAB compliance](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Adopt-A2A-LAB-compliance) to create fixtures, run the profile locally or in a consumer-owned GitHub Actions workflow, retain the JSON report, and display the workflow badge. [A2A-LAB compliance profile](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A-LAB-compliance-profile) defines profile `1.0.0`, required cases, parity, and report fields.
+The devkit `v0.1.0` release at `9d5327868d96b3e800fd89f6debf434bcc12709d` is the last release with the embedded TCK. Its Action contract remains immutable. The current repository-root Action is a deprecated compatibility bridge to the standalone revision.
+
+Use the standalone [A2A-LAB TCK documentation](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/README.md) to create fixtures, pin its Action, retain the JSON report, and display the consumer repository's workflow badge. That badge reports only the consumer-owned workflow result; it is not certification or a devkit badge.
 
 ## Wiki
 

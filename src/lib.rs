@@ -9,7 +9,6 @@ pub mod a2a;
 #[cfg(feature = "aas")]
 pub mod aas;
 pub mod catalog;
-pub mod compliance;
 pub mod error;
 pub mod id;
 pub mod images;
@@ -38,17 +37,6 @@ pub use a2a::{
 pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
-};
-pub use compliance::{
-    COMPLIANCE_PROFILE_VERSION, COMPLIANCE_RESULT_SCHEMA_ID, ComplianceCase, ComplianceCaseKind,
-    ComplianceCaseResult, ComplianceCheck, ComplianceEndpoint, ComplianceFixtures,
-    ComplianceInterface, ComplianceOperation, ComplianceOutcome, ComplianceProfile,
-    ComplianceResult, ComplianceRunError, ComplianceRunner, ComplianceRunnerConfig,
-    ComplianceScenario, ComplianceScenarioAssertion, ComplianceScenarioCapability,
-    ComplianceScenarioResult, ComplianceSuite, ComplianceSuiteContract, ComplianceValidationError,
-    ComplianceValidationErrors, FixtureCapability, ImageFixtures, ImplementationIdentity,
-    LogFixtures, MetricFixtures, OperationContract, TaskFixtures, cases_by_operation,
-    compliance_profile, compliance_result_schema, compliance_suite, run_compliance,
 };
 pub use error::A2aLabError;
 pub use id::{ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId};
