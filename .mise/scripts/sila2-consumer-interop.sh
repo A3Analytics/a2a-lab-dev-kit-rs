@@ -67,8 +67,6 @@ if [ "$ready" -ne 1 ]; then
   exit 1
 fi
 
-mise install caddy
-mise exec -- caddy version >/dev/null
 docker rm -f a2a-lab-sila-consumer-caddy >/dev/null 2>&1 || true
 cleanup() {
   docker rm -f a2a-lab-sila-consumer-caddy a2a-lab-sila-consumer-initiated "$server_name" >/dev/null 2>&1 || true
