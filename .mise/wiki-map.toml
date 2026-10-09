@@ -28,6 +28,11 @@ wiki = "Implement-a-custom-provider.md"
 section = "Guides"
 
 [[page]]
+source = "guide/compliance"
+wiki = "Adopt-A2A-LAB-compliance.md"
+section = "Guides"
+
+[[page]]
 source = "reference/interfaces-and-providers"
 wiki = "Interfaces-and-providers.md"
 section = "A2A-LAB"
@@ -40,6 +45,11 @@ section = "A2A-LAB"
 [[page]]
 source = "reference/implementations"
 wiki = "Implementations.md"
+section = "A2A-LAB"
+
+[[page]]
+source = "reference/compliance"
+wiki = "A2A-LAB-compliance-profile.md"
 section = "A2A-LAB"
 
 [[page]]

@@ -10,6 +10,8 @@ created_date: "2026-09-30 17:38"
 
 A2A-LAB devkit routes client calls to lab logs, metrics, tasks, and images. Those values are the [A2A-LAB primitives](<../reference/primitives/doc-17 - A2A-LAB-primitives.md>). Agent2Agent (A2A) and Model Context Protocol (MCP) expose all twelve operations. Standardization in Lab Automation (SiLA) 2 serves logs, metrics, tasks, and named-source images. The crate name is `a2a-lab-dev-kit`.
 
+The versioned [A2A-LAB compliance profile](<../reference/compliance/doc-23 - A2A-LAB-compliance-profile.md>) checks deterministic lab behavior over A2A and MCP. It is separate from the official A2A protocol Technology Compatibility Kit (TCK) and does not establish certification.
+
 ## Interfaces and providers
 
 The following diagram shows the interfaces and providers around `A2aLabService`. [Interfaces and providers](<../reference/interfaces-and-providers/doc-19 - Interfaces-and-providers.md>) defines those terms.
@@ -48,4 +50,6 @@ Read these pages:
 - [Serve A2A and MCP](<../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
 - [Expose ROS 2 actions as tasks](<../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)
 - [Implement a custom provider](<../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>)
+- [Adopt A2A-LAB compliance](<../guide/compliance/doc-22 - Adopt-A2A-LAB-compliance.md>)
+- [A2A-LAB compliance profile](<../reference/compliance/doc-23 - A2A-LAB-compliance-profile.md>)
 - [README](../../../README.md)

@@ -1,0 +1,77 @@
+name: A2A-LAB Compliance
+description: Run the versioned A2A-LAB compliance suite against caller-started A2A and MCP endpoints
+
+inputs:
+  a2a-url:
+    description: Absolute HTTP(S) URL of the deterministic A2A endpoint
+    required: true
+  mcp-url:
+    description: Absolute HTTP(S) URL of the deterministic MCP Streamable HTTP endpoint
+    required: true
+  fixtures:
+    description: Path to the JSON fixture declaration in the consumer checkout
+    required: true
+  profile:
+    description: A2A-LAB compliance profile version
+    required: false
+    default: "1.1.0"
+  suite:
+    description: Compliance scope to run (basic or full)
+    required: false
+    default: full
+  llm-check:
+    description: Whether full-suite A2A agent-message checks are enabled (true or false)
+    required: false
+    default: "true"
+  report-path:
+    description: Path where the machine-readable JSON report is retained
+    required: false
+    default: "a2a-lab-compliance.json"
+  timeout-milliseconds:
+    description: Maximum duration of each interface call in milliseconds
+    required: false
+    default: "30000"
+  implementation-name:
+    description: Implementation name recorded in the report
+    required: false
+    default: ${{ github.repository }}
+  implementation-version:
+    description: Implementation revision recorded in the report
+    required: false
+    default: ${{ github.sha }}
+
+outputs:
+  profile:
+    description: Selected A2A-LAB compliance profile version
+    value: ${{ steps.compliance.outputs.profile }}
+  suite:
+    description: Selected basic or full compliance suite
+    value: ${{ steps.compliance.outputs.suite }}
+  llm-check:
+    description: Whether the full-suite A2A agent-message check was selected
+    value: ${{ steps.compliance.outputs.llm-check }}
+  compliant:
+    description: Whether every required case in the selected profile passed
+    value: ${{ steps.compliance.outputs.compliant }}
+  report-path:
+    description: Path to the retained machine-readable JSON report
+    value: ${{ steps.compliance.outputs.report-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: compliance
+      name: Run A2A-LAB compliance suite
+      shell: bash
+      env:
+        INPUT_A2A_URL: ${{ inputs.a2a-url }}
+        INPUT_MCP_URL: ${{ inputs.mcp-url }}
+        INPUT_FIXTURES: ${{ inputs.fixtures }}
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_SUITE: ${{ inputs.suite }}
+        INPUT_LLM_CHECK: ${{ inputs.llm-check }}
+        INPUT_REPORT_PATH: ${{ inputs.report-path }}
+        INPUT_TIMEOUT_MILLISECONDS: ${{ inputs.timeout-milliseconds }}
+        INPUT_IMPLEMENTATION_NAME: ${{ inputs.implementation-name }}
+        INPUT_IMPLEMENTATION_VERSION: ${{ inputs.implementation-version }}
+      run: '"${{ github.action_path }}/.github/actions/a2a-lab-compliance/run.sh"'

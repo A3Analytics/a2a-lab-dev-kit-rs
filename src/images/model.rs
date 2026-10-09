@@ -353,6 +353,10 @@ impl ListImageSourcesRequest {
         })
     }
 
+    pub(crate) const fn compliance_unchecked(page: PageRequest) -> Self {
+        Self { page }
+    }
+
     /// Page bounds.
     #[must_use]
     pub const fn page(&self) -> &PageRequest {
@@ -396,6 +400,10 @@ impl ListImagesRequest {
             source_id,
             page: checked_page(page)?,
         })
+    }
+
+    pub(crate) const fn compliance_unchecked(source_id: ImageSourceId, page: PageRequest) -> Self {
+        Self { source_id, page }
     }
 
     /// Source to list.
@@ -469,6 +477,20 @@ impl SearchImagesRequest {
         };
         request.check()?;
         Ok(request)
+    }
+
+    pub(crate) const fn compliance_unchecked(
+        source_id: Option<ImageSourceId>,
+        range: Option<TimeRange>,
+        text: Option<String>,
+        page: PageRequest,
+    ) -> Self {
+        Self {
+            source_id,
+            range,
+            text,
+            page,
+        }
     }
 
     /// Rejects an invalid page or range, blank text, and a search with neither criterion.

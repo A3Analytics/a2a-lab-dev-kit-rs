@@ -4,6 +4,8 @@
 
 A2A-LAB devkit is a Rust crate for lab logs, metrics, tasks, and images. Agent2Agent (A2A) and Model Context Protocol (MCP) expose all twelve operations. SiLA 2 serves logs, metrics, tasks, and named-source images. AAS, OPC UA, and ROS 2 stay on logs, metrics, and tasks. Image fields and limits are in the [A2A-LAB primitives](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Primitives).
 
+The A2A 1.0 badge reports the official A2A protocol Technology Compatibility Kit (TCK) workflow for this devkit. It does not report A2A-LAB compliance.
+
 ## Features
 
 - Supports lab logs, metrics, tasks, and images over Agent2Agent (A2A) and Model Context Protocol (MCP).
@@ -56,6 +58,12 @@ Run these commands from the repository root.
    ```bash
    mise exec -- cargo run --example logs_metrics_tasks
    ```
+
+## Check A2A-LAB compliance
+
+A2A-LAB compliance tests deterministic lab-operation behavior and A2A/MCP parity. It is separate from the official A2A protocol TCK and does not establish certification.
+
+Use [Adopt A2A-LAB compliance](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Adopt-A2A-LAB-compliance) to create fixtures, run the profile locally or in a consumer-owned GitHub Actions workflow, retain the JSON report, and display the workflow badge. [A2A-LAB compliance profile](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/A2A-LAB-compliance-profile) defines profile `1.0.0`, required cases, parity, and report fields.
 
 ## Wiki
 

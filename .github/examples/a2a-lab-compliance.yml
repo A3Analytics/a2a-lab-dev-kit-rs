@@ -1,0 +1,49 @@
+# Consumer badge (replace OWNER/REPOSITORY and main with the repository's default branch):
+# [![A2A-LAB Compliance](https://github.com/OWNER/REPOSITORY/actions/workflows/a2a-lab-compliance.yml/badge.svg?branch=main)](https://github.com/OWNER/REPOSITORY/actions/workflows/a2a-lab-compliance.yml?query=branch%3Amain)
+#
+# Pin the action to a full commit SHA that contains the selected suite revision.
+# This status is not certification. It proves only that the named repository commit
+# passed the A2A-LAB full suite with profile 1.1.0 and LLM checks enabled.
+
+name: A2A-LAB Compliance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out consumer repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+
+      - name: Start deterministic compliance fixture
+        run: ./scripts/start-compliance-fixture.sh
+
+      # Replace this example SHA with a full commit SHA containing the desired suite.
+      - name: Run A2A-LAB compliance
+        id: compliance
+        uses: A3Analytics/a2a-lab-dev-kit-rs@0123456789abcdef0123456789abcdef01234567
+        with:
+          a2a-url: http://127.0.0.1:3000
+          mcp-url: http://127.0.0.1:3001/mcp
+          fixtures: .a2a-lab/compliance-fixtures.json
+          profile: "1.1.0"
+          suite: full
+          llm-check: "true"
+          report-path: target/a2a-lab-compliance.json
+          timeout-milliseconds: "30000"
+
+      - name: Upload compliance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a2a-lab-compliance-report
+          path: target/a2a-lab-compliance.json
+          if-no-files-found: warn
