@@ -1,5 +1,10 @@
 name: A2A-LAB Compliance
 description: Run the versioned A2A-LAB compliance suite against caller-started A2A and MCP endpoints
+author: A3Analytics
+
+branding:
+  icon: check-circle
+  color: green
 
 inputs:
   a2a-url:
