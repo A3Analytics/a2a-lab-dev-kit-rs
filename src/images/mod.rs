@@ -8,6 +8,6 @@ mod provider;
 pub use model::{
     DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor,
     ImageSource, ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest,
-    SearchImagesRequest,
+    SearchImagesRequest, TckMalformedImageRequests,
 };
 pub use provider::ImageProvider;

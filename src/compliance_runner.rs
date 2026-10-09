@@ -17,7 +17,7 @@ use crate::compliance::{
 use crate::error::A2aLabError;
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, ListImageSourcesRequest, ListImagesRequest,
-    SearchImagesRequest,
+    SearchImagesRequest, TckMalformedImageRequests,
 };
 use crate::logs::{ListLogSourcesRequest, QueryLogsRequest};
 use crate::mcp::McpLab;
@@ -833,27 +833,25 @@ fn command_for(case: &ComplianceCase, fixtures: &ComplianceFixtures) -> A2aLabCo
             id: run_id(case.kind, fixtures),
         }),
         ComplianceOperation::ListImageSources => {
-            let page = page();
             let request = if case.kind == ComplianceCaseKind::Invalid {
-                ListImageSourcesRequest::compliance_unchecked(page)
+                TckMalformedImageRequests::list_image_sources_zero_limit()
             } else {
-                ListImageSourcesRequest::new(page).expect("page request")
+                ListImageSourcesRequest::new(page()).expect("page request")
             };
             A2aLabCommand::ListImageSources(request)
         }
         ComplianceOperation::ListImages => {
             let source_id = image_source(case.kind, fixtures);
-            let page = page();
             let request = if case.kind == ComplianceCaseKind::Invalid {
-                ListImagesRequest::compliance_unchecked(source_id, page)
+                TckMalformedImageRequests::list_images_zero_limit(source_id)
             } else {
-                ListImagesRequest::new(source_id, page).expect("image list request")
+                ListImagesRequest::new(source_id, page()).expect("image list request")
             };
             A2aLabCommand::ListImages(request)
         }
         ComplianceOperation::SearchImages => {
             let request = if case.kind == ComplianceCaseKind::Invalid {
-                SearchImagesRequest::compliance_unchecked(None, None, None, PageRequest::default())
+                TckMalformedImageRequests::search_images_without_criterion()
             } else {
                 SearchImagesRequest::new(
                     Some(image_source(case.kind, fixtures)),

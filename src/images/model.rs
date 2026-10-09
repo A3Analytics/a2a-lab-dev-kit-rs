@@ -353,10 +353,6 @@ impl ListImageSourcesRequest {
         })
     }
 
-    pub(crate) const fn compliance_unchecked(page: PageRequest) -> Self {
-        Self { page }
-    }
-
     /// Page bounds.
     #[must_use]
     pub const fn page(&self) -> &PageRequest {
@@ -400,10 +396,6 @@ impl ListImagesRequest {
             source_id,
             page: checked_page(page)?,
         })
-    }
-
-    pub(crate) const fn compliance_unchecked(source_id: ImageSourceId, page: PageRequest) -> Self {
-        Self { source_id, page }
     }
 
     /// Source to list.
@@ -479,20 +471,6 @@ impl SearchImagesRequest {
         Ok(request)
     }
 
-    pub(crate) const fn compliance_unchecked(
-        source_id: Option<ImageSourceId>,
-        range: Option<TimeRange>,
-        text: Option<String>,
-        page: PageRequest,
-    ) -> Self {
-        Self {
-            source_id,
-            range,
-            text,
-            page,
-        }
-    }
-
     /// Rejects an invalid page or range, blank text, and a search with neither criterion.
     pub fn check(&self) -> Result<(), A2aLabError> {
         self.page.check()?;
@@ -553,6 +531,42 @@ impl<'de> Deserialize<'de> for SearchImagesRequest {
         SearchImagesRequestRaw::deserialize(deserializer)?
             .try_into()
             .map_err(D::Error::custom)
+    }
+}
+
+/// Constructors reserved for the malformed image requests in TCK profile 1.1.0.
+///
+/// These requests intentionally fail normal validation and exist only so a
+/// conformance runner can verify rejection through the typed public clients.
+pub struct TckMalformedImageRequests;
+
+impl TckMalformedImageRequests {
+    /// Lists image sources with the profile's invalid zero page limit.
+    #[must_use]
+    pub const fn list_image_sources_zero_limit() -> ListImageSourcesRequest {
+        ListImageSourcesRequest {
+            page: PageRequest::tck_zero_limit(),
+        }
+    }
+
+    /// Lists images from `source_id` with the profile's invalid zero page limit.
+    #[must_use]
+    pub const fn list_images_zero_limit(source_id: ImageSourceId) -> ListImagesRequest {
+        ListImagesRequest {
+            source_id,
+            page: PageRequest::tck_zero_limit(),
+        }
+    }
+
+    /// Searches images without the required range or text criterion.
+    #[must_use]
+    pub fn search_images_without_criterion() -> SearchImagesRequest {
+        SearchImagesRequest {
+            source_id: None,
+            range: None,
+            text: None,
+            page: PageRequest::default(),
+        }
     }
 }
 

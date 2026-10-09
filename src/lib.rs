@@ -55,7 +55,7 @@ pub use id::{ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId};
 pub use images::{
     DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor,
     ImageProvider, ImageSource, ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest,
-    SearchImagesRequest,
+    SearchImagesRequest, TckMalformedImageRequests,
 };
 pub use industrial::{
     IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialTasks, ScriptedLive,

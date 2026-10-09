@@ -57,6 +57,13 @@ impl PageRequest {
         self.limit
     }
 
+    pub(crate) const fn tck_zero_limit() -> Self {
+        Self {
+            cursor: None,
+            limit: 0,
+        }
+    }
+
     pub(crate) fn offset(&self) -> Result<usize, A2aLabError> {
         self.check()?;
         let Some(cursor) = &self.cursor else {
