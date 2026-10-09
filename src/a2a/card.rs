@@ -1,4 +1,4 @@
-//! Agent Card for the seven lab skills.
+//! Agent Card for the lab skills.
 
 use std::collections::HashMap;
 
@@ -22,7 +22,7 @@ pub(crate) fn agent_card(
 ) -> AgentCard {
     AgentCard {
         name: "a2a-lab".to_owned(),
-        description: "Lab logs, metrics, and tasks".to_owned(),
+        description: "Lab logs, metrics, tasks, and images".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         supported_interfaces: vec![
             interface(public_url, TRANSPORT_PROTOCOL_HTTP_JSON),
@@ -102,6 +102,36 @@ fn skills(agent_message: bool) -> Vec<AgentSkill> {
             "get-task-status",
             "Get task status",
             "Read the status of a started lab run",
+            LAB_MEDIA_TYPE,
+        ),
+        (
+            "list-image-sources",
+            "List image sources",
+            "List the image sources this agent can read",
+            LAB_MEDIA_TYPE,
+        ),
+        (
+            "list-images",
+            "List images",
+            "List image metadata from one source",
+            LAB_MEDIA_TYPE,
+        ),
+        (
+            "search-images",
+            "Search images",
+            "Search image metadata by time range or text",
+            LAB_MEDIA_TYPE,
+        ),
+        (
+            "get-image",
+            "Get image",
+            "Read one image, including its inline bytes",
+            LAB_MEDIA_TYPE,
+        ),
+        (
+            "get-current-image",
+            "Get current image",
+            "Read the current image for one source, including its inline bytes",
             LAB_MEDIA_TYPE,
         ),
     ];

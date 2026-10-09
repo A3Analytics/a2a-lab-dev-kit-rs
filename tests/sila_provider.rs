@@ -7,11 +7,11 @@ use a2a_lab_dev_kit::sila::{
     SilaProvider, SilaProviderConfig, SilaServer, TaskBinding,
 };
 use a2a_lab_dev_kit::{
-    A2aClient, A2aLabCommand, A2aLabResult, A2aLabService, GetTaskStatusRequest, JsonObject,
-    ListTasksRequest, LogLevel, LogProvider, LogRecord, LogSource, McpLab, McpServer, MemoryLogs,
-    MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, MetricProvider,
-    PageRequest, QueryLogsRequest, QueryMetricRequest, SourceId, StartTaskRequest, TaskDefinition,
-    TaskId, TaskProvider, TaskState, TimeRange, UtcTimestamp, bind_local,
+    A2aClient, A2aLabApi, A2aLabCommand, A2aLabResult, A2aLabService, GetTaskStatusRequest,
+    JsonObject, ListTasksRequest, LogLevel, LogProvider, LogRecord, LogSource, McpLab, McpServer,
+    MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint,
+    MetricProvider, PageRequest, QueryLogsRequest, QueryMetricRequest, SourceId, StartTaskRequest,
+    TaskDefinition, TaskId, TaskProvider, TaskState, TimeRange, UtcTimestamp, bind_local,
 };
 
 const UUID: &str = "11111111-1111-1111-1111-111111111111";

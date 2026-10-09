@@ -12,7 +12,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-SiLA 2 is both an interface and a provider. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `SilaProvider` connects to a remote SiLA server and fulfills those same primitives.
+SiLA 2 is both an interface and a provider. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `SilaProvider` connects to a remote SiLA server and fulfills logs, metrics, and tasks. `SilaProvider` does not implement `ImageProvider`.
 
 The following diagram shows that path:
 
@@ -32,14 +32,19 @@ The `sila2` feature is on by default. The lab profile uses these features:
 
 - `org.silastandard/core/SiLAService/v1`
 - `com.a3analytics/lab/LabOperations/v1`
+- `com.a3analytics/lab/LabImages/v1`
 - `org.silastandard/core/commands/CancelController/v1`
 
-`LabOperations` covers the seven lab operations:
+`LabOperations` covers logs, metrics, and tasks. It has these seven operations:
 
 - `ListLogSources`, `QueryLogs`, `ListMetrics`, `QueryMetric`, `ListTasks`, and `GetTaskStatus` are unobservable commands.
 - `StartTask` is observable.
 
-Pages, time ranges, records, and task runs are SiLA structures. Task input and log attributes are JSON strings of at most 262144 characters. The feature declares no SiLA `Binary` fields.
+Pages, time ranges, records, and task runs are SiLA structures. Task input and log attributes are JSON strings of at most 262144 characters. `LabOperations` declares no SiLA `Binary` fields.
+
+`LabImages` lists image sources and returns one image. `ListImageSources` returns a page of named sources and what each source captures. `GetImage` reads one stored image by id. `GetCurrentImage` reads the provider-defined current frame for one source. Search and list-by-time stay on Agent2Agent (A2A) and Model Context Protocol (MCP).
+
+Every image uses SiLA binary download, including a payload under 2 MiB. The command response carries metadata and a `binaryTransferUUID`. The client calls `BinaryDownload.GetBinaryInfo`, `GetChunk`, and `DeleteBinary` for the pixel bytes. The cloud connector does not proxy `LabImages` or `BinaryDownload`.
 
 `CancelController.CancelCommand` cancels the lab run behind a `StartTask` execution. The execution id must be a lowercase UUID. A canceled execution finishes with `canceled`. A provider that cannot cancel returns `OperationNotSupported`.
 
@@ -70,7 +75,7 @@ Dropping the server handle withdraws that advertisement.
 
 ## Interop
 
-`mise run sila2-interop` starts this server and runs the pinned official `sila_csharp` v.10.3.2 dynamic client, commit `2625cce6541c501cb951f2eea95d490a2efd12c0`. The report records `role: feature_provider`, image ids, and a failure when a required capability fails. It does not use the official SiLA logo and it is not a certification claim.
+`mise run sila2-interop` starts this server and runs the pinned official `sila_csharp` v.10.3.2 dynamic client, commit `2625cce6541c501cb951f2eea95d490a2efd12c0`. The report records `role: feature_provider`, the server and client container-image identifiers, and a failure when a required capability fails. Those identifiers name the Docker images used for the run. They are not lab image ids. It does not use the official SiLA logo and it is not a certification claim.
 
 ## Remote provider
 
@@ -92,7 +97,7 @@ Each binding assigns one feature command or readable property to `task`, `logs`,
 
 A task binding uses the Feature Definition for its input and output JSON Schema. An observable command keeps progress and can be canceled. A log or metric binding calls its member when the lab query arrives. JSON pointers select the returned records or samples, and the provider keeps the requested half-open UTC range. There is no background collection.
 
-`SilaProvider` implements `LogProvider`, `MetricProvider`, and `TaskProvider`. Pass one cloned value to each argument of `A2aLabService::new`.
+`SilaProvider` implements `LogProvider`, `MetricProvider`, and `TaskProvider`. It does not implement `ImageProvider`. Pass one cloned value to each argument of `A2aLabService::new`. Image operations on that service stay unavailable until a separate `ImageProvider` is attached.
 
 The [SiLA provider example](../../../../examples/sila_provider.rs) (`examples/sila_provider.rs`) reads one remote log command.
 

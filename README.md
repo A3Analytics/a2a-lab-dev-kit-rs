@@ -2,12 +2,12 @@
 
 [![A2A 1.0](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml/badge.svg)](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/actions/workflows/a2a-tck.yml)
 
-A2A-LAB devkit is a Rust crate for lab logs, metrics, and tasks over A2A, MCP, SiLA 2, AAS, OPC UA, and ROS 2.
+A2A-LAB devkit is a Rust crate for lab logs, metrics, tasks, and images. Agent2Agent (A2A) and Model Context Protocol (MCP) expose all twelve operations. SiLA 2 serves logs, metrics, tasks, and named-source images. AAS, OPC UA, and ROS 2 stay on logs, metrics, and tasks. Image fields and limits are in the [A2A-LAB primitives](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Primitives).
 
 ## Features
 
-- Supports lab logs, metrics, and tasks over Agent2Agent (A2A) and Model Context Protocol (MCP).
-- Serves that lab to Standardization in Lab Automation (SiLA) 2 clients.
+- Supports lab logs, metrics, tasks, and images over Agent2Agent (A2A) and Model Context Protocol (MCP).
+- Serves logs, metrics, tasks, and named-source images to Standardization in Lab Automation (SiLA) 2 clients. Image bytes use SiLA binary download.
 - Connects to a remote SiLA 2 server and exposes configured members as lab tasks, logs, and metrics.
 - Reads equipment from an AAS catalog.
 - Reads Open Platform Communications Unified Architecture (OPC UA) equipment history.
@@ -39,7 +39,7 @@ flowchart LR
   lab --> providers
 ```
 
-A2A, MCP, and SiLA 2 call `A2aLabService`. `A2aLabService` uses AAS, OPC UA, ROS 2, SiLA 2, and Custom. SiLA 2 is both the inbound interface and a remote provider.
+A2A, MCP, and SiLA 2 call `A2aLabService`. `A2aLabService` uses AAS, OPC UA, ROS 2, SiLA 2, and Custom. SiLA 2 is both the inbound interface and a remote provider. The inbound server also serves named-source images through binary download.
 
 ## Run the logs, metrics, and tasks example
 

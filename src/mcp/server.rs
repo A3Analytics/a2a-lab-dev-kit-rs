@@ -1,4 +1,4 @@
-//! MCP tools for the seven lab operations.
+//! MCP tools for lab logs, metrics, tasks, and images.
 
 use std::sync::Arc;
 
@@ -13,6 +13,10 @@ use tokio::net::TcpListener;
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31001";
 
 use crate::error::A2aLabError;
+use crate::images::{
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
+    ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+};
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
@@ -227,6 +231,90 @@ impl McpServer {
         )
         .await
     }
+
+    #[tool(
+        name = "list_image_sources",
+        description = "List the image sources this agent can read"
+    )]
+    async fn list_image_sources(
+        &self,
+        params: Parameters<ListImageSourcesRequest>,
+    ) -> Result<Json<Page<ImageSource>>, ErrorData> {
+        self.take(
+            A2aLabCommand::ListImageSources(params.0),
+            |result| match result {
+                A2aLabResult::ListImageSources(page) => Some(page),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "list_images",
+        description = "List image metadata from one source"
+    )]
+    async fn list_images(
+        &self,
+        params: Parameters<ListImagesRequest>,
+    ) -> Result<Json<Page<ImageDescriptor>>, ErrorData> {
+        self.take(A2aLabCommand::ListImages(params.0), |result| match result {
+            A2aLabResult::ListImages(page) => Some(page),
+            _ => None,
+        })
+        .await
+    }
+
+    #[tool(
+        name = "search_images",
+        description = "Search image metadata by time range or text"
+    )]
+    async fn search_images(
+        &self,
+        params: Parameters<SearchImagesRequest>,
+    ) -> Result<Json<Page<ImageDescriptor>>, ErrorData> {
+        self.take(
+            A2aLabCommand::SearchImages(params.0),
+            |result| match result {
+                A2aLabResult::SearchImages(page) => Some(page),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_image",
+        description = "Read one image, including its inline bytes"
+    )]
+    async fn get_image(
+        &self,
+        params: Parameters<GetImageRequest>,
+    ) -> Result<Json<Image>, ErrorData> {
+        self.take(A2aLabCommand::GetImage(params.0), |result| match result {
+            A2aLabResult::GetImage(image) => Some(image),
+            _ => None,
+        })
+        .await
+    }
+
+    #[tool(
+        name = "get_current_image",
+        description = "Read the current image for one source, including its inline bytes"
+    )]
+    async fn get_current_image(
+        &self,
+        params: Parameters<GetCurrentImageRequest>,
+    ) -> Result<Json<Image>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetCurrentImage(params.0),
+            |result| match result {
+                A2aLabResult::GetCurrentImage(image) => Some(image),
+                _ => None,
+            },
+        )
+        .await
+    }
 }
 
 #[allow(clippy::unused_async_trait_impl)]
@@ -236,7 +324,7 @@ impl ServerHandler for McpServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2026_07_28)
             .with_server_info(Implementation::new("a2a-lab", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Lab logs, metrics, and tasks")
+            .with_instructions("Lab logs, metrics, tasks, and images")
     }
 }
 

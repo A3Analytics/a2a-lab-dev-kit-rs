@@ -74,7 +74,7 @@ JSON-RPC is `POST /` on that same listener.
 
 ## Skills
 
-The card advertises these lab skills. They are the seven operations on the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) page:
+The card advertises these lab skills. They are the twelve operations on the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) page:
 
 - `list-log-sources`
 - `query-logs`
@@ -83,8 +83,17 @@ The card advertises these lab skills. They are the seven operations on the [A2A-
 - `list-tasks`
 - `start-task`
 - `get-task-status`
+- `list-image-sources`
+- `list-images`
+- `search-images`
+- `get-image`
+- `get-current-image`
 
 Lab skill input and output use `application/json`.
+
+`list-images` and `search-images` return image descriptors. They do not return pixel bytes. `get-image` and `get-current-image` return those bytes as standard base64 in one JSON data part. They do not return a URI.
+
+`A2aClient` defaults to a 64 MiB decoded-byte limit. Raise it with `A2aClient::with_image_transport` and configure the same maximum on the service. The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) explain which payloads fit.
 
 For `start_task`, the executor sets `wait` to false and polls until the run is terminal.
 
@@ -128,7 +137,7 @@ In-process coverage is `tests/a2a_compliance.rs` and `tests/a2a_authentication.r
 
 ## Example
 
-An A2A client calls `A2aServer`, `A2aServer` calls `McpLab`, and `McpLab` calls the MCP server that hosts the in-memory lab. `A2aClient` calls `list_log_sources`. The same example also calls that MCP server directly, and it prints both the A2A line and the MCP line.
+An A2A client calls `A2aServer`, `A2aServer` calls `McpLab`, and `McpLab` calls the MCP server that hosts the in-memory lab. `A2aClient` lists log sources and image sources, then reads the current image and one specific image. The same example also calls that MCP server directly and prints both protocols.
 
 ```mermaid
 flowchart LR
@@ -172,7 +181,13 @@ The example prints:
 
 ```text
 a2a list_log_sources: app
+a2a list_image_sources: bench
+a2a get_current_image: current 4
+a2a get_image: earlier 3
 mcp list_log_sources: app
+mcp list_image_sources: bench
+mcp get_current_image: current 4
+mcp get_image: earlier 3
 ```
 
 The full source is [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs). [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>) walks through the same program.

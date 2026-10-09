@@ -32,7 +32,7 @@ The card advertises `streaming`.
 
 It advertises `pushNotifications` and `extendedAgentCard` only when those features are configured on `A2aServer`.
 
-The seven skills are:
+The twelve lab skills are:
 
 - `list-log-sources`
 - `query-logs`
@@ -41,6 +41,11 @@ The seven skills are:
 - `list-tasks`
 - `start-task`
 - `get-task-status`
+- `list-image-sources`
+- `list-images`
+- `search-images`
+- `get-image`
+- `get-current-image`
 
 Clients send a `message` to `POST /message:send` or `POST /message:stream`.
 
@@ -72,7 +77,7 @@ The artifact data part uses the same media type:
 
 ### Agent messages
 
-`A2aServer::with_message_handler` adds an eighth skill, `agent-message`.
+`A2aServer::with_message_handler` adds the `agent-message` skill.
 
 A `ROLE_USER` message whose parts are all `text/plain` goes to that handler.
 
@@ -96,7 +101,7 @@ A client role other than `ROLE_USER` is rejected.
 
 With no handler, a message without a lab command completes with the profile help artifact.
 
-The card then keeps the seven lab skills.
+The card then keeps the twelve lab skills.
 
 ### Security
 
@@ -148,7 +153,7 @@ For `start_task`, the executor sets `wait` to false and polls until the run is t
 
 Frame kinds are `task`, `statusUpdate`, `artifactUpdate`, and `message`.
 
-Query-log and query-metric pages become one artifact chunk per item.
+Query-log, query-metric, list-image-sources, list-images, and search-images pages become one artifact chunk per item.
 
 Later chunks set `append`.
 
@@ -173,6 +178,16 @@ Other `protocol` failures become `invalid_request`.
 Authentication failures are HTTP 401 or 403 before protocol dispatch.
 
 Other JSON-RPC errors stay HTTP 200 with the code in the envelope.
+
+### Images
+
+Image fields, current-frame meaning, and payload sizing are in [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>).
+
+List and search skills return descriptors. They do not return pixel bytes. `get-image` and `get-current-image` return one JSON data part. The `data` field is standard base64. Those two skills are not split into per-item chunks, and they do not return a URI.
+
+`A2aClient::with_image_transport` applies a raised decoded-byte limit while the image JSON is decoded. `Image` deserialization stays at 64 MiB unless that config is passed. Set the same maximum on the service with `A2aLabService::with_image_transport`.
+
+This crate does not add a source helper, a capture helper, or a built-in HTTP, USB, or IP-camera adapter. SiLA image retrieval is the separate `LabImages` feature.
 
 ### Conformance
 
@@ -210,7 +225,17 @@ That file also covers issuer, audience, expiry, signature, and scope failures wi
 
 `McpServer` targets Model Context Protocol (MCP) `2026-07-28` through `rmcp` 3.5.
 
-The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`.
+The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, `get_task_status`, `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`.
+
+The server enables tools only. It does not expose MCP resources, URI-only image delivery, or capture tools.
+
+`list_image_sources`, `list_images`, and `search_images` return metadata pages in the `application/json` tool result. `get_image` and `get_current_image` return the descriptor plus standard base64 in that same envelope. The base64 payload is repeated in the text content and the structured content. The Streamable HTTP event budget follows the decoded-byte limit and allows for that repetition.
+
+`get_current_image` names a source. Current-frame meaning and payload sizing are in [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>).
+
+`McpLab` defaults to 64 MiB of decoded bytes. `McpLab::connect_with` must receive a raised limit before the connection opens so the HTTP event window grows. `McpLab::with_image_transport` after connect changes decoding only.
+
+This MCP surface does not add a source helper, a capture helper, or a built-in source adapter. SiLA image retrieval is the separate `LabImages` feature.
 
 Input and output schemas come from the same request and result types used by A2A.
 

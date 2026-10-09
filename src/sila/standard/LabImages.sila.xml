@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Feature SiLA2Version="1.1" FeatureVersion="1.0" MaturityLevel="Draft" Originator="com.a3analytics" Category="lab"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>LabImages</Identifier>
+  <DisplayName>Lab Images</DisplayName>
+  <Description>Lists image sources and returns one image from a named source. Pixel bytes always use SiLA binary download.</Description>
+
+  <Command>
+    <Identifier>ListImageSources</Identifier>
+    <DisplayName>List Image Sources</DisplayName>
+    <Description>Returns one page of image sources.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Page</Identifier>
+      <DisplayName>Page</DisplayName>
+      <Description>Page bounds.</Description>
+      <DataType><DataTypeIdentifier>PageRequest</DataTypeIdentifier></DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Sources</Identifier>
+      <DisplayName>Sources</DisplayName>
+      <Description>Image sources on this page.</Description>
+      <DataType><List><DataType><DataTypeIdentifier>ImageSource</DataTypeIdentifier></DataType></List></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasNextCursor</Identifier>
+      <DisplayName>Has Next Cursor</DisplayName>
+      <Description>True when another page exists.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>NextCursor</Identifier>
+      <DisplayName>Next Cursor</DisplayName>
+      <Description>Cursor for the next page. Empty when HasNextCursor is false.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors><Identifier>ProviderUnavailable</Identifier></DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>GetImage</Identifier>
+    <DisplayName>Get Image</DisplayName>
+    <Description>Returns one stored image, including its pixel bytes.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>ImageId</Identifier>
+      <DisplayName>Image Id</DisplayName>
+      <Description>Image identifier.</Description>
+      <DataType>
+        <Constrained>
+          <DataType><Basic>String</Basic></DataType>
+          <Constraints>
+            <MinimalLength>1</MinimalLength>
+            <MaximalLength>128</MaximalLength>
+            <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ImageId</Identifier>
+      <DisplayName>Image Id</DisplayName>
+      <Description>Image identifier.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>SourceId</Identifier>
+      <DisplayName>Source Id</DisplayName>
+      <Description>Source that supplied the image.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>CapturedAt</Identifier>
+      <DisplayName>Captured At</DisplayName>
+      <Description>UTC capture time.</Description>
+      <DataType><Basic>Timestamp</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>MediaType</Identifier>
+      <DisplayName>Media Type</DisplayName>
+      <Description>Image media type.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Width</Identifier>
+      <DisplayName>Width</DisplayName>
+      <Description>Width in pixels.</Description>
+      <DataType><Basic>Integer</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Height</Identifier>
+      <DisplayName>Height</DisplayName>
+      <Description>Height in pixels.</Description>
+      <DataType><Basic>Integer</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasCaption</Identifier>
+      <DisplayName>Has Caption</DisplayName>
+      <Description>True when Caption is set.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Caption</Identifier>
+      <DisplayName>Caption</DisplayName>
+      <Description>Optional caption. Empty when HasCaption is false.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Image</Identifier>
+      <DisplayName>Image</DisplayName>
+      <Description>Binary download identifier for the pixel bytes.</Description>
+      <DataType><Basic>Binary</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>ImageNotFound</Identifier>
+      <Identifier>ProviderUnavailable</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <Command>
+    <Identifier>GetCurrentImage</Identifier>
+    <DisplayName>Get Current Image</DisplayName>
+    <Description>Returns the provider-defined current image for one named source, including its pixel bytes.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>SourceId</Identifier>
+      <DisplayName>Source Id</DisplayName>
+      <Description>Image source identifier.</Description>
+      <DataType>
+        <Constrained>
+          <DataType><Basic>String</Basic></DataType>
+          <Constraints>
+            <MinimalLength>1</MinimalLength>
+            <MaximalLength>128</MaximalLength>
+            <Pattern>[A-Za-z0-9._:\-]+</Pattern>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>ImageId</Identifier>
+      <DisplayName>Image Id</DisplayName>
+      <Description>Image identifier.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>SourceId</Identifier>
+      <DisplayName>Source Id</DisplayName>
+      <Description>Source that supplied the image.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>CapturedAt</Identifier>
+      <DisplayName>Captured At</DisplayName>
+      <Description>UTC capture time.</Description>
+      <DataType><Basic>Timestamp</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>MediaType</Identifier>
+      <DisplayName>Media Type</DisplayName>
+      <Description>Image media type.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Width</Identifier>
+      <DisplayName>Width</DisplayName>
+      <Description>Width in pixels.</Description>
+      <DataType><Basic>Integer</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Height</Identifier>
+      <DisplayName>Height</DisplayName>
+      <Description>Height in pixels.</Description>
+      <DataType><Basic>Integer</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>HasCaption</Identifier>
+      <DisplayName>Has Caption</DisplayName>
+      <Description>True when Caption is set.</Description>
+      <DataType><Basic>Boolean</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Caption</Identifier>
+      <DisplayName>Caption</DisplayName>
+      <Description>Optional caption. Empty when HasCaption is false.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <Response>
+      <Identifier>Image</Identifier>
+      <DisplayName>Image</DisplayName>
+      <Description>Binary download identifier for the pixel bytes.</Description>
+      <DataType><Basic>Binary</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>ImageSourceNotFound</Identifier>
+      <Identifier>ImageNotFound</Identifier>
+      <Identifier>ProviderUnavailable</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <DataTypeDefinition>
+    <Identifier>PageRequest</Identifier>
+    <DisplayName>Page Request</DisplayName>
+    <Description>Cursor and page size.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>HasCursor</Identifier>
+          <DisplayName>Has Cursor</DisplayName>
+          <Description>True when Cursor is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Cursor</Identifier>
+          <DisplayName>Cursor</DisplayName>
+          <Description>Opaque numeric cursor. Empty when HasCursor is false.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Limit</Identifier>
+          <DisplayName>Limit</DisplayName>
+          <Description>Page size from 1 to 1000.</Description>
+          <DataType><Basic>Integer</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DataTypeDefinition>
+    <Identifier>ImageSource</Identifier>
+    <DisplayName>Image Source</DisplayName>
+    <Description>A named source that can supply images.</Description>
+    <DataType>
+      <Structure>
+        <Element>
+          <Identifier>Id</Identifier>
+          <DisplayName>Id</DisplayName>
+          <Description>Source identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Name</Identifier>
+          <DisplayName>Name</DisplayName>
+          <Description>Human-readable name.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>Description</Identifier>
+          <DisplayName>Description</DisplayName>
+          <Description>What the source captures.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasAssetId</Identifier>
+          <DisplayName>Has Asset Id</DisplayName>
+          <Description>True when AssetId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>AssetId</Identifier>
+          <DisplayName>Asset Id</DisplayName>
+          <Description>Optional asset identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>HasSemanticId</Identifier>
+          <DisplayName>Has Semantic Id</DisplayName>
+          <Description>True when SemanticId is set.</Description>
+          <DataType><Basic>Boolean</Basic></DataType>
+        </Element>
+        <Element>
+          <Identifier>SemanticId</Identifier>
+          <DisplayName>Semantic Id</DisplayName>
+          <Description>Optional semantic identifier.</Description>
+          <DataType><Basic>String</Basic></DataType>
+        </Element>
+      </Structure>
+    </DataType>
+  </DataTypeDefinition>
+
+  <DefinedExecutionError>
+    <Identifier>ImageNotFound</Identifier>
+    <DisplayName>Image Not Found</DisplayName>
+    <Description>The image does not exist.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>ImageSourceNotFound</Identifier>
+    <DisplayName>Image Source Not Found</DisplayName>
+    <Description>The image source does not exist.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>ProviderUnavailable</Identifier>
+    <DisplayName>Provider Unavailable</DisplayName>
+    <Description>The equipment provider could not serve the request.</Description>
+  </DefinedExecutionError>
+</Feature>

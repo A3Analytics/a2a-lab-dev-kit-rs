@@ -8,7 +8,7 @@ created_date: "2026-09-30 17:38"
 
 # A2A-LAB devkit overview
 
-A2A-LAB devkit routes client calls to lab logs, metrics, and tasks. Those values are the [A2A-LAB primitives](<../reference/primitives/doc-17 - A2A-LAB-primitives.md>). The crate name is `a2a-lab-dev-kit`.
+A2A-LAB devkit routes client calls to lab logs, metrics, tasks, and images. Those values are the [A2A-LAB primitives](<../reference/primitives/doc-17 - A2A-LAB-primitives.md>). Agent2Agent (A2A) and Model Context Protocol (MCP) expose all twelve operations. Standardization in Lab Automation (SiLA) 2 serves logs, metrics, tasks, and named-source images. The crate name is `a2a-lab-dev-kit`.
 
 ## Interfaces and providers
 
@@ -35,7 +35,7 @@ flowchart LR
   lab --> providers
 ```
 
-In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 call `A2aLabService`. AAS, Open Platform Communications Unified Architecture (OPC UA), Robot Operating System 2 (ROS 2), SiLA 2, and Custom fulfill the lab primitives. `A2aLabService` uses those providers. SiLA 2 is both the inbound interface and a remote provider.
+In the preceding diagram, Agent2Agent (A2A), Model Context Protocol (MCP), and Standardization in Lab Automation (SiLA) 2 call `A2aLabService`. AAS, Open Platform Communications Unified Architecture (OPC UA), Robot Operating System 2 (ROS 2), SiLA 2, and Custom fulfill logs, metrics, and tasks. A custom provider can also fulfill images. `A2aLabService` uses those providers. SiLA 2 is both the inbound interface and a remote provider. The inbound server exposes named-source images. The remote provider does not.
 
 ## Related pages
 

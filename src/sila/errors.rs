@@ -4,10 +4,12 @@ use prost::Message;
 use tonic::{Code, Status};
 
 use crate::error::A2aLabError;
+use crate::sila::wire::sila2::org::silastandard::binary_transfer_error::ErrorType as BinaryError;
 use crate::sila::wire::sila2::org::silastandard::framework_error::ErrorType;
 use crate::sila::wire::sila2::org::silastandard::si_la_error::Error as SiLaChoice;
 use crate::sila::wire::sila2::org::silastandard::{
-    DefinedExecutionError, FrameworkError, SiLaError, UndefinedExecutionError, ValidationError,
+    BinaryTransferError, DefinedExecutionError, FrameworkError, SiLaError, UndefinedExecutionError,
+    ValidationError,
 };
 
 const LAB_FEATURE: &str = "com.a3analytics/lab/LabOperations/v1";
@@ -58,6 +60,18 @@ pub(crate) fn undefined(message: impl Into<String>) -> Status {
             message: message.into(),
         },
     ))
+}
+
+pub(crate) fn binary_transfer(kind: BinaryError, message: impl Into<String>) -> Status {
+    let body = BinaryTransferError {
+        error_type: kind as i32,
+        message: message.into(),
+    };
+    let mut bytes = Vec::new();
+    if body.encode(&mut bytes).is_err() {
+        return Status::internal("SiLA error encoding failed");
+    }
+    Status::new(Code::Aborted, standard_base64(&bytes))
 }
 
 pub(crate) fn framework(kind: ErrorType, message: impl Into<String>) -> Status {

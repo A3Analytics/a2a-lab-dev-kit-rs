@@ -1,4 +1,4 @@
-//! Typed A2A client for the seven lab operations.
+//! Typed A2A client for lab operations.
 
 use std::sync::Arc;
 
@@ -13,6 +13,10 @@ use a2a_types::{
 use futures_util::StreamExt;
 
 use crate::error::A2aLabError;
+use crate::images::{
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
+    ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+};
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
@@ -38,6 +42,7 @@ pub struct AgentMessageResponse {
 pub struct A2aClient {
     inner: A2AClient<RestTransport>,
     base: String,
+    image_transport: ImageTransportConfig,
 }
 
 impl A2aClient {
@@ -47,19 +52,34 @@ impl A2aClient {
         Ok(Self {
             inner: A2AClient::new(RestTransport::new(http, base_url.to_owned())),
             base: base_url.trim_end_matches('/').to_owned(),
+            image_transport: ImageTransportConfig::default(),
         })
     }
 
     /// Sends `Authorization: Bearer <token>` on later protocol calls.
     #[must_use]
     pub fn with_bearer_token(self, token: impl Into<String>) -> Self {
-        let Self { inner, base } = self;
+        let Self {
+            inner,
+            base,
+            image_transport,
+        } = self;
         Self {
             inner: inner.with_interceptors(vec![Arc::new(
                 a2a_client::auth::AuthInterceptor::bearer(token),
             )]),
             base,
+            image_transport,
         }
+    }
+
+    /// Sets the decoded-byte maximum for image results.
+    ///
+    /// The default is 64 MiB, matching [`ImageTransportConfig::default`].
+    #[must_use]
+    pub fn with_image_transport(mut self, image_transport: ImageTransportConfig) -> Self {
+        self.image_transport = image_transport;
+        self
     }
 
     /// Lists log sources.
@@ -144,6 +164,72 @@ impl A2aClient {
         })
     }
 
+    /// Lists image sources.
+    pub async fn list_image_sources(
+        &self,
+        request: ListImageSourcesRequest,
+    ) -> Result<Page<ImageSource>, A2aLabError> {
+        self.result(
+            A2aLabCommand::ListImageSources(request),
+            |result| match result {
+                A2aLabResult::ListImageSources(page) => Some(page),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Lists image metadata for one source.
+    pub async fn list_images(
+        &self,
+        request: ListImagesRequest,
+    ) -> Result<Page<ImageDescriptor>, A2aLabError> {
+        self.result(A2aLabCommand::ListImages(request), |result| match result {
+            A2aLabResult::ListImages(page) => Some(page),
+            _ => None,
+        })
+        .await
+    }
+
+    /// Searches image metadata.
+    pub async fn search_images(
+        &self,
+        request: SearchImagesRequest,
+    ) -> Result<Page<ImageDescriptor>, A2aLabError> {
+        self.result(
+            A2aLabCommand::SearchImages(request),
+            |result| match result {
+                A2aLabResult::SearchImages(page) => Some(page),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Reads one image, including its inline bytes.
+    pub async fn get_image(&self, request: GetImageRequest) -> Result<Image, A2aLabError> {
+        self.result(A2aLabCommand::GetImage(request), |result| match result {
+            A2aLabResult::GetImage(image) => Some(image),
+            _ => None,
+        })
+        .await
+    }
+
+    /// Reads the current image for one source, including its inline bytes.
+    pub async fn get_current_image(
+        &self,
+        request: GetCurrentImageRequest,
+    ) -> Result<Image, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetCurrentImage(request),
+            |result| match result {
+                A2aLabResult::GetCurrentImage(image) => Some(image),
+                _ => None,
+            },
+        )
+        .await
+    }
+
     /// Reads a started lab run through the `get_task_status` skill.
     pub async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
         self.result(
@@ -167,7 +253,7 @@ impl A2aClient {
             })
             .await
             .map_err(wire::sdk_error)?;
-        wire::snapshot_from_task(&task)
+        wire::snapshot_from_task(&task, self.image_transport)
     }
 
     /// Fetches the raw A2A task resource.
@@ -388,7 +474,9 @@ impl A2aClient {
             .await
             .map_err(wire::sdk_error)?
         {
-            SendMessageResponse::Task(task) => wire::snapshot_from_task(&task),
+            SendMessageResponse::Task(task) => {
+                wire::snapshot_from_task(&task, self.image_transport)
+            }
             SendMessageResponse::Message(_) => Err(A2aLabError::protocol(
                 "send returned a message instead of a task",
             )),

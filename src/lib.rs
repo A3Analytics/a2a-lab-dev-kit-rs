@@ -1,7 +1,7 @@
-//! Rust dev kit for lab logs, metrics, and tasks.
+//! Rust dev kit for lab logs, metrics, tasks, and images.
 //!
 //! Provider traits are the source of truth. The A2A adapter (HTTP+JSON, JSON-RPC,
-//! and gRPC) and the MCP adapter expose the same seven operations over those traits.
+//! and gRPC) and the MCP adapter expose logs, metrics, tasks, and images.
 
 #![allow(clippy::doc_markdown)]
 
@@ -11,6 +11,7 @@ pub mod aas;
 pub mod catalog;
 pub mod error;
 pub mod id;
+pub mod images;
 pub mod industrial;
 pub mod json_object;
 pub mod logs;
@@ -38,7 +39,12 @@ pub use catalog::{
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
 };
 pub use error::A2aLabError;
-pub use id::{MetricId, RunId, SourceId, TaskId};
+pub use id::{ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId};
+pub use images::{
+    DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor,
+    ImageProvider, ImageSource, ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest,
+    SearchImagesRequest,
+};
 pub use industrial::{
     IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialTasks, ScriptedLive,
 };
@@ -47,7 +53,7 @@ pub use logs::{
     ListLogSourcesRequest, LogLevel, LogProvider, LogRecord, LogSource, QueryLogsRequest,
 };
 pub use mcp::{DEFAULT_MCP_URL, McpLab, McpServer};
-pub use memory::{MemoryCatalog, MemoryLogs, MemoryMetrics, MemoryTasks};
+pub use memory::{MemoryCatalog, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks};
 pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };

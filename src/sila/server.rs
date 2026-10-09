@@ -12,6 +12,7 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 
 use crate::error::A2aLabError;
 use crate::service::A2aLabApi;
+use crate::sila::binary::{BinaryStore, DownloadFeature};
 use crate::sila::cancel::CancelFeature;
 use crate::sila::cert::{install_crypto, SilaCertificate};
 use crate::sila::connection::Hub;
@@ -19,8 +20,11 @@ use crate::sila::core::{CoreService, FeatureCatalog};
 use crate::sila::discover::{Announcer, SharedAnnouncer};
 use crate::sila::executions::Executions;
 use crate::sila::identity::SilaIdentity;
+use crate::sila::images::ImageFeature;
 use crate::sila::lab::LabFeature;
+use crate::sila::wire::sila2::com::a3analytics::lab::labimages::v1::lab_images_server::LabImagesServer;
 use crate::sila::wire::sila2::com::a3analytics::lab::laboperations::v1::lab_operations_server::LabOperationsServer;
+use crate::sila::wire::sila2::org::silastandard::binary_download_server::BinaryDownloadServer;
 use crate::sila::wire::sila2::org::silastandard::core::commands::cancelcontroller::v1::cancel_controller_server::CancelControllerServer;
 use crate::sila::wire::sila2::org::silastandard::core::connectionconfigurationservice::v1::connection_configuration_service_server::ConnectionConfigurationServiceServer;
 use crate::sila::wire::sila2::org::silastandard::core::silaservice::v1::si_la_service_server::SiLaServiceServer;
@@ -148,6 +152,12 @@ impl SilaServer {
                 connection: self.connection_store.is_some(),
             },
         };
+        let binaries = BinaryStore::new();
+        let images = ImageFeature {
+            lab: Arc::clone(&self.lab),
+            binaries: binaries.clone(),
+        };
+        let downloads = DownloadFeature { binaries };
         let lab = LabFeature {
             lab: self.lab,
             executions: executions.clone(),
@@ -187,6 +197,8 @@ impl SilaServer {
             let router = router
                 .add_service(SiLaServiceServer::new(core))
                 .add_service(LabOperationsServer::new(lab))
+                .add_service(LabImagesServer::new(images))
+                .add_service(BinaryDownloadServer::new(downloads))
                 .add_service(CancelControllerServer::new(cancel));
             let served = if let Some(connection) = connection {
                 let result = router

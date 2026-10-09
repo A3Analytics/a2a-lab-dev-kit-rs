@@ -8,27 +8,29 @@ created_date: '2026-10-06 23:14'
 
 # Custom
 
-A custom provider supplies lab logs, metrics, or tasks for equipment that uses its own interface.
+A custom provider supplies lab logs, metrics, tasks, or images for equipment that uses its own interface.
 
 ## Role in A2A-LAB devkit
 
-Custom is a provider. Implement `LogProvider`, `MetricProvider`, `TaskProvider`, or a combination of those traits. Pass the implementations to `A2aLabService`. A service can mix built-in providers and a custom provider.
+Custom is a provider. Implement `LogProvider`, `MetricProvider`, `TaskProvider`, `ImageProvider`, or a combination of those traits. Pass the log, metric, and task implementations to `A2aLabService::new`. Pass an image implementation to `with_images`. A service can mix built-in providers and a custom provider.
 
 The following diagram shows that contract:
 
 ```mermaid
 flowchart LR
   accTitle: A custom provider fulfills primitives
-  accDescr: A2aLabService uses a custom provider. The custom provider implements LogProvider, MetricProvider, or TaskProvider.
+  accDescr: A2aLabService uses a custom provider. The custom provider implements LogProvider, MetricProvider, TaskProvider, or ImageProvider. with_images accepts ImageProvider.
   lab["A2aLabService"] --> custom["Custom provider"]
   custom --> logs["LogProvider"]
   custom --> metrics["MetricProvider"]
   custom --> tasks["TaskProvider"]
+  custom --> images["ImageProvider"]
+  images --> attached["A2aLabService::with_images"]
 ```
 
-In the preceding diagram, `A2aLabService` uses a custom provider. The custom provider implements `LogProvider`, `MetricProvider`, or `TaskProvider`.
+In the preceding diagram, `A2aLabService` uses a custom provider. The custom provider implements `LogProvider`, `MetricProvider`, `TaskProvider`, or `ImageProvider`. `A2aLabService::with_images` accepts `ImageProvider`.
 
-The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that contract. [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>) shows how to write one. [Implementations](<../implementations/doc-18 - Implementations.md>) lists the built-in providers.
+The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that contract. [Implement a custom provider](<../../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>) shows how to write one, including `ImageProvider`. [Implementations](<../implementations/doc-18 - Implementations.md>) lists the built-in providers.
 
 ## Example
 

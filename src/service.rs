@@ -1,4 +1,4 @@
-//! Shared execution of the seven lab operations.
+//! Shared execution of lab operations.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -12,6 +12,10 @@ use tokio::sync::Mutex;
 
 use crate::error::A2aLabError;
 use crate::id::RunId;
+use crate::images::{
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageProvider, ImageSource,
+    ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+};
 use crate::logs::{ListLogSourcesRequest, LogProvider, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
@@ -43,6 +47,16 @@ pub enum A2aLabCommand {
     StartTask(StartTaskRequest),
     /// Read task status.
     GetTaskStatus(GetTaskStatusRequest),
+    /// List image sources.
+    ListImageSources(ListImageSourcesRequest),
+    /// List image metadata for one source.
+    ListImages(ListImagesRequest),
+    /// Search image metadata.
+    SearchImages(SearchImagesRequest),
+    /// Read one image, including its inline bytes.
+    GetImage(GetImageRequest),
+    /// Read the current image for one source.
+    GetCurrentImage(GetCurrentImageRequest),
 }
 
 /// Tagged result envelope shared by A2A and MCP.
@@ -63,6 +77,16 @@ pub enum A2aLabResult {
     StartTask(TaskRun),
     /// The current run status.
     GetTaskStatus(TaskRun),
+    /// A page of image sources.
+    ListImageSources(Page<ImageSource>),
+    /// A page of image metadata.
+    ListImages(Page<ImageDescriptor>),
+    /// A page of image metadata matching the search.
+    SearchImages(Page<ImageDescriptor>),
+    /// One image, including its inline bytes.
+    GetImage(Image),
+    /// The current image for one source, including its inline bytes.
+    GetCurrentImage(Image),
 }
 
 /// Stored view of an A2A task.
@@ -118,31 +142,114 @@ enum StoredBody {
     Run(RunId),
 }
 
-/// Routes lab commands to the three provider traits.
-pub struct A2aLabService<L, M, W> {
+/// Image provider used when a service is built without [`A2aLabService::with_images`].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct EmptyImages;
+
+impl ImageProvider for EmptyImages {
+    fn list_image_sources(
+        &self,
+        _request: ListImageSourcesRequest,
+    ) -> impl Future<Output = Result<Page<ImageSource>, A2aLabError>> + Send {
+        std::future::ready(Err(images_unavailable()))
+    }
+
+    fn list_images(
+        &self,
+        _request: ListImagesRequest,
+    ) -> impl Future<Output = Result<Page<ImageDescriptor>, A2aLabError>> + Send {
+        std::future::ready(Err(images_unavailable()))
+    }
+
+    fn search_images(
+        &self,
+        _request: SearchImagesRequest,
+    ) -> impl Future<Output = Result<Page<ImageDescriptor>, A2aLabError>> + Send {
+        std::future::ready(Err(images_unavailable()))
+    }
+
+    fn get_image(
+        &self,
+        _request: GetImageRequest,
+    ) -> impl Future<Output = Result<Image, A2aLabError>> + Send {
+        std::future::ready(Err(images_unavailable()))
+    }
+
+    fn get_current_image(
+        &self,
+        _request: GetCurrentImageRequest,
+    ) -> impl Future<Output = Result<Image, A2aLabError>> + Send {
+        std::future::ready(Err(images_unavailable()))
+    }
+}
+
+fn images_unavailable() -> A2aLabError {
+    A2aLabError::unavailable("image provider is not configured")
+}
+
+/// Routes lab commands to provider traits.
+pub struct A2aLabService<L, M, W, I = EmptyImages> {
     logs: L,
     metrics: M,
     tasks: W,
+    images: I,
+    image_transport: ImageTransportConfig,
     task_store: Mutex<BTreeMap<String, StoredTask>>,
     ids: AtomicU64,
 }
 
-impl<L, M, W> A2aLabService<L, M, W>
+impl<L, M, W> A2aLabService<L, M, W, EmptyImages>
 where
     L: LogProvider,
     M: MetricProvider,
     W: TaskProvider,
 {
-    /// Creates a service over the three providers.
+    /// Creates a service over log, metric, and task providers.
+    ///
+    /// Image operations stay unavailable until [`Self::with_images`].
     #[must_use]
     pub const fn new(logs: L, metrics: M, tasks: W) -> Self {
         Self {
             logs,
             metrics,
             tasks,
+            images: EmptyImages,
+            image_transport: ImageTransportConfig::from_default(),
             task_store: Mutex::const_new(BTreeMap::new()),
             ids: AtomicU64::new(0),
         }
+    }
+}
+
+impl<L, M, W, I> A2aLabService<L, M, W, I>
+where
+    L: LogProvider,
+    M: MetricProvider,
+    W: TaskProvider,
+    I: ImageProvider,
+{
+    /// Replaces the image provider without changing the three-provider constructor.
+    #[must_use]
+    pub fn with_images<P>(self, images: P) -> A2aLabService<L, M, W, P>
+    where
+        P: ImageProvider,
+    {
+        A2aLabService {
+            logs: self.logs,
+            metrics: self.metrics,
+            tasks: self.tasks,
+            images,
+            image_transport: self.image_transport,
+            task_store: self.task_store,
+            ids: self.ids,
+        }
+    }
+
+    /// Sets the decoded-byte maximum applied before image payloads are returned.
+    #[must_use]
+    pub fn with_image_transport(mut self, image_transport: ImageTransportConfig) -> Self {
+        self.image_transport = image_transport;
+        self
     }
 
     /// Shares the service with protocol adapters.
@@ -152,6 +259,7 @@ where
         L: 'static,
         M: 'static,
         W: 'static,
+        I: 'static,
     {
         Arc::new(self)
     }
@@ -166,6 +274,11 @@ where
             A2aLabCommand::ListTasks(request) => self.list_tasks(request).await?,
             A2aLabCommand::StartTask(request) => self.start_task(request).await?,
             A2aLabCommand::GetTaskStatus(request) => self.task_status(request).await?,
+            A2aLabCommand::ListImageSources(request) => self.list_image_sources(request).await?,
+            A2aLabCommand::ListImages(request) => self.list_images(request).await?,
+            A2aLabCommand::SearchImages(request) => self.search_images(request).await?,
+            A2aLabCommand::GetImage(request) => self.get_image(request).await?,
+            A2aLabCommand::GetCurrentImage(request) => self.get_current_image(request).await?,
         };
         Ok(A2aLabOutcome { task })
     }
@@ -251,6 +364,50 @@ where
         self.store_snapshot(A2aLabResult::GetTaskStatus(run)).await
     }
 
+    async fn list_image_sources(
+        &self,
+        request: ListImageSourcesRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        check_page(request.page())?;
+        let page = self.images.list_image_sources(request).await?;
+        self.store_snapshot(A2aLabResult::ListImageSources(page))
+            .await
+    }
+
+    async fn list_images(&self, request: ListImagesRequest) -> Result<TaskSnapshot, A2aLabError> {
+        check_page(request.page())?;
+        let page = self.images.list_images(request).await?;
+        self.store_snapshot(A2aLabResult::ListImages(page)).await
+    }
+
+    async fn search_images(
+        &self,
+        request: SearchImagesRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        request.check()?;
+        let page = self.images.search_images(request).await?;
+        self.store_snapshot(A2aLabResult::SearchImages(page)).await
+    }
+
+    async fn get_image(&self, request: GetImageRequest) -> Result<TaskSnapshot, A2aLabError> {
+        let image = self.accepted_image(self.images.get_image(request).await?)?;
+        self.store_snapshot(A2aLabResult::GetImage(image)).await
+    }
+
+    async fn get_current_image(
+        &self,
+        request: GetCurrentImageRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        let image = self.accepted_image(self.images.get_current_image(request).await?)?;
+        self.store_snapshot(A2aLabResult::GetCurrentImage(image))
+            .await
+    }
+
+    fn accepted_image(&self, image: Image) -> Result<Image, A2aLabError> {
+        self.image_transport.check_payload(image.data())?;
+        Ok(image)
+    }
+
     async fn store_snapshot(&self, result: A2aLabResult) -> Result<TaskSnapshot, A2aLabError> {
         let id = self.allocate("task");
         let stored = StoredTask {
@@ -289,11 +446,12 @@ where
     }
 }
 
-impl<L, M, W> A2aLabApi for A2aLabService<L, M, W>
+impl<L, M, W, I> A2aLabApi for A2aLabService<L, M, W, I>
 where
     L: LogProvider + 'static,
     M: MetricProvider + 'static,
     W: TaskProvider + 'static,
+    I: ImageProvider + 'static,
 {
     fn execute(
         &self,

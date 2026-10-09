@@ -1,9 +1,11 @@
 //! SiLA 2 interface and remote provider.
 //!
-//! `SilaServer` serves `SiLAService`, `LabOperations`, and `CancelController` over the same
-//! [`A2aLabApi`](crate::service::A2aLabApi) used by A2A and MCP. `SilaProvider` connects to a
-//! remote SiLA server and fulfills the lab provider traits.
+//! `SilaServer` serves `SiLAService`, `LabOperations`, `LabImages`, `BinaryDownload`, and
+//! `CancelController` over the same [`A2aLabApi`](crate::service::A2aLabApi) used by A2A and MCP.
+//! Image pixel bytes always use binary download. `SilaProvider` connects to a remote SiLA server
+//! and fulfills logs, metrics, and tasks.
 
+mod binary;
 mod cancel;
 mod cert;
 mod cloud;
@@ -15,6 +17,7 @@ mod discover;
 mod errors;
 mod executions;
 mod identity;
+mod images;
 mod lab;
 mod server;
 mod values;
@@ -31,6 +34,11 @@ pub use server::{SilaServer, SilaServerHandle};
 
 /// Generated SiLA service clients and messages.
 pub mod api {
+    pub use crate::sila::wire::sila2::com::a3analytics::lab::labimages::v1::{
+        DataTypePageRequest as ImagePageRequest, GetCurrentImageParameters, GetImageParameters,
+        ListImageSourcesParameters, data_type_page_request::PageRequestStruct as ImagePageStruct,
+        lab_images_client::LabImagesClient,
+    };
     pub use crate::sila::wire::sila2::com::a3analytics::lab::laboperations::v1::{
         DataTypePageRequest, DataTypeTimeRange, GetTaskStatusParameters, ListLogSourcesParameters,
         ListMetricsParameters, ListTasksParameters, QueryLogsParameters, QueryMetricParameters,
@@ -51,7 +59,10 @@ pub mod api {
         GetServerVersionParameters, SetServerNameParameters,
         si_la_service_client::SiLaServiceClient,
     };
+    pub use crate::sila::wire::sila2::org::silastandard::binary::Union as BinaryUnion;
+    pub use crate::sila::wire::sila2::org::silastandard::binary_download_client::BinaryDownloadClient;
     pub use crate::sila::wire::sila2::org::silastandard::{
-        Boolean, CommandExecutionUuid, Integer, String as SilaString, Timestamp,
+        Binary, Boolean, CommandExecutionUuid, DeleteBinaryRequest, GetBinaryInfoRequest,
+        GetChunkRequest, Integer, String as SilaString, Timestamp,
     };
 }

@@ -8,23 +8,25 @@ created_date: "2026-10-06 23:17"
 
 # Implement a custom provider
 
-Implement `LogProvider`, `MetricProvider`, `TaskProvider`, or a combination of those traits. Pass the implementations to `A2aLabService::new`. [Custom](<../../reference/custom/doc-20 - Custom.md>) defines that provider role.
+Implement `LogProvider`, `MetricProvider`, `TaskProvider`, `ImageProvider`, or a combination of those traits. Pass the log, metric, and task implementations to `A2aLabService::new`. Pass an image implementation to `with_images`. [Custom](<../../reference/custom/doc-20 - Custom.md>) defines that provider role.
 
 The following diagram shows where the implementation sits:
 
 ```mermaid
 flowchart LR
   accTitle: Wire a custom provider
-  accDescr: A custom type implements LogProvider, MetricProvider, or TaskProvider. A2aLabService::new accepts those implementations.
+  accDescr: A custom type implements LogProvider, MetricProvider, TaskProvider, or ImageProvider. A2aLabService::new accepts the first three. with_images accepts ImageProvider.
   custom["Custom type"] --> logs["LogProvider"]
   custom --> metrics["MetricProvider"]
   custom --> tasks["TaskProvider"]
+  custom --> images["ImageProvider"]
   logs --> service["A2aLabService::new"]
   metrics --> service
   tasks --> service
+  images --> attached["A2aLabService::with_images"]
 ```
 
-In the preceding diagram, a custom type implements `LogProvider`, `MetricProvider`, or `TaskProvider`. `A2aLabService::new` accepts those implementations.
+In the preceding diagram, a custom type implements `LogProvider`, `MetricProvider`, `TaskProvider`, or `ImageProvider`. `A2aLabService::new` accepts the log, metric, and task implementations. `A2aLabService::with_images` accepts `ImageProvider`.
 
 ## Implement the traits
 
@@ -47,6 +49,18 @@ The provider type is `Send` and `Sync`. Each method returns `Result<_, A2aLabErr
 - `status` returns that `TaskRun`.
 - `cancel` stops a run. The default returns `A2aLabError::unavailable`.
 
+`ImageProvider` has five methods:
+
+- `list_image_sources` returns a page of `ImageSource`.
+- `list_images` returns a page of `ImageDescriptor` for one source. The page is metadata only.
+- `search_images` returns a page of `ImageDescriptor`. The search needs a half-open UTC range, nonblank text, or both. A source id can narrow it. A source id alone is not a search. The page is metadata only.
+- `get_image` returns one `Image`, including its inline bytes.
+- `get_current_image` returns the current `Image` for one source, including its inline bytes. The request names that source. It does not omit an image id. The provider defines the current frame. It can be newly captured, taken from video, or the latest stored image.
+
+Source fields, descriptor fields, and inline bytes are defined in the [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>). The provider supplies the frames.
+
+`Image::new` uses the 64 MiB default. A provider that creates a larger payload uses `Image::with_transport`. Set the same decoded-byte maximum on the service with `A2aLabService::with_image_transport` and on each client with `A2aClient::with_image_transport` or `McpLab::connect_with`. Pass a raised Model Context Protocol (MCP) limit to `connect_with` before the connection opens.
+
 Return pages with `Page::new`. Leave the next cursor absent on the last page. Read the requested page from `request.page.cursor()` and `request.page.limit()`.
 
 A query keeps records or samples inside `request.range`. The range is a half-open Coordinated Universal Time (UTC) interval, `[start, end)`. An unknown id returns `A2aLabError::not_found`.
@@ -57,7 +71,12 @@ The [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives
 
 ## Pass the providers to the service
 
-`A2aLabService::new` takes one log provider, one metric provider, and one task provider. Use `MemoryLogs`, `MemoryMetrics`, or `MemoryTasks` for a primitive the custom type leaves to this crate.
+`A2aLabService::new` takes one log provider, one metric provider, and one task provider. Image operations stay unavailable until `with_images`. Use `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, or `MemoryImages` for a primitive the custom type leaves to this crate. Attach an image provider without replacing that constructor:
+
+```rust
+let service = A2aLabService::new(OvenLogs::new()?, MemoryMetrics::new(), MemoryTasks::new())
+    .with_images(MemoryImages::new());
+```
 
 The [custom provider example](../../../../examples/custom_provider.rs) implements `LogProvider` for one oven log and uses the in-memory metric and task providers:
 
@@ -83,7 +102,7 @@ log source: oven
 
 ## Use the SiLA provider
 
-A remote SiLA 2 server does not need a new trait implementation. `SilaProvider::connect` reads `SilaProviderConfig` and returns one value that implements `LogProvider`, `MetricProvider`, and `TaskProvider`.
+A remote SiLA 2 server does not need a new trait implementation. `SilaProvider::connect` reads `SilaProviderConfig` and returns one value that implements `LogProvider`, `MetricProvider`, and `TaskProvider`. It does not implement `ImageProvider`. The inbound `SilaServer` serves images only when the lab service has an `ImageProvider`. The three-provider constructor below leaves image operations unavailable.
 
 ```rust
 let provider = SilaProvider::connect(config).await?;

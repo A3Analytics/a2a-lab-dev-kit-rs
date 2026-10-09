@@ -1,13 +1,19 @@
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aClient, A2aLabService, A2aServer, JsonObject, ListLogSourcesRequest, LogSource, McpLab,
-    McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, Page, PageRequest, SourceId,
-    StartTaskRequest, TaskDefinition, TaskId, bind_local,
+    A2aClient, A2aLabService, A2aServer, GetCurrentImageRequest, GetImageRequest,
+    GetTaskStatusRequest, Image, ImageDescriptor, ImageSource, JsonObject, ListImageSourcesRequest,
+    ListImagesRequest, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogRecord,
+    LogSource, McpLab, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor,
+    MetricPoint, Page, PageRequest, QueryLogsRequest, QueryMetricRequest, SearchImagesRequest,
+    SourceId, StartTaskRequest, TaskDefinition, TaskId, TaskRun, bind_local,
 };
+use rmcp::handler::server::common::{schema_for_input, schema_for_output};
+use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation, ProtocolVersion,
 };
+use rmcp::schemars::JsonSchema;
 use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::{ServerHandler, ServiceExt};
 
@@ -21,6 +27,26 @@ fn current_client() -> ClientConfig {
 
 fn arguments(value: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
     value.as_object().expect("object").clone()
+}
+
+fn tool<'a>(listed: &'a [rmcp::model::Tool], name: &str) -> &'a rmcp::model::Tool {
+    listed.iter().find(|tool| tool.name == name).expect(name)
+}
+
+fn assert_contract<Req, Res>(tool: &rmcp::model::Tool)
+where
+    Req: JsonSchema + std::any::Any,
+    Res: JsonSchema + std::any::Any,
+{
+    let input = schema_for_input::<Parameters<Req>>().expect("input schema");
+    let output = schema_for_output::<Res>();
+    assert_eq!(tool.input_schema.as_ref(), input.as_ref(), "{}", tool.name);
+    assert_eq!(
+        tool.output_schema.as_deref(),
+        Some(output.as_ref()),
+        "{}",
+        tool.name
+    );
 }
 
 async fn service() -> Arc<dyn a2a_lab_dev_kit::A2aLabApi> {
@@ -55,15 +81,35 @@ async fn assert_lab_tools(client: &impl ToolClient) {
     assert_eq!(
         names,
         [
+            "get_current_image",
+            "get_image",
             "get_task_status",
+            "list_image_sources",
+            "list_images",
             "list_log_sources",
             "list_metrics",
             "list_tasks",
             "query_logs",
             "query_metric",
+            "search_images",
             "start_task",
         ]
     );
+    assert_contract::<ListLogSourcesRequest, Page<LogSource>>(tool(&listed, "list_log_sources"));
+    assert_contract::<QueryLogsRequest, Page<LogRecord>>(tool(&listed, "query_logs"));
+    assert_contract::<ListMetricsRequest, Page<MetricDescriptor>>(tool(&listed, "list_metrics"));
+    assert_contract::<QueryMetricRequest, Page<MetricPoint>>(tool(&listed, "query_metric"));
+    assert_contract::<ListTasksRequest, Page<TaskDefinition>>(tool(&listed, "list_tasks"));
+    assert_contract::<StartTaskRequest, TaskRun>(tool(&listed, "start_task"));
+    assert_contract::<GetTaskStatusRequest, TaskRun>(tool(&listed, "get_task_status"));
+    assert_contract::<ListImageSourcesRequest, Page<ImageSource>>(tool(
+        &listed,
+        "list_image_sources",
+    ));
+    assert_contract::<ListImagesRequest, Page<ImageDescriptor>>(tool(&listed, "list_images"));
+    assert_contract::<SearchImagesRequest, Page<ImageDescriptor>>(tool(&listed, "search_images"));
+    assert_contract::<GetImageRequest, Image>(tool(&listed, "get_image"));
+    assert_contract::<GetCurrentImageRequest, Image>(tool(&listed, "get_current_image"));
     let logs = listed
         .iter()
         .find(|tool| tool.name == "query_logs")
@@ -175,16 +221,17 @@ async fn http_transport_lists_and_calls_tools() {
     let lab = service().await;
     let (listener, address) = bind_local().await.unwrap();
     let server = McpServer::new(&lab);
-    assert_eq!(
-        ServerHandler::get_info(&server).protocol_version,
-        ProtocolVersion::V_2026_07_28
-    );
+    let info = ServerHandler::get_info(&server);
+    assert_eq!(info.protocol_version, ProtocolVersion::V_2026_07_28);
+    assert!(info.capabilities.resources.is_none());
+    assert!(info.capabilities.tools.is_some());
     tokio::spawn(async move {
         server.serve_http(listener).await.unwrap();
     });
     let transport = StreamableHttpClientTransport::from_uri(format!("http://{address}/mcp"));
     let client = current_client().serve(transport).await.unwrap();
     assert_lab_tools(&client).await;
+    assert_no_resources(&client).await;
 }
 
 #[tokio::test]
@@ -202,6 +249,16 @@ async fn stdio_transport_lists_and_calls_tools() {
         .await
         .expect("stdio client");
     assert_lab_tools(&client).await;
+    assert_no_resources(&client).await;
+}
+
+async fn assert_no_resources(
+    client: &rmcp::service::RunningService<rmcp::RoleClient, ClientConfig>,
+) {
+    let info = client.peer_info().expect("peer info");
+    assert!(info.capabilities.resources.is_none());
+    let listed = client.list_resources(None).await.expect("resources");
+    assert!(listed.resources.is_empty());
 }
 
 #[tokio::test]
@@ -212,9 +269,11 @@ async fn a2a_calls_mcp_http_tools() {
     tokio::spawn(async move {
         server.serve_http(mcp_listener).await.unwrap();
     });
-    let mcp_lab = McpLab::connect(&format!("http://{mcp_address}/mcp"))
-        .await
-        .unwrap();
+    let mcp_lab: Arc<dyn a2a_lab_dev_kit::A2aLabApi> = Arc::new(
+        McpLab::connect(&format!("http://{mcp_address}/mcp"))
+            .await
+            .unwrap(),
+    );
     let (a2a_listener, a2a_address) = bind_local().await.unwrap();
     tokio::spawn(async move {
         A2aServer::new(&mcp_lab).listen(a2a_listener).await.unwrap();

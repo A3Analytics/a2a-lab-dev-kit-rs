@@ -17,8 +17,9 @@ The following diagram shows the provider implementations:
 ```mermaid
 flowchart LR
   accTitle: Provider implementations
-  accDescr: A2aLabService uses memory providers, industrial providers, Ros2Tasks, and SilaProvider. Industrial providers use AasClient and ScriptedLive.
+  accDescr: A2aLabService uses memory providers, industrial providers, Ros2Tasks, and SilaProvider. Memory providers include MemoryImages. Industrial providers use AasClient and ScriptedLive.
   service["A2aLabService"] --> memory["Memory providers"]
+  memory --> memoryImages["MemoryImages"]
   service --> industrial["Industrial providers"]
   service --> ros["Ros2Tasks"]
   service --> sila["SilaProvider"]
@@ -26,9 +27,9 @@ flowchart LR
   industrial --> live["ScriptedLive"]
 ```
 
-In the preceding diagram, `A2aLabService` uses memory providers, industrial providers, `Ros2Tasks`, and `SilaProvider`. Industrial providers use `AasClient` and `ScriptedLive`.
+In the preceding diagram, `A2aLabService` uses memory providers, industrial providers, `Ros2Tasks`, and `SilaProvider`. Memory providers include `MemoryImages`. Industrial providers use `AasClient` and `ScriptedLive`.
 
-- Memory: `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryCatalog` store the lab in memory.
+- Memory: `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, `MemoryImages`, and `MemoryCatalog` store the lab in memory. Current-frame selection is provider-defined. The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) define that selection.
 - Industrial: `IndustrialLogs`, `IndustrialMetrics`, and `IndustrialTasks` use one catalog and one `LiveSource`. `AasClient` reads an AAS catalog. `ScriptedLive` is the `LiveSource` in this crate. `OpcUaClient` supplies live Open Platform Communications Unified Architecture (OPC UA) readings through `LiveSource`. [Upcoming]
 - Robot Operating System 2 (ROS 2): `Ros2Tasks` exposes ROS 2 actions as tasks. `MemoryRos2` is the in-process graph.
 - SiLA 2: `SilaProvider` connects to one remote Feature Provider. Configured commands and readable properties become tasks. Configured members become logs or metrics when a query invokes them.

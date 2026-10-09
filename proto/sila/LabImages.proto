@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.com.a3analytics.lab.labimages.v1;
+
+/* Lists image sources and returns one image from a named source. Pixel bytes always use binary download. */
+service LabImages {
+  /* Returns one page of image sources. */
+  rpc ListImageSources (sila2.com.a3analytics.lab.labimages.v1.ListImageSources_Parameters) returns (sila2.com.a3analytics.lab.labimages.v1.ListImageSources_Responses) {}
+  /* Returns one stored image, including its pixel bytes. */
+  rpc GetImage (sila2.com.a3analytics.lab.labimages.v1.GetImage_Parameters) returns (sila2.com.a3analytics.lab.labimages.v1.GetImage_Responses) {}
+  /* Returns the provider-defined current image for one named source. */
+  rpc GetCurrentImage (sila2.com.a3analytics.lab.labimages.v1.GetCurrentImage_Parameters) returns (sila2.com.a3analytics.lab.labimages.v1.GetCurrentImage_Responses) {}
+}
+
+/* Cursor and page size. */
+message DataType_PageRequest {
+  message PageRequest_Struct {
+    sila2.org.silastandard.Boolean HasCursor = 1;  /* True when Cursor is set. */
+    sila2.org.silastandard.String Cursor = 2;  /* Opaque numeric cursor. Empty when HasCursor is false. */
+    sila2.org.silastandard.Integer Limit = 3;  /* Page size from 1 to 1000. */
+  }
+  sila2.com.a3analytics.lab.labimages.v1.DataType_PageRequest.PageRequest_Struct PageRequest = 1;  /* Cursor and page size. */
+}
+
+/* A named source that can supply images. */
+message DataType_ImageSource {
+  message ImageSource_Struct {
+    sila2.org.silastandard.String Id = 1;  /* Source identifier. */
+    sila2.org.silastandard.String Name = 2;  /* Human-readable name. */
+    sila2.org.silastandard.String Description = 3;  /* What the source captures. */
+    sila2.org.silastandard.Boolean HasAssetId = 4;  /* True when AssetId is set. */
+    sila2.org.silastandard.String AssetId = 5;  /* Optional asset identifier. */
+    sila2.org.silastandard.Boolean HasSemanticId = 6;  /* True when SemanticId is set. */
+    sila2.org.silastandard.String SemanticId = 7;  /* Optional semantic identifier. */
+  }
+  sila2.com.a3analytics.lab.labimages.v1.DataType_ImageSource.ImageSource_Struct ImageSource = 1;  /* A named source that can supply images. */
+}
+
+message ListImageSources_Parameters {
+  sila2.com.a3analytics.lab.labimages.v1.DataType_PageRequest Page = 1;  /* Page bounds. */
+}
+
+message ListImageSources_Responses {
+  repeated sila2.com.a3analytics.lab.labimages.v1.DataType_ImageSource Sources = 1;  /* Image sources on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. */
+}
+
+message GetImage_Parameters {
+  sila2.org.silastandard.String ImageId = 1;  /* Image identifier. */
+}
+
+message GetImage_Responses {
+  sila2.org.silastandard.String ImageId = 1;  /* Image identifier. */
+  sila2.org.silastandard.String SourceId = 2;  /* Source that supplied the image. */
+  sila2.org.silastandard.Timestamp CapturedAt = 3;  /* UTC capture time. */
+  sila2.org.silastandard.String MediaType = 4;  /* Image media type. */
+  sila2.org.silastandard.Integer Width = 5;  /* Width in pixels. */
+  sila2.org.silastandard.Integer Height = 6;  /* Height in pixels. */
+  sila2.org.silastandard.Boolean HasCaption = 7;  /* True when Caption is set. */
+  sila2.org.silastandard.String Caption = 8;  /* Optional caption. */
+  sila2.org.silastandard.Binary Image = 9;  /* Binary download identifier for the pixel bytes. */
+}
+
+message GetCurrentImage_Parameters {
+  sila2.org.silastandard.String SourceId = 1;  /* Image source identifier. */
+}
+
+message GetCurrentImage_Responses {
+  sila2.org.silastandard.String ImageId = 1;  /* Image identifier. */
+  sila2.org.silastandard.String SourceId = 2;  /* Source that supplied the image. */
+  sila2.org.silastandard.Timestamp CapturedAt = 3;  /* UTC capture time. */
+  sila2.org.silastandard.String MediaType = 4;  /* Image media type. */
+  sila2.org.silastandard.Integer Width = 5;  /* Width in pixels. */
+  sila2.org.silastandard.Integer Height = 6;  /* Height in pixels. */
+  sila2.org.silastandard.Boolean HasCaption = 7;  /* True when Caption is set. */
+  sila2.org.silastandard.String Caption = 8;  /* Optional caption. */
+  sila2.org.silastandard.Binary Image = 9;  /* Binary download identifier for the pixel bytes. */
+}

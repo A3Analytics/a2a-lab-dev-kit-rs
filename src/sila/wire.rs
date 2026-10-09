@@ -58,6 +58,15 @@ pub mod sila2 {
                         ));
                     }
                 }
+
+                pub mod labimages {
+                    pub mod v1 {
+                        include!(concat!(
+                            env!("OUT_DIR"),
+                            "/sila2.com.a3analytics.lab.labimages.v1.rs"
+                        ));
+                    }
+                }
             }
         }
     }

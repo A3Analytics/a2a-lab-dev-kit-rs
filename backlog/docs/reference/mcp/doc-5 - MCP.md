@@ -10,17 +10,19 @@ created_date: "2026-09-30 17:38"
 
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard for connecting AI applications to external systems.
 
-MCP is an interface. `McpServer` registers the seven lab operations as tools on `A2aLabApi`.
+MCP is an interface. `McpServer` registers the twelve lab operations as tools on `A2aLabApi`. It does not expose image resources or URI-only image delivery.
 
 ## Role
 
 The server name is `a2a-lab`.
 
-The instructions are `Lab logs, metrics, and tasks`.
+The instructions are `Lab logs, metrics, tasks, and images`.
 
-The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, and `get_task_status`. Those operations are on the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) page.
+The tools are `list_log_sources`, `query_logs`, `list_metrics`, `query_metric`, `list_tasks`, `start_task`, `get_task_status`, `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`. Those operations are on the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) page.
 
-`McpLab::connect` implements `A2aLabApi` over Streamable HTTP. The [A2A](<../a2a/doc-4 - A2A.md>) page uses that client in the combined example.
+`list_images` and `search_images` return descriptors only. `get_image` and `get_current_image` return inline base64.
+
+`McpLab::connect` implements `A2aLabApi` over Streamable HTTP. It defaults to 64 MiB of decoded bytes. Pass a raised limit to `McpLab::connect_with` before the connection opens so the Streamable HTTP event window grows. `McpLab::with_image_transport` after connect changes decoding only. The [A2A](<../a2a/doc-4 - A2A.md>) page uses that client in the combined example. The [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>) explain which payloads fit.
 
 ## Transports
 
@@ -76,7 +78,7 @@ Each error includes the `A2aLabError` code.
 
 ## Example
 
-The MCP client calls `McpServer` over Streamable HTTP with the `list_log_sources` tool. `McpServer` calls `A2aLabService`. The same example also calls the lab through A2A, and it prints both the A2A line and the MCP line.
+The MCP client calls `McpServer` over Streamable HTTP. `McpServer` calls `A2aLabService`. The same example also calls the lab through A2A. It lists log sources and image sources, then reads the current image and one specific image on each protocol.
 
 ```mermaid
 flowchart LR
@@ -127,7 +129,13 @@ The example prints:
 
 ```text
 a2a list_log_sources: app
+a2a list_image_sources: bench
+a2a get_current_image: current 4
+a2a get_image: earlier 3
 mcp list_log_sources: app
+mcp list_image_sources: bench
+mcp get_current_image: current 4
+mcp get_image: earlier 3
 ```
 
 The full source is [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs). [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>) walks through the same program.

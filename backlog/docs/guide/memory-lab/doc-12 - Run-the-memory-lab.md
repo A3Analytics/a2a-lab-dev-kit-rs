@@ -10,7 +10,7 @@ created_date: "2026-10-06 20:11"
 
 Run the [logs, metrics, and tasks example](../../../../examples/logs_metrics_tasks.rs) to print logs, metrics, and tasks.
 
-The example uses `MemoryLogs`, `MemoryMetrics`, and `MemoryTasks`.
+The example uses `MemoryLogs`, `MemoryMetrics`, and `MemoryTasks`. It intentionally demonstrates those three providers. [Serve A2A and MCP](<../a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>) uses `MemoryImages`.
 
 ## Run the example
 

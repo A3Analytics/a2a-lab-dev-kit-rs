@@ -6,6 +6,7 @@ use a2a_types::{
 };
 
 use crate::error::A2aLabError;
+use crate::images::{Image, ImageTransportConfig};
 use crate::page::Page;
 use crate::service::{A2aLabCommand, A2aLabResult, TaskSnapshot};
 use crate::tasks::TaskState;
@@ -87,34 +88,35 @@ pub(crate) fn artifact(result: &A2aLabResult, artifact_id: String) -> Result<Art
 
 pub(crate) fn chunks(result: &A2aLabResult) -> Vec<A2aLabResult> {
     match result {
-        A2aLabResult::QueryLogs(page) if !page.items().is_empty() => page
-            .items()
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                A2aLabResult::QueryLogs(chunk_page(
-                    page.next_cursor(),
-                    page.items().len(),
-                    index,
-                    item.clone(),
-                ))
-            })
-            .collect(),
-        A2aLabResult::QueryMetric(page) if !page.items().is_empty() => page
-            .items()
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                A2aLabResult::QueryMetric(chunk_page(
-                    page.next_cursor(),
-                    page.items().len(),
-                    index,
-                    *item,
-                ))
-            })
-            .collect(),
+        A2aLabResult::QueryLogs(page) if !page.items().is_empty() => {
+            chunk_items(page, A2aLabResult::QueryLogs)
+        }
+        A2aLabResult::QueryMetric(page) if !page.items().is_empty() => {
+            chunk_items(page, A2aLabResult::QueryMetric)
+        }
+        A2aLabResult::ListImageSources(page) if !page.items().is_empty() => {
+            chunk_items(page, A2aLabResult::ListImageSources)
+        }
+        A2aLabResult::ListImages(page) if !page.items().is_empty() => {
+            chunk_items(page, A2aLabResult::ListImages)
+        }
+        A2aLabResult::SearchImages(page) if !page.items().is_empty() => {
+            chunk_items(page, A2aLabResult::SearchImages)
+        }
         other => vec![other.clone()],
     }
+}
+
+fn chunk_items<T: Clone>(
+    page: &Page<T>,
+    wrap: impl Fn(Page<T>) -> A2aLabResult,
+) -> Vec<A2aLabResult> {
+    let len = page.items().len();
+    page.items()
+        .iter()
+        .enumerate()
+        .map(|(index, item)| wrap(chunk_page(page.next_cursor(), len, index, item.clone())))
+        .collect()
 }
 
 fn chunk_page<T>(next_cursor: Option<&str>, len: usize, index: usize, item: T) -> Page<T> {
@@ -181,19 +183,68 @@ pub(crate) fn artifact_update(
     }))
 }
 
-pub(crate) fn result_from_task(task: &Task) -> Result<A2aLabResult, A2aLabError> {
-    let results: Vec<A2aLabResult> = task
+pub(crate) fn result_from_task(
+    task: &Task,
+    transport: ImageTransportConfig,
+) -> Result<A2aLabResult, A2aLabError> {
+    let mut results = Vec::new();
+    for part in task
         .artifacts
-        .as_ref()
-        .into_iter()
+        .iter()
         .flatten()
         .flat_map(|artifact| artifact.parts.iter())
-        .filter_map(|part| match &part.content {
-            PartContent::Data(data) => serde_json::from_value(normalize_json(data.clone())).ok(),
-            _ => None,
-        })
-        .collect();
+    {
+        let PartContent::Data(data) = &part.content else {
+            continue;
+        };
+        if let Some(result) = decode_part(normalize_json(data.clone()), transport)? {
+            results.push(result);
+        }
+    }
     merge_results(results)
+}
+
+fn decode_part(
+    value: serde_json::Value,
+    transport: ImageTransportConfig,
+) -> Result<Option<A2aLabResult>, A2aLabError> {
+    // `Image`'s `Deserialize` is fixed at the 64 MiB default. Image results use
+    // the caller's limit so a raised maximum applies while the JSON is decoded.
+    match value.get("operation").and_then(serde_json::Value::as_str) {
+        Some("get_image" | "get_current_image") => decode_image_result(&value, transport).map(Some),
+        _ => Ok(serde_json::from_value(value).ok()),
+    }
+}
+
+fn decode_image_result(
+    value: &serde_json::Value,
+    transport: ImageTransportConfig,
+) -> Result<A2aLabResult, A2aLabError> {
+    let operation = value
+        .get("operation")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let result = value
+        .get("result")
+        .cloned()
+        .ok_or_else(|| A2aLabError::protocol("image result is missing"))?;
+    let descriptor = serde_json::from_value(
+        result
+            .get("descriptor")
+            .cloned()
+            .ok_or_else(|| A2aLabError::protocol("image descriptor is missing"))?,
+    )
+    .map_err(|error| A2aLabError::protocol(error.to_string()))?;
+    let encoded = result
+        .get("data")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| A2aLabError::protocol("image data is missing"))?;
+    let image = Image::from_base64(descriptor, encoded, transport)?;
+    match operation {
+        "get_image" => Ok(A2aLabResult::GetImage(image)),
+        "get_current_image" => Ok(A2aLabResult::GetCurrentImage(image)),
+        _ => Err(A2aLabError::protocol("unexpected image operation")),
+    }
 }
 
 fn merge_results(results: Vec<A2aLabResult>) -> Result<A2aLabResult, A2aLabError> {
@@ -201,38 +252,75 @@ fn merge_results(results: Vec<A2aLabResult>) -> Result<A2aLabResult, A2aLabError
         [] => Err(A2aLabError::protocol(
             "task artifact is missing a lab result",
         )),
-        [A2aLabResult::QueryLogs(_), ..] => {
-            let mut items = Vec::new();
-            let mut next = None;
-            for result in results {
-                if let A2aLabResult::QueryLogs(page) = result {
-                    next = page.next_cursor().map(ToOwned::to_owned);
-                    items.extend(page.items().iter().cloned());
-                }
-            }
-            Ok(A2aLabResult::QueryLogs(Page::new(items, next)))
-        }
-        [A2aLabResult::QueryMetric(_), ..] => {
-            let mut items = Vec::new();
-            let mut next = None;
-            for result in results {
-                if let A2aLabResult::QueryMetric(page) = result {
-                    next = page.next_cursor().map(ToOwned::to_owned);
-                    items.extend(page.items().iter().copied());
-                }
-            }
-            Ok(A2aLabResult::QueryMetric(Page::new(items, next)))
-        }
+        [A2aLabResult::QueryLogs(_), ..] => Ok(merge_page(
+            results,
+            |result| match result {
+                A2aLabResult::QueryLogs(page) => Some(page),
+                _ => None,
+            },
+            A2aLabResult::QueryLogs,
+        )),
+        [A2aLabResult::QueryMetric(_), ..] => Ok(merge_page(
+            results,
+            |result| match result {
+                A2aLabResult::QueryMetric(page) => Some(page),
+                _ => None,
+            },
+            A2aLabResult::QueryMetric,
+        )),
+        [A2aLabResult::ListImageSources(_), ..] => Ok(merge_page(
+            results,
+            |result| match result {
+                A2aLabResult::ListImageSources(page) => Some(page),
+                _ => None,
+            },
+            A2aLabResult::ListImageSources,
+        )),
+        [A2aLabResult::ListImages(_), ..] => Ok(merge_page(
+            results,
+            |result| match result {
+                A2aLabResult::ListImages(page) => Some(page),
+                _ => None,
+            },
+            A2aLabResult::ListImages,
+        )),
+        [A2aLabResult::SearchImages(_), ..] => Ok(merge_page(
+            results,
+            |result| match result {
+                A2aLabResult::SearchImages(page) => Some(page),
+                _ => None,
+            },
+            A2aLabResult::SearchImages,
+        )),
         [first, ..] => Ok(first.clone()),
     }
 }
 
-pub(crate) fn snapshot_from_task(task: &Task) -> Result<TaskSnapshot, A2aLabError> {
+fn merge_page<T: Clone>(
+    results: Vec<A2aLabResult>,
+    mut take: impl FnMut(A2aLabResult) -> Option<Page<T>>,
+    wrap: impl FnOnce(Page<T>) -> A2aLabResult,
+) -> A2aLabResult {
+    let mut items = Vec::new();
+    let mut next = None;
+    for result in results {
+        if let Some(page) = take(result) {
+            next = page.next_cursor().map(ToOwned::to_owned);
+            items.extend(page.items().iter().cloned());
+        }
+    }
+    wrap(Page::new(items, next))
+}
+
+pub(crate) fn snapshot_from_task(
+    task: &Task,
+    transport: ImageTransportConfig,
+) -> Result<TaskSnapshot, A2aLabError> {
     Ok(TaskSnapshot {
         id: task.id.clone(),
         context_id: task.context_id.clone(),
         state: lab_state(&task.status.state),
-        result: result_from_task(task)?,
+        result: result_from_task(task, transport)?,
     })
 }
 
@@ -262,5 +350,86 @@ pub(crate) fn a2a_error(error: &A2aLabError) -> A2AError {
             A2AError::content_type_not_supported()
         }
         A2aLabError::Protocol { message } => A2AError::invalid_request(message.clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{chunks, decode_part, merge_results};
+    use crate::id::{ImageId, ImageSourceId};
+    use crate::images::{Image, ImageDescriptor, ImageSource, ImageTransportConfig};
+    use crate::json_object::JsonObject;
+    use crate::page::Page;
+    use crate::service::A2aLabResult;
+    use crate::time::UtcTimestamp;
+
+    #[test]
+    fn paged_image_results_merge_in_chunk_order() {
+        let page = Page::new(vec![source("zeta"), source("alpha")], Some("2".to_owned()));
+        let parts = chunks(&A2aLabResult::ListImageSources(page));
+        assert_eq!(parts.len(), 2);
+        let A2aLabResult::ListImageSources(first) = &parts[0] else {
+            panic!("source chunk");
+        };
+        let A2aLabResult::ListImageSources(second) = &parts[1] else {
+            panic!("source chunk");
+        };
+        assert_eq!(first.items()[0].id.as_str(), "zeta");
+        assert!(first.next_cursor().is_none());
+        assert_eq!(second.items()[0].id.as_str(), "alpha");
+        assert_eq!(second.next_cursor(), Some("2"));
+
+        let A2aLabResult::ListImageSources(merged) = merge_results(parts).unwrap() else {
+            panic!("merged sources");
+        };
+        assert_eq!(merged.items()[0].id.as_str(), "zeta");
+        assert_eq!(merged.items()[1].id.as_str(), "alpha");
+        assert_eq!(merged.next_cursor(), Some("2"));
+    }
+
+    #[test]
+    fn image_bytes_stay_one_part_and_honor_the_decode_limit() {
+        let image = Image::new(descriptor(), vec![1, 2, 3, 4]).unwrap();
+        assert_eq!(chunks(&A2aLabResult::GetImage(image.clone())).len(), 1);
+        assert_eq!(
+            chunks(&A2aLabResult::GetCurrentImage(image.clone())).len(),
+            1
+        );
+
+        let value = serde_json::to_value(A2aLabResult::GetImage(image.clone())).unwrap();
+        assert!(serde_json::from_value::<A2aLabResult>(value.clone()).is_ok());
+        let tight = decode_part(value.clone(), ImageTransportConfig::new(3).unwrap()).unwrap_err();
+        assert_eq!(tight.code(), "invalid");
+        let decoded = decode_part(value, ImageTransportConfig::new(4).unwrap())
+            .unwrap()
+            .unwrap();
+        let A2aLabResult::GetImage(decoded) = decoded else {
+            panic!("decoded image");
+        };
+        assert_eq!(decoded.data(), image.data());
+    }
+
+    fn source(id: &str) -> ImageSource {
+        ImageSource {
+            id: ImageSourceId::new(id).unwrap(),
+            name: id.to_owned(),
+            description: id.to_owned(),
+            asset_id: None,
+            semantic_id: None,
+        }
+    }
+
+    fn descriptor() -> ImageDescriptor {
+        ImageDescriptor::new(
+            ImageId::new("frame").unwrap(),
+            ImageSourceId::new("cam").unwrap(),
+            UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap(),
+            "image/png",
+            1,
+            1,
+            None,
+            JsonObject::empty(),
+        )
+        .unwrap()
     }
 }

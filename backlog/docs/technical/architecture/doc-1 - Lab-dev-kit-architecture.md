@@ -10,15 +10,18 @@ created_date: "2026-09-29 23:40"
 
 ## Purpose
 
-A2A-LAB devkit gives an automated lab agent one Rust API for logs, metrics, and tasks. Protocol adapters call that API. They do not own the data.
+A2A-LAB devkit gives an automated lab agent one Rust API for logs, metrics, tasks, and images. Protocol adapters call that API. They do not own the data.
 
 ## Providers
 
-Implement three traits:
+Implement four traits:
 
 - `LogProvider` lists sources and queries structured records.
 - `MetricProvider` lists descriptors and queries finite samples.
 - `TaskProvider` lists definitions, starts a run, and returns its status.
+- `ImageProvider` lists image sources, lists and searches metadata, and returns inline frames.
+
+`A2aLabService::new` still takes the log, metric, and task providers. Image operations stay unavailable until `with_images`. That keeps the three-provider constructor source-compatible.
 
 `A2aLabService` validates page limits and UTC ranges.
 
@@ -26,7 +29,13 @@ It calls the matching provider.
 
 It stores an Agent2Agent (A2A) task snapshot.
 
-`MemoryLogs`, `MemoryMetrics`, and `MemoryTasks` are in-memory implementations for examples and tests.
+`MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryImages` are in-memory implementations for examples and tests.
+
+## Images
+
+Field definitions, the five image operations, and transport limits are in [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>). Agent2Agent (A2A) and Model Context Protocol (MCP) wire details are in [A2A and MCP protocols](<../protocol/doc-2 - A2A-and-MCP-protocols.md>).
+
+This crate does not open an HTTP endpoint, a USB device, or an IP camera. It does not include a source helper, a capture helper, or a built-in source adapter. MCP exposes tools only: no image resources and no URI-only delivery. SiLA 2 `LabImages` lists sources and returns one image through binary download. `LabOperations` stays the seven log, metric, and task commands.
 
 ## Shared values
 

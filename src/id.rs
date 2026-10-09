@@ -90,3 +90,5 @@ id_type!(SourceId, "log source");
 id_type!(MetricId, "metric");
 id_type!(TaskId, "task definition");
 id_type!(RunId, "A2A task");
+id_type!(ImageId, "image");
+id_type!(ImageSourceId, "image source");
