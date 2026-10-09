@@ -8,8 +8,6 @@
 
 The A3 Analytics A2A-LAB devkit is a Rust crate for lab logs, metrics, tasks, and images. Agent2Agent (A2A) and Model Context Protocol (MCP) expose all twelve operations. SiLA 2 serves logs, metrics, tasks, and named-source images. AAS, OPC UA, and ROS 2 stay on logs, metrics, and tasks. Image fields and limits are in the [A2A-LAB primitives](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Primitives).
 
-The A2A 1.0 badge reports the official A2A protocol Technology Compatibility Kit (TCK) workflow for this devkit. It does not report A2A-LAB compliance.
-
 ## Features
 
 - Supports lab logs, metrics, tasks, and images over Agent2Agent (A2A) and Model Context Protocol (MCP).
