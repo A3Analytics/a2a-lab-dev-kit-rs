@@ -1,4 +1,5 @@
 /target
+web-ui/target/
 **/*.rs.bk
 .DS_Store
 /backlog/tasks/

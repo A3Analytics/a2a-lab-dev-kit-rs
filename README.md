@@ -61,6 +61,18 @@ Run these commands from the repository root.
    mise exec -- cargo run --example logs_metrics_tasks
    ```
 
+## Open the optional web interface
+
+The web interface stays off unless the `web-ui` feature is enabled and the application calls `A2aServer::with_web_ui`. [Open the optional web interface](<backlog/docs/guide/web-interface/doc-22 - Open-the-optional-web-interface.md>) documents the feature, the WebAssembly checks, the `/ui/` path, and what the browser stores.
+
+Run the [web interface example](examples/web_ui.rs) from the repository root:
+
+```bash
+mise exec -- cargo run --example web_ui --features web-ui
+```
+
+The example prints a local `/ui/` URL and serves an in-memory lab until you stop it. A downstream application enables the same Cargo feature and calls `A2aServer::with_web_ui`. It does not copy the `web-ui` sources.
+
 ## Check A2A-LAB compliance
 
 A2A-LAB compliance tests deterministic lab-operation behavior and A2A/MCP parity. The authoritative [contract](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/backlog/docs/reference/compliance/doc-1%20-%20A2A-LAB-TCK-profile.md), [runner](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/src/compliance_runner.rs), and [GitHub Action](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/action.yml) are maintained in the standalone [A2A-LAB TCK](https://github.com/A3Analytics/a2a-lab-tck). Pin consumers to the full published commit SHA `1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd`.

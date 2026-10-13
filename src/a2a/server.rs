@@ -57,6 +57,8 @@ pub struct A2aServer {
     security_requirements: Option<Vec<SecurityRequirement>>,
     authenticator: Option<Arc<dyn Authenticator>>,
     messages: Option<Arc<dyn AgentMessageHandler>>,
+    #[cfg(feature = "web-ui")]
+    web_ui: bool,
 }
 
 impl A2aServer {
@@ -74,6 +76,8 @@ impl A2aServer {
             security_requirements: None,
             authenticator: None,
             messages: None,
+            #[cfg(feature = "web-ui")]
+            web_ui: false,
         }
     }
 
@@ -138,6 +142,18 @@ impl A2aServer {
     #[must_use]
     pub fn with_authenticator(mut self, authenticator: Arc<dyn Authenticator>) -> Self {
         self.authenticator = Some(authenticator);
+        self
+    }
+
+    /// Serves the packaged web interface at `/ui/` on this HTTP listener.
+    ///
+    /// The shell, JavaScript, WebAssembly, and stylesheet are public and carry
+    /// no agent data or credentials. A2A protocol routes keep the configured
+    /// access gate. Without this opt-in, `/ui/` is not served.
+    #[cfg(feature = "web-ui")]
+    #[must_use]
+    pub fn with_web_ui(mut self) -> Self {
+        self.web_ui = true;
         self
     }
 
@@ -267,27 +283,43 @@ fn router(
         .with_default_input_modes(input_modes());
     let handler = Arc::new(handler);
     let http_gate = gate.clone();
+    #[cfg(feature = "web-ui")]
+    let serve_web_ui = server.web_ui;
     let app = Router::new()
         .merge(a2a_server::agent_card::agent_card_router(Arc::new(
             StaticAgentCard::new(card),
         )))
         .merge(a2a_server::rest::rest_router(Arc::clone(&handler)))
-        .merge(a2a_server::jsonrpc::jsonrpc_router(Arc::clone(&handler)))
-        .layer(from_fn(move |request: Request, next: Next| {
-            let gate = http_gate.clone();
-            async move {
-                if request.uri().path() == "/.well-known/agent-card.json" {
-                    return normalize_a2a_json(request, next).await;
-                }
-                match gate
-                    .authenticate(request.headers(), request.uri().query())
-                    .await
-                {
-                    Ok(caller) => with_caller(caller, normalize_a2a_json(request, next)).await,
-                    Err(error) => auth_response(&error),
-                }
+        .merge(a2a_server::jsonrpc::jsonrpc_router(Arc::clone(&handler)));
+    #[cfg(feature = "web-ui")]
+    let app = if serve_web_ui {
+        app.merge(super::web_ui::router())
+    } else {
+        app
+    };
+    let app = app.layer(from_fn(move |request: Request, next: Next| {
+        let gate = http_gate.clone();
+        #[cfg(feature = "web-ui")]
+        let serve_web_ui = serve_web_ui;
+        async move {
+            if request.uri().path() == "/.well-known/agent-card.json" {
+                return normalize_a2a_json(request, next).await;
             }
-        }));
+            #[cfg(feature = "web-ui")]
+            if serve_web_ui
+                && super::web_ui::is_public_route(request.method(), request.uri().path())
+            {
+                return next.run(request).await;
+            }
+            match gate
+                .authenticate(request.headers(), request.uri().query())
+                .await
+            {
+                Ok(caller) => with_caller(caller, normalize_a2a_json(request, next)).await,
+                Err(error) => auth_response(&error),
+            }
+        }
+    }));
     (app, handler, gate)
 }
 

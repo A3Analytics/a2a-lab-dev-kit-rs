@@ -111,6 +111,41 @@ With a handler, any other part is rejected.
 
 A role other than `ROLE_USER` is rejected.
 
+## Optional web interface
+
+`A2aServer::with_web_ui` serves a browser at `/ui/` when the crate is built with the `web-ui` feature. The default build leaves that method and that route out. [Open the optional web interface](<../../guide/web-interface/doc-22 - Open-the-optional-web-interface.md>) shows how to enable it and run the in-memory example.
+
+The following diagram shows that browser on the existing HTTP+JSON path:
+
+```mermaid
+flowchart LR
+  accTitle: Browser on A2A HTTP+JSON
+  accDescr: The browser calls A2aServer over same-origin HTTP+JSON. A2aServer calls A2aLabApi.
+  browser["Browser"] --> server["A2aServer"]
+  server --> api["A2aLabApi"]
+```
+
+In the preceding diagram, the browser calls `A2aServer`. `A2aServer` calls `A2aLabApi`.
+
+The browser is a same-origin A2A HTTP+JSON client. It is not a new provider or a new protocol. It browses the four primitives: logs, metrics, tasks, and images. It sends the twelve `A2aLabCommand` variants, which are the lab skills listed above:
+
+- `list_log_sources`
+- `query_logs`
+- `list_metrics`
+- `query_metric`
+- `list_tasks`
+- `start_task`
+- `get_task_status`
+- `list_image_sources`
+- `list_images`
+- `search_images`
+- `get_image`
+- `get_current_image`
+
+A chat session is the server-returned `contextId`. Each chat turn has a new protocol task id. A lab run id from `start_task` is separate, and the provider allocates that run id per call. Protocol task state and lab command history are in memory and can disappear after the process restarts.
+
+Chat stays disabled when the card does not advertise `agent-message`.
+
 ## Security
 
 `with_security` and `with_authenticator` are optional.
@@ -199,4 +234,6 @@ The full source is [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs). [Serve
 - [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>)
 - [MCP](<../mcp/doc-5 - MCP.md>)
 - [Serve A2A and MCP](<../../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
+- [Open the optional web interface](<../../guide/web-interface/doc-22 - Open-the-optional-web-interface.md>)
 - [a2a_and_mcp.rs](../../../../examples/a2a_and_mcp.rs)
+- [web_ui.rs](../../../../examples/web_ui.rs)

@@ -19,6 +19,7 @@ missing_panics_doc = "allow"
 
 [features]
 default = ["aas", "opcua", "sila2"]
+web-ui = ["dep:wasm-bindgen-cli-support"]
 aas = []
 opcua = ["dep:async-opcua-client", "dep:async-opcua-types"]
 sila2 = [
@@ -38,9 +39,15 @@ sila2 = [
     "dep:protoc-bin-vendored",
 ]
 
+[[example]]
+name = "web_ui"
+required-features = ["web-ui"]
+
 [build-dependencies]
 protoc-bin-vendored = { version = "3.2.0", optional = true }
+sha2 = "0.10.9"
 tonic-prost-build = { version = "0.14.6", optional = true }
+wasm-bindgen-cli-support = { version = "=0.2.129", optional = true }
 
 [dependencies]
 a2a-types = { version = "0.4.1", package = "a2a-lf" }

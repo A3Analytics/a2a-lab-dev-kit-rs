@@ -10,6 +10,8 @@ created_date: "2026-09-30 17:38"
 
 A2A-LAB devkit routes client calls to lab logs, metrics, tasks, and images. Those values are the [A2A-LAB primitives](<../reference/primitives/doc-17 - A2A-LAB-primitives.md>). Agent2Agent (A2A) and Model Context Protocol (MCP) expose all twelve operations. Standardization in Lab Automation (SiLA) 2 serves logs, metrics, tasks, and named-source images. The crate name is `a2a-lab-dev-kit`.
 
+An optional browser uses the same A2A HTTP+JSON routes when an application enables the `web-ui` feature and calls `A2aServer::with_web_ui`. [Open the optional web interface](<../guide/web-interface/doc-22 - Open-the-optional-web-interface.md>) covers that opt-in. The default build leaves the browser off.
+
 The standalone [A2A-LAB TCK](https://github.com/A3Analytics/a2a-lab-tck/tree/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd) checks deterministic lab behavior over A2A and MCP. It is separate from the upstream A2A protocol TCK and does not establish certification.
 
 ## Interfaces and providers
@@ -48,6 +50,7 @@ Read these pages:
 - [Implementations](<../reference/implementations/doc-18 - Implementations.md>)
 - [Run the memory lab](<../guide/memory-lab/doc-12 - Run-the-memory-lab.md>)
 - [Serve A2A and MCP](<../guide/a2a-and-mcp/doc-13 - Serve-A2A-and-MCP.md>)
+- [Open the optional web interface](<../guide/web-interface/doc-22 - Open-the-optional-web-interface.md>)
 - [Expose ROS 2 actions as tasks](<../guide/ros2-tasks/doc-15 - Expose-ROS-2-actions-as-tasks.md>)
 - [Implement a custom provider](<../guide/custom-provider/doc-21 - Implement-a-custom-provider.md>)
 - [A2A-LAB TCK](https://github.com/A3Analytics/a2a-lab-tck/tree/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd)

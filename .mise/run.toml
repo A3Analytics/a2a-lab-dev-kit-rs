@@ -8,11 +8,11 @@ run = "cargo check --workspace"
 
 [fmt]
 description = "Format Rust sources"
-run = "cargo fmt"
+run = "cargo fmt --all && cargo fmt --manifest-path web-ui/Cargo.toml --all"
 
 [fmt-check]
 description = "Check Rust formatting without changing files"
-run = "cargo fmt --check"
+run = "cargo fmt --all --check && cargo fmt --manifest-path web-ui/Cargo.toml --all --check"
 
 [check]
 description = "Type-check the crate with warnings denied"
@@ -72,6 +72,22 @@ run = "bash .mise/scripts/sila2-matrix.sh"
 description = "Run the pinned official SiLA communication tester against the conformance server"
 run = "bash .mise/scripts/sila2-communication.sh"
 
+[web-ui-build]
+description = "Compile the browser UI from Rust to wasm32 and package its assets"
+run = "bash .mise/scripts/web-ui.sh build"
+
+[web-ui-freshness]
+description = "Fail when generated web UI assets do not match their Rust sources"
+run = "bash .mise/scripts/web-ui.sh freshness"
+
+[web-ui-feature-off]
+description = "Check default builds omit web UI dependencies and APIs"
+run = "bash .mise/scripts/web-ui.sh feature-off"
+
+[web-ui-serve]
+description = "Check opt-in web UI HTTP serving"
+run = "bash .mise/scripts/web-ui.sh serve"
+
 [quality]
-description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, clippy, tests, the A2A TCK, and SiLA provider checks"
+description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, web UI checks, clippy, tests, the A2A TCK, and SiLA provider checks"
 run = "bash .mise/scripts/quality.sh"

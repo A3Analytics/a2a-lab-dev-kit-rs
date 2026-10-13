@@ -18,6 +18,11 @@ wiki = "Serve-A2A-and-MCP.md"
 section = "Guides"
 
 [[page]]
+source = "guide/web-interface"
+wiki = "Open-the-optional-web-interface.md"
+section = "Guides"
+
+[[page]]
 source = "guide/ros2-tasks"
 wiki = "Expose-ROS-2-actions-as-tasks.md"
 section = "Guides"

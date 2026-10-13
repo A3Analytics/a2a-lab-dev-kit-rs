@@ -1,6 +1,12 @@
+#[cfg(feature = "web-ui")]
+#[path = "web-ui/build/package.rs"]
+mod web_ui_package;
+
 fn main() {
     println!("cargo:rerun-if-changed=proto/sila");
     println!("cargo:rerun-if-changed=src/sila/standard");
+    #[cfg(feature = "web-ui")]
+    web_ui_package::package();
     #[cfg(feature = "sila2")]
     unsafe {
         std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path().unwrap());

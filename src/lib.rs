@@ -2,6 +2,8 @@
 //!
 //! Provider traits are the source of truth. The A2A adapter (HTTP+JSON, JSON-RPC,
 //! and gRPC) and the MCP adapter expose logs, metrics, tasks, and images.
+//! The optional `web-ui` feature packages a Rust browser shell. `A2aServer::with_web_ui`
+//! serves that shell at `/ui/` on the A2A HTTP listener.
 
 #![allow(clippy::doc_markdown)]
 
@@ -28,6 +30,8 @@ pub mod sila;
 pub mod tasks;
 pub mod time;
 
+#[cfg(feature = "web-ui")]
+pub use a2a::WEB_UI_PATH;
 pub use a2a::{
     A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, AgentMessageFuture, AgentMessageHandler,
     AgentMessageReply, AgentMessageRequest, AgentMessageResponse, AuthError, Authenticator,

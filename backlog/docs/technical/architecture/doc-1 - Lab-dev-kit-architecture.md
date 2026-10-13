@@ -62,3 +62,24 @@ The default A2A agent uses `McpLab` to call that MCP server.
 See [A2A and MCP protocols](<../protocol/doc-2 - A2A-and-MCP-protocols.md>) for the wire contracts.
 
 See [Industrial equipment connectors](<../industrial/doc-3 - Industrial-equipment-connectors.md>) for the AAS, OPC UA, and SiLA 2 connectors.
+
+## Optional web interface
+
+The `web-ui` Cargo feature packages a browser shell. `A2aServer::with_web_ui` serves that shell at `/ui/` on the HTTP listener that already speaks A2A. The default build has no `/ui/` route and no `with_web_ui` method. Calling the method is a second opt-in after the feature is enabled.
+
+The browser is a same-origin A2A HTTP+JSON client. It is not a new provider or a new protocol. It browses the four primitives on `A2aLabService`: logs, metrics, tasks, and images. It sends the twelve `A2aLabCommand` variants:
+
+- `ListLogSources`
+- `QueryLogs`
+- `ListMetrics`
+- `QueryMetric`
+- `ListTasks`
+- `StartTask`
+- `GetTaskStatus`
+- `ListImageSources`
+- `ListImages`
+- `SearchImages`
+- `GetImage`
+- `GetCurrentImage`
+
+Protocol tasks stay in the server's in-memory task store. Lab command snapshots stay in `A2aLabService` memory. Both disappear when the process stops. The browser keeps the current chat `contextId` in page memory only. [Open the optional web interface](<../../guide/web-interface/doc-22 - Open-the-optional-web-interface.md>) covers the example and that page-local conversation.
