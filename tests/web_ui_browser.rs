@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use a2a_lab_dev_kit::{
     A2aLabService, A2aServer, HttpAuthSecurityScheme, MemoryLogs, MemoryMetrics, MemoryTasks,
-    SecurityScheme, TaskDefinition, TaskId, bind_local,
+    MetricDescriptor, MetricId, MetricPoint, SecurityScheme, TaskDefinition, TaskId, UtcTimestamp,
+    bind_local,
 };
 use axum::Router;
 use axum::body::{Body, Bytes};
@@ -431,7 +432,19 @@ fn navigation_flow(base: &str) {
         page.eval("document.getElementById('nav-toggle')?.hasAttribute('hidden')"),
         Value::Bool(true)
     );
-    assert_eq!(page.eval("document.scripts.length"), json!(1));
+    assert_shell_scripts(&mut page);
+}
+
+fn assert_shell_scripts(page: &mut Browser) {
+    assert_eq!(page.eval("document.scripts.length"), json!(3));
+    assert_eq!(
+        page.eval("[...document.scripts].filter(script => !script.src).length"),
+        json!(0)
+    );
+    assert_eq!(
+        page.eval("[...document.scripts].every(script => script.src.includes('/ui/assets/'))"),
+        Value::Bool(true)
+    );
 }
 
 fn open_protocol(page: &mut Browser) {
@@ -479,6 +492,193 @@ fn assert_authorized(requests: &[Value]) {
             .iter()
             .all(|request| !request_url(request).contains(TOKEN))
     );
+}
+
+#[tokio::test]
+async fn browser_metrics_chart_draws_switches_and_stays_accessible() {
+    let base = metric_lab().await;
+    tokio::task::spawn_blocking(move || chart_flow(&base))
+        .await
+        .unwrap();
+}
+
+fn chart_flow(base: &str) {
+    let mut page = Browser::open(&format!("{base}/ui/"));
+    page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
+    page.show("metrics");
+    page.wait_until(
+        "window.Chart && window.Chart.getChart(document.getElementById('metric-chart'))",
+    );
+    assert_initial_series(&mut page);
+    assert_point_tooltip(&mut page);
+    assert_metric_switch(&mut page);
+    assert_chart_resizes(&mut page);
+    assert_value_filter(&mut page);
+    let console = page.console_text();
+    assert!(!console.contains("EvalError"), "{console}");
+    assert!(!console.contains("Content Security Policy"), "{console}");
+    assert!(!console.contains("Refused to"), "{console}");
+}
+
+fn assert_initial_series(page: &mut Browser) {
+    let initial = page.eval(CHART_STATE);
+    assert_eq!(initial["values"], json!([0, 1]));
+    assert_eq!(initial["label"], "2 samples in open");
+    assert_eq!(initial["hidden"], Value::Bool(false));
+    assert_eq!(initial["svg"], Value::Bool(false));
+    let readings = initial["readings"].as_str().unwrap_or_default();
+    assert!(
+        readings.contains("2024-01-01T00:01:00Z 1 open"),
+        "{initial}"
+    );
+    let width = initial["width"].as_f64().unwrap_or(0.0);
+    assert!(width > 200.0, "{initial}");
+}
+
+fn assert_point_tooltip(page: &mut Browser) {
+    let point = page.eval(
+        "(() => {
+            const canvas = document.getElementById('metric-chart');
+            const chart = window.Chart.getChart(canvas);
+            const point = chart.getDatasetMeta(0).data[1];
+            const rect = canvas.getBoundingClientRect();
+            return { x: rect.left + point.x, y: rect.top + point.y };
+        })()",
+    );
+    page.move_mouse(
+        point["x"].as_f64().unwrap_or(0.0),
+        point["y"].as_f64().unwrap_or(0.0),
+    );
+    let tip = page.eval(
+        "(() => {
+            const tooltip = window.Chart.getChart(document.getElementById('metric-chart')).tooltip;
+            return {
+                opacity: tooltip.opacity,
+                title: (tooltip.title || []).join(' '),
+                body: (tooltip.body || []).map(part => (part.lines || []).join(' ')).join(' ')
+            };
+        })()",
+    );
+    let title = tip["title"].as_str().unwrap_or_default();
+    let body = tip["body"].as_str().unwrap_or_default();
+    let opacity = tip["opacity"].as_f64().unwrap_or(0.0);
+    assert!(opacity > 0.0, "{tip}");
+    assert!(title.contains("2024-01-01T00:01:00Z"), "{tip}");
+    assert!(body.contains('1'), "{tip}");
+    assert!(body.contains("open"), "{tip}");
+}
+
+fn assert_metric_switch(page: &mut Browser) {
+    page.click("metric-pick-1");
+    page.wait_until(
+        "window.Chart.getChart(document.getElementById('metric-chart')).data.datasets[0].data.includes(12)",
+    );
+    let switched = page.eval(CHART_STATE);
+    assert_eq!(switched["values"], json!([5, 12]));
+    assert_eq!(switched["label"], "2 samples in ms");
+}
+
+fn assert_chart_resizes(page: &mut Browser) {
+    page.viewport(1280, 900);
+    let wide = page.eval("document.getElementById('metric-chart').getBoundingClientRect().width");
+    page.viewport(520, 900);
+    let narrow = page.eval("document.getElementById('metric-chart').getBoundingClientRect().width");
+    let wide = wide.as_f64().unwrap_or(0.0);
+    let narrow = narrow.as_f64().unwrap_or(0.0);
+    assert!(wide > narrow + 40.0, "{wide} vs {narrow}");
+}
+
+fn assert_value_filter(page: &mut Browser) {
+    page.eval(
+        "(() => {
+            const input = document.getElementById('metric-filter-search');
+            input.value = '12';
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        })()",
+    );
+    page.wait_until(
+        "window.Chart.getChart(document.getElementById('metric-chart')).data.datasets[0].data.length === 1",
+    );
+    let filtered = page.eval(CHART_STATE);
+    assert_eq!(filtered["values"], json!([12]));
+    assert_eq!(filtered["ariaHidden"], Value::Null);
+    let readings = filtered["readings"].as_str().unwrap_or_default();
+    assert!(readings.contains("12 ms"), "{filtered}");
+}
+
+const CHART_STATE: &str = "(() => {
+    const canvas = document.getElementById('metric-chart');
+    const chart = window.Chart.getChart(canvas);
+    const list = document.getElementById('metric-view-entries');
+    return {
+        values: chart.data.datasets[0].data,
+        label: canvas.getAttribute('aria-label'),
+        readings: list.textContent,
+        ariaHidden: list.getAttribute('aria-hidden'),
+        hidden: document.getElementById('metric-plot').hasAttribute('hidden'),
+        svg: !!document.querySelector('#metric-plot svg'),
+        width: canvas.getBoundingClientRect().width
+    };
+})()";
+
+async fn metric_lab() -> String {
+    let metrics = MemoryMetrics::new();
+    seed_metric(
+        &metrics,
+        "door",
+        "Door",
+        "open",
+        &[("2024-01-01T00:00:00Z", 0.0), ("2024-01-01T00:01:00Z", 1.0)],
+    )
+    .await;
+    seed_metric(
+        &metrics,
+        "latency",
+        "Latency",
+        "ms",
+        &[
+            ("2024-01-01T00:00:00Z", 5.0),
+            ("2024-01-01T00:01:00Z", 12.0),
+        ],
+    )
+    .await;
+    let service = A2aLabService::new(MemoryLogs::new(), metrics, MemoryTasks::new()).share();
+    let (listener, address) = bind_local().await.unwrap();
+    let server = A2aServer::new(&service).with_web_ui();
+    tokio::spawn(async move {
+        server.listen(listener).await.unwrap();
+    });
+    format!("http://{address}")
+}
+
+async fn seed_metric(
+    metrics: &MemoryMetrics,
+    id: &str,
+    name: &str,
+    unit: &str,
+    points: &[(&str, f64)],
+) {
+    let metric_id = MetricId::new(id).unwrap();
+    metrics
+        .insert_metric(MetricDescriptor {
+            id: metric_id.clone(),
+            name: name.to_owned(),
+            description: name.to_owned(),
+            unit: unit.to_owned(),
+            asset_id: None,
+            semantic_id: None,
+        })
+        .await;
+    for (timestamp, value) in points {
+        metrics
+            .insert_point(
+                metric_id.clone(),
+                MetricPoint::new(UtcTimestamp::parse(timestamp).unwrap(), *value).unwrap(),
+            )
+            .await
+            .unwrap();
+    }
 }
 
 async fn lab(secured: bool) -> String {

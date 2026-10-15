@@ -107,13 +107,16 @@ fn show(page: &Page, focus: bool) {
         if let Some(host) = page.element(route.view) {
             place(page, "workbench", &host, true);
         }
-        if primitive == Primitive::Logs {
+        if matches!(primitive, Primitive::Logs | Primitive::Metrics) {
             page.set_data("workbench", "hidden", "hidden");
         } else {
             page.remove_attr("workbench", "hidden");
         }
         super::workbench::scope(page, primitive);
         super::inventory::reveal(page, primitive);
+        if primitive == Primitive::Metrics {
+            super::metrics::redraw(page);
+        }
     } else if let Some(command) = page.element("workbench") {
         command.remove();
     }
@@ -200,7 +203,7 @@ fn route_for(hash: &str) -> Route {
             "view-metrics",
             "nav-metrics",
             "Metrics",
-            "inventory-metrics-heading",
+            "metric-view-heading",
         ),
         "tasks" | "inventory/tasks" => primitive(
             Primitive::Tasks,

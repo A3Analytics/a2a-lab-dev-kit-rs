@@ -53,6 +53,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
+    let logs = seed_logs().await?;
+    let metrics = seed_metrics().await?;
+    let tasks = MemoryTasks::new();
+    tasks
+        .insert(TaskDefinition {
+            id: TaskId::new("build")?,
+            name: "Build".to_owned(),
+            description: "Build the lab".to_owned(),
+            asset_id: None,
+            semantic_id: None,
+            input_schema: None,
+            output_schema: None,
+        })
+        .await;
+
+    let images = MemoryImages::new();
+    images
+        .insert_source(ImageSource {
+            id: ImageSourceId::new("bench")?,
+            name: "Bench".to_owned(),
+            description: "Bench camera".to_owned(),
+            asset_id: None,
+            semantic_id: None,
+        })
+        .await?;
+    images.insert_image(frame()?).await?;
+    images
+        .set_current(ImageSourceId::new("bench")?, ImageId::new("current")?)
+        .await?;
+
+    Ok(A2aLabService::new(logs, metrics, tasks)
+        .with_images(images)
+        .share())
+}
+
+async fn seed_logs() -> Result<MemoryLogs, A2aLabError> {
     let logs = MemoryLogs::new();
     logs.insert_source(LogSource {
         id: SourceId::new("app")?,
@@ -121,57 +157,90 @@ async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
         })
         .await?;
     }
+    Ok(logs)
+}
 
+async fn seed_metrics() -> Result<MemoryMetrics, A2aLabError> {
     let metrics = MemoryMetrics::new();
-    let metric_id = MetricId::new("latency")?;
+    seed_metric(
+        &metrics,
+        "door",
+        "Door",
+        "Door state",
+        "open",
+        &[
+            ("2024-01-01T00:00:00Z", 0.0),
+            ("2024-01-01T00:00:10Z", 0.0),
+            ("2024-01-01T00:00:20Z", 1.0),
+            ("2024-01-01T00:00:30Z", 1.0),
+            ("2024-01-01T00:01:00Z", 0.0),
+            ("2024-01-01T00:01:30Z", 0.0),
+            ("2024-01-01T00:02:00Z", 1.0),
+            ("2024-01-01T00:03:00Z", 0.0),
+        ],
+    )
+    .await?;
+    seed_metric(
+        &metrics,
+        "latency",
+        "Latency",
+        "Request latency",
+        "ms",
+        &[
+            ("2024-01-01T00:00:00Z", 5.0),
+            ("2024-01-01T00:00:15Z", 8.0),
+            ("2024-01-01T00:00:30Z", 12.0),
+            ("2024-01-01T00:01:00Z", 4.0),
+            ("2024-01-01T00:02:00Z", 6.0),
+            ("2024-01-01T00:03:00Z", 7.0),
+        ],
+    )
+    .await?;
+    seed_metric(
+        &metrics,
+        "temperature",
+        "Temperature",
+        "Bench temperature",
+        "C",
+        &[
+            ("2024-01-01T00:00:00Z", 21.5),
+            ("2024-01-01T00:01:00Z", 21.6),
+            ("2024-01-01T00:02:00Z", 22.0),
+            ("2024-01-01T00:03:00Z", 21.8),
+        ],
+    )
+    .await?;
+    Ok(metrics)
+}
+
+async fn seed_metric(
+    metrics: &MemoryMetrics,
+    id: &str,
+    name: &str,
+    description: &str,
+    unit: &str,
+    points: &[(&str, f64)],
+) -> Result<(), A2aLabError> {
+    let metric_id = MetricId::new(id)?;
     metrics
         .insert_metric(MetricDescriptor {
             id: metric_id.clone(),
-            name: "Latency".to_owned(),
-            description: "Request latency".to_owned(),
-            unit: "ms".to_owned(),
+            name: name.to_owned(),
+            description: description.to_owned(),
+            unit: unit.to_owned(),
             asset_id: None,
             semantic_id: None,
         })
         .await;
-    metrics
-        .insert_point(
-            metric_id,
-            MetricPoint::new(UtcTimestamp::parse("2024-01-01T00:00:00Z")?, 5.0)?,
-        )
-        .await?;
-
-    let tasks = MemoryTasks::new();
-    tasks
-        .insert(TaskDefinition {
-            id: TaskId::new("build")?,
-            name: "Build".to_owned(),
-            description: "Build the lab".to_owned(),
-            asset_id: None,
-            semantic_id: None,
-            input_schema: None,
-            output_schema: None,
-        })
-        .await;
-
-    let images = MemoryImages::new();
-    images
-        .insert_source(ImageSource {
-            id: ImageSourceId::new("bench")?,
-            name: "Bench".to_owned(),
-            description: "Bench camera".to_owned(),
-            asset_id: None,
-            semantic_id: None,
-        })
-        .await?;
-    images.insert_image(frame()?).await?;
-    images
-        .set_current(ImageSourceId::new("bench")?, ImageId::new("current")?)
-        .await?;
-
-    Ok(A2aLabService::new(logs, metrics, tasks)
-        .with_images(images)
-        .share())
+    for (timestamp, value) in points {
+        metrics
+            .insert_point(
+                metric_id.clone(),
+                MetricPoint::new(UtcTimestamp::parse(timestamp)?, *value)?,
+            )
+            .await?;
+    }
+    Ok(())
 }
 
 fn frame() -> Result<Image, A2aLabError> {

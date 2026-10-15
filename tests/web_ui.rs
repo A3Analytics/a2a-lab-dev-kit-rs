@@ -81,6 +81,59 @@ fn has_extension(value: &str, extension: &str) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
 }
 
+async fn assert_chart_scripts<'a>(base: &str, html: &'a str) -> &'a str {
+    let chart_path = script_src(html, "/ui/assets/chart-");
+    let bridge_path = script_src(html, "/ui/assets/chart-bridge-");
+    let boot_path = script_src(html, "/ui/assets/boot-");
+    assert!(!chart_path.contains("bridge"), "chart asset was the bridge");
+    assert!(html.find(chart_path).unwrap() < html.find(bridge_path).unwrap());
+    assert!(html.find(bridge_path).unwrap() < html.find(boot_path).unwrap());
+    assert_script(base, chart_path, "Chart.js v4.5.1").await;
+    assert_script(base, bridge_path, "renderMetricChart").await;
+    boot_path
+}
+
+fn script_src<'a>(html: &'a str, prefix: &str) -> &'a str {
+    let mut rest = html;
+    while let Some(start) = rest.find("src=\"") {
+        let after = &rest[start + 5..];
+        let end = after
+            .find('"')
+            .unwrap_or_else(|| panic!("unterminated script src"));
+        let value = &after[..end];
+        if value.starts_with(prefix) {
+            return value;
+        }
+        rest = &after[end + 1..];
+    }
+    panic!("missing script {prefix}");
+}
+
+async fn assert_script(base: &str, path: &str, marker: &str) {
+    let response = get(&format!("{base}{path}"), None).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        header(&response, "content-type"),
+        "text/javascript; charset=utf-8"
+    );
+    assert_eq!(
+        header(&response, "cache-control"),
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(header(&response, "x-content-type-options"), "nosniff");
+    assert!(
+        header(&response, "content-security-policy")
+            .contains("script-src 'self' 'wasm-unsafe-eval'")
+    );
+    assert!(!header(&response, "content-security-policy").contains("unsafe-inline"));
+    let body = response.text().await.unwrap();
+    assert!(body.contains(marker), "script missing {marker}");
+    assert!(!body.contains("eval("));
+    assert!(!body.contains("new Function"));
+    assert!(!body.contains(AGENT_MARKER));
+    assert!(!body.contains(BEARER_SECRET));
+}
+
 fn quoted_attr<'a>(html: &'a str, marker: &str) -> &'a str {
     let start = html
         .find(marker)
@@ -149,7 +202,7 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert!(header(&logo, "cache-control").contains("immutable"));
     assert!(logo.text().await.unwrap().contains("<svg"));
     let css_path = quoted_attr(&html, "href=\"");
-    let boot_path = quoted_attr(&html, "src=\"");
+    let boot_path = assert_chart_scripts(&base, &html).await;
     assert!(css_path.starts_with("/ui/assets/app-"));
     assert!(has_extension(css_path, "css"));
     assert!(boot_path.starts_with("/ui/assets/boot-"));

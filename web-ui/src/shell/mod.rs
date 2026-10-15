@@ -4,6 +4,7 @@ mod chat;
 mod http;
 mod inventory;
 mod logs;
+mod metrics;
 mod nav;
 mod page;
 mod present;

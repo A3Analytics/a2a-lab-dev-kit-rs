@@ -24,6 +24,10 @@ mod packed {
 #[path = "../../web-ui/build/freshness.rs"]
 mod freshness;
 
+#[cfg(all(test, feature = "web-ui"))]
+#[path = "../../web-ui/build/vendor.rs"]
+mod chart_vendor;
+
 pub(crate) fn router() -> Router {
     Router::new()
         .route("/ui", get(entry))

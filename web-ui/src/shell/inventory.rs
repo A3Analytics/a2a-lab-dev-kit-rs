@@ -56,7 +56,7 @@ pub fn mount(page: &Page, main: &web_sys::Element, primitive: Primitive) {
             body.append_child(&items).ok();
         });
         show(page, primitive, Kind::Pending, "", "");
-        if primitive == Primitive::Logs {
+        if matches!(primitive, Primitive::Logs | Primitive::Metrics) {
             page.set_data(spec.section, "hidden", "hidden");
         }
         page.set_data(spec.more, "aria-disabled", "true");
@@ -218,6 +218,9 @@ fn succeed(page: &Page, primitive: Primitive, listed: Listed, append: bool) {
     if primitive == Primitive::Logs {
         super::logs::sources_changed(page);
     }
+    if primitive == Primitive::Metrics {
+        super::metrics::catalog_changed(page);
+    }
     let next = listed.next_cursor.as_deref().unwrap_or("");
     page.set_data(spec.status, "data-next", next);
     page.set_data(
@@ -254,6 +257,9 @@ fn fail(page: &Page, primitive: Primitive, fault: &Fault) {
     super::workbench::note_loaded(page, primitive);
     if primitive == Primitive::Logs {
         super::logs::sources_changed(page);
+    }
+    if primitive == Primitive::Metrics {
+        super::metrics::catalog_changed(page);
     }
 }
 

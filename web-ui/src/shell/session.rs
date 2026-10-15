@@ -79,6 +79,7 @@ fn listen(page: &Page, transport: &Transport) {
     chat::install(page, transport);
     inventory::install(page, transport);
     super::logs::install(page, transport);
+    super::metrics::install(page, transport);
     super::workbench::install(page, transport);
 }
 

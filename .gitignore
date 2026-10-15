@@ -1,5 +1,7 @@
 /target
 web-ui/target/
+web-ui/patches/dioxus-charts/target/
+web-ui/vendor/
 **/*.rs.bk
 .DS_Store
 /backlog/tasks/

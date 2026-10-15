@@ -381,13 +381,7 @@ fn render_chips(page: &Page) {
     }
 }
 
-fn meta(
-    page: &Page,
-    parent: &web_sys::Element,
-    label: &str,
-    value: &str,
-    clear: Option<&str>,
-) {
+fn meta(page: &Page, parent: &web_sys::Element, label: &str, value: &str, clear: Option<&str>) {
     let chip = present::node(page, "span", None);
     page::attr(&chip, "class", "log-meta");
     let name = present::node(page, "span", None);
@@ -479,8 +473,7 @@ fn on_filters(page: &Page) {
             });
             paint(&page);
         }) as Box<dyn FnMut(Event)>);
-        let _ =
-            filters.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
+        let _ = filters.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
         closure.forget();
     }
     let Some(chips) = page.element("log-filter-chips") else {

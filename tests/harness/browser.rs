@@ -36,6 +36,13 @@ impl Browser {
         self.wait_until("document.readyState === 'complete'");
     }
 
+    pub fn move_mouse(&mut self, x: f64, y: f64) {
+        self.call(
+            "Input.dispatchMouseEvent",
+            &json!({ "type": "mouseMoved", "x": x, "y": y }),
+        );
+    }
+
     pub fn click(&mut self, id: &str) {
         self.click_selector(&format!("#{id}"));
     }

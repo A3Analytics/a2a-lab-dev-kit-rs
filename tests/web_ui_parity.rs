@@ -663,8 +663,18 @@ fn access(page: &mut Browser, status: &str) {
             ],
         );
         page.show("#metrics");
-        assert_reachable(page, &["inventory-metrics-more", "workbench-send"]);
-        assert_unreachable(page, &["inventory-logs-more"]);
+        assert_reachable(
+            page,
+            &["metric-pick-0", "metric-range-start", "metric-range-end"],
+        );
+        assert_unreachable(
+            page,
+            &[
+                "inventory-metrics-more",
+                "inventory-logs-more",
+                "workbench-send",
+            ],
+        );
         page.show("#agent");
         page.eval("document.getElementById('protocol-advanced').open = false");
         assert_reachable(page, &["protocol-advanced-summary"]);

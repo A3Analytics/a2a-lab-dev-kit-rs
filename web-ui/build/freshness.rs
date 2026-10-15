@@ -67,7 +67,7 @@ fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
         });
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with('.') || name == "target" {
+        if name.starts_with('.') || name == "target" || name == "vendor" {
             continue;
         }
         let path = entry.path();
@@ -77,6 +77,10 @@ fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
             files.push(path);
         }
     }
+}
+
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -122,6 +126,22 @@ mod tests {
         std::fs::write(root.join("src/lib.rs"), "fn beta() {}\n").unwrap();
         let second = fingerprint_tree(&root);
         assert_ne!(first, second);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fingerprint_ignores_the_generated_chart_cache() {
+        let root = std::env::temp_dir().join(format!("web-ui-vendor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("vendor")).unwrap();
+        std::fs::write(root.join("src/lib.rs"), "fn chart() {}\n").unwrap();
+        std::fs::write(root.join("vendor/chart.umd.min.js"), "one").unwrap();
+        let first = fingerprint_tree(&root);
+        std::fs::write(root.join("vendor/chart.umd.min.js"), "two").unwrap();
+        assert_eq!(first, fingerprint_tree(&root));
+        std::fs::write(root.join("src/lib.rs"), "fn changed() {}\n").unwrap();
+        assert_ne!(first, fingerprint_tree(&root));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -77,6 +77,12 @@ pub fn assemble(ui_dir: &Path, staging: &Path, pkg: &Path) -> Vec<String> {
     let logo = fs::read(ui_dir.join("static/logo.svg"))
         .unwrap_or_else(|error| panic!("read web UI logo: {error}"));
     let logo_name = format!("logo-{}.svg", short_hash(&logo));
+    let chart = fs::read(ui_dir.join("vendor/chart.umd.min.js"))
+        .unwrap_or_else(|error| panic!("read web UI chart: {error}"));
+    let chart_name = format!("chart-{}.js", short_hash(&chart));
+    let bridge = fs::read(ui_dir.join("static/chart-bridge.js"))
+        .unwrap_or_else(|error| panic!("read web UI chart bridge: {error}"));
+    let bridge_name = format!("chart-bridge-{}.js", short_hash(&bridge));
     let boot = format!("import init from \"./{js_name}\";\nawait init();\n");
     let boot_name = format!("boot-{}.js", short_hash(boot.as_bytes()));
     let template = fs::read_to_string(ui_dir.join("static/index.html"))
@@ -84,6 +90,8 @@ pub fn assemble(ui_dir: &Path, staging: &Path, pkg: &Path) -> Vec<String> {
     let html = template
         .replace("WEB_UI_CSS", &css_name)
         .replace("WEB_UI_BOOT", &boot_name)
+        .replace("WEB_UI_CHART_BRIDGE", &bridge_name)
+        .replace("WEB_UI_CHART", &chart_name)
         .replace("WEB_UI_LOGO", &logo_name);
     assert!(
         !html.contains("WEB_UI_"),
@@ -93,6 +101,8 @@ pub fn assemble(ui_dir: &Path, staging: &Path, pkg: &Path) -> Vec<String> {
     fs::write(assets.join(&js_name), js).unwrap_or_else(|error| panic!("{error}"));
     fs::write(assets.join(&css_name), css).unwrap_or_else(|error| panic!("{error}"));
     fs::write(assets.join(&logo_name), logo).unwrap_or_else(|error| panic!("{error}"));
+    fs::write(assets.join(&chart_name), chart).unwrap_or_else(|error| panic!("{error}"));
+    fs::write(assets.join(&bridge_name), bridge).unwrap_or_else(|error| panic!("{error}"));
     fs::write(assets.join(&boot_name), boot).unwrap_or_else(|error| panic!("{error}"));
     fs::write(pkg.join("index.html"), html).unwrap_or_else(|error| panic!("{error}"));
     let mut files = vec![
@@ -102,6 +112,8 @@ pub fn assemble(ui_dir: &Path, staging: &Path, pkg: &Path) -> Vec<String> {
         format!("assets/{wasm_name}"),
         format!("assets/{css_name}"),
         format!("assets/{logo_name}"),
+        format!("assets/{chart_name}"),
+        format!("assets/{bridge_name}"),
     ];
     files.sort();
     fs::write(pkg.join("manifest.txt"), files.join("\n"))

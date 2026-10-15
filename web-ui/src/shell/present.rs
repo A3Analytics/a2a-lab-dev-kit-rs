@@ -148,6 +148,7 @@ pub fn mount(page: &Page) {
     let tasks = view(page, "view-tasks", "", "");
     let images = view(page, "view-images", "", "");
     super::logs::mount(page, &logs);
+    super::metrics::mount(page, &metrics);
     super::inventory::mount(page, &logs, crate::inventory::Primitive::Logs);
     super::inventory::mount(page, &metrics, crate::inventory::Primitive::Metrics);
     super::inventory::mount(page, &tasks, crate::inventory::Primitive::Tasks);

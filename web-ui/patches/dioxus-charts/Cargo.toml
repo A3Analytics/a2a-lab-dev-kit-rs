@@ -1,0 +1,29 @@
+# Upstream: https://github.com/dioxus-community/dioxus-charts
+# tag v0.4.0, commit 32b7d2d0dfa38b0da48a4ed13dc91effe9b693be
+[package]
+name = "dioxus-charts"
+version = "0.4.0"
+authors = ["Hilton Medeiros"]
+edition = "2021"
+description = "Chart components library for Dioxus"
+repository = "https://github.com/dioxus-community/dioxus-charts"
+license = "MIT OR Apache-2.0"
+keywords = ["ui", "gui", "react", "wasm", "dioxus"]
+categories = ["wasm", "gui", "web-programming"]
+
+[package.metadata.upstream]
+repository = "https://github.com/dioxus-community/dioxus-charts"
+tag = "v0.4.0"
+commit = "32b7d2d0dfa38b0da48a4ed13dc91effe9b693be"
+
+[workspace]
+
+[dependencies]
+log = "0.4"
+dioxus = { version = "=0.7.10", default-features = false, features = ["launch", "macro", "html", "signals", "hooks"] }
+
+[dev-dependencies]
+dioxus-ssr = "=0.7.10"
+
+[profile.release]
+lto = true

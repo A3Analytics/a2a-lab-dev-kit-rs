@@ -460,10 +460,20 @@ pub(crate) async fn assert_public_assets(base: &str) {
         .expect("shell text");
     let mut bodies = vec![html.clone()];
     for marker in ["href=\"", "src=\""] {
-        if let Some(path) = quoted(&html, marker) {
-            bodies.push(fetch_text(&http, &format!("{base}{path}")).await);
+        for path in quoted_all(&html, marker) {
+            if path.starts_with('/') {
+                bodies.push(fetch_text(&http, &format!("{base}{path}")).await);
+            }
         }
     }
+    assert!(
+        bodies.iter().any(|body| body.contains("Chart.js v4.5.1")),
+        "vendored chart bundle was not served"
+    );
+    assert!(
+        bodies.iter().any(|body| body.contains("renderMetricChart")),
+        "chart bridge was not served"
+    );
     let glue = bodies
         .iter()
         .find(|body| body.contains(".wasm"))
@@ -521,10 +531,18 @@ async fn fetch_text(http: &reqwest::Client, url: &str) -> String {
         .unwrap_or_else(|_| panic!("read {url}"))
 }
 
-fn quoted<'a>(html: &'a str, marker: &str) -> Option<&'a str> {
-    let start = html.find(marker)? + marker.len();
-    let rest = &html[start..];
-    rest.find('"').map(|end| &rest[..end])
+fn quoted_all<'a>(html: &'a str, marker: &str) -> Vec<&'a str> {
+    let mut values = Vec::new();
+    let mut rest = html;
+    while let Some(start) = rest.find(marker) {
+        let after = &rest[start + marker.len()..];
+        let Some(end) = after.find('"') else {
+            break;
+        };
+        values.push(&after[..end]);
+        rest = &after[end + 1..];
+    }
+    values
 }
 
 fn task_blob(task: &a2a_lab_dev_kit::Task) -> String {
