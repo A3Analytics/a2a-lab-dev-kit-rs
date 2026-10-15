@@ -1,4 +1,4 @@
-//! Log reader. A source dropdown loads that source's records.
+//! Log reader. Source toggles choose which sources to load.
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -12,7 +12,7 @@ use crate::logs::{self, Record};
 use crate::shell::http::Transport;
 use crate::shell::page::{self, Page};
 use crate::shell::present;
-use crate::shell::session::{self, calls_allowed, message_id, take_secret};
+use crate::shell::session::{calls_allowed, message_id, take_secret};
 
 pub fn mount(page: &Page, parent: &web_sys::Element) {
     present::section(page, parent, "log-view", "Logs", |body| {
@@ -29,25 +29,11 @@ pub fn mount(page: &Page, parent: &web_sys::Element) {
         let filters = present::node(page, "div", Some("log-filters"));
         page::attr(&filters, "role", "group");
         page::attr(&filters, "aria-label", "Log filters");
-        let actions = present::node(page, "div", None);
-        page::attr(&actions, "class", "log-filter-group");
-        let actions_label = present::node(page, "p", None);
-        actions_label.set_text_content(Some("Actions"));
-        let action_row = present::node(page, "div", None);
-        page::attr(&action_row, "class", "log-actions");
-        present::button(page, &action_row, "log-view-get", "Get logs");
-        present::button(page, &action_row, "log-view-more", "More logs");
-        actions.append_child(&actions_label).ok();
-        actions.append_child(&action_row).ok();
-        filters.append_child(&actions).ok();
-        let source_group = present::node(page, "div", None);
+        let source_group = present::node(page, "div", Some("log-view-sources"));
         page::attr(&source_group, "class", "log-filter-group");
-        let source_label = present::node(page, "label", None);
-        page::attr(&source_label, "for", "log-view-source");
+        let source_label = present::node(page, "p", None);
         source_label.set_text_content(Some("Source"));
-        let select = present::node(page, "select", Some("log-view-source"));
         source_group.append_child(&source_label).ok();
-        source_group.append_child(&select).ok();
         filters.append_child(&source_group).ok();
         let search_group = present::node(page, "div", None);
         page::attr(&search_group, "class", "log-filter-group");
@@ -60,6 +46,26 @@ pub fn mount(page: &Page, parent: &web_sys::Element) {
         search_group.append_child(&search_label).ok();
         search_group.append_child(&search).ok();
         filters.append_child(&search_group).ok();
+        let range_group = present::node(page, "div", None);
+        page::attr(&range_group, "class", "log-filter-group");
+        let range_label = present::node(page, "p", None);
+        range_label.set_text_content(Some("Date range"));
+        let start_label = present::node(page, "label", None);
+        page::attr(&start_label, "for", "log-range-start");
+        start_label.set_text_content(Some("Start"));
+        let start = present::node(page, "input", Some("log-range-start"));
+        page::attr(&start, "type", "date");
+        let end_label = present::node(page, "label", None);
+        page::attr(&end_label, "for", "log-range-end");
+        end_label.set_text_content(Some("End"));
+        let end = present::node(page, "input", Some("log-range-end"));
+        page::attr(&end, "type", "date");
+        range_group.append_child(&range_label).ok();
+        range_group.append_child(&start_label).ok();
+        range_group.append_child(&start).ok();
+        range_group.append_child(&end_label).ok();
+        range_group.append_child(&end).ok();
+        filters.append_child(&range_group).ok();
         let severity_group = present::node(page, "div", None);
         page::attr(&severity_group, "class", "log-filter-group");
         let severity_label = present::node(page, "p", None);
@@ -100,84 +106,92 @@ pub fn mount(page: &Page, parent: &web_sys::Element) {
         body.append_child(&browser).ok();
     });
     fill_sources(page, &[]);
-    page.set_data("log-view-status", "data-next", "");
     page.set_data("log-view-status", "data-gen", "0");
-    page.set_data("log-view-more", "aria-disabled", "true");
     page.set_text("log-view-status", "Choose a log source.");
 }
 
 pub fn install(page: &Page, transport: &Transport) {
     TRANSPORT.with(|slot| *slot.borrow_mut() = Some(transport.clone()));
-    session::on_click(
-        page,
-        transport,
-        "log-view-get",
-        |page, transport, _event| async move {
-            load(&page, &transport, false).await;
-        },
-    );
-    session::on_click(
-        page,
-        transport,
-        "log-view-more",
-        |page, transport, _event| async move {
-            load(&page, &transport, true).await;
-        },
-    );
-    on_change(page, transport);
+    on_range(page);
     on_filters(page);
 }
 
 pub fn sources_changed(page: &Page) {
     let items = super::inventory::loaded(Primitive::Logs);
-    let previous = page.control_value("log-view-source");
+    let ids = items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+    let catalog_changed = CATALOG.with(|slot| {
+        let mut catalog = slot.borrow_mut();
+        if *catalog == ids {
+            return false;
+        }
+        *catalog = ids;
+        true
+    });
+    SELECTED.with(|slot| {
+        slot.borrow_mut()
+            .retain(|id| items.iter().any(|item| item.id == *id));
+    });
     fill_sources(page, &items);
-    let next = if items.iter().any(|item| item.id == previous) {
-        previous.clone()
-    } else {
-        items
-            .first()
-            .map(|item| item.id.clone())
-            .unwrap_or_default()
-    };
-    page.set_control("log-view-source", &next);
-    if next.is_empty() {
+    if items.is_empty() {
         clear_entries(page);
-        page.set_data("log-view-status", "data-next", "");
-        page.set_data("log-view-more", "aria-disabled", "true");
         page.set_text("log-view-status", "No log sources.");
         page.set_text("log-view-alert", "");
         return;
     }
-    if next != previous {
-        let Some(transport) = transport() else {
-            return;
-        };
-        let page = page.clone();
-        spawn_local(async move {
-            load(&page, &transport, false).await;
-        });
+    if catalog_changed {
+        reload(page);
     }
 }
 
 fn fill_sources(page: &Page, items: &[inventory::Item]) {
-    let Some(select) = page.element("log-view-source") else {
+    let Some(group) = page.element("log-view-sources") else {
         return;
     };
-    page::clear_children(&select);
-    if items.is_empty() {
-        let option = present::node(page, "option", None);
-        page::attr(&option, "value", "");
-        option.set_text_content(Some("None loaded"));
-        select.append_child(&option).ok();
-        return;
+    let label = group.first_child();
+    page::clear_children(&group);
+    if let Some(label) = label {
+        group.append_child(&label).ok();
     }
-    for item in items {
-        let option = present::node(page, "option", None);
-        page::attr(&option, "value", &item.id);
-        option.set_text_content(Some(&source_label(item)));
-        select.append_child(&option).ok();
+    let selected = selected_ids();
+    source_facet(
+        page,
+        &group,
+        "log-source-all",
+        "",
+        if items.is_empty() {
+            "None loaded"
+        } else {
+            "All"
+        },
+        items.is_empty() || selected.is_empty(),
+    );
+    for (index, item) in items.iter().enumerate() {
+        source_facet(
+            page,
+            &group,
+            &format!("log-source-{index}"),
+            &item.id,
+            &source_label(item),
+            selected.iter().any(|id| id == &item.id),
+        );
     }
+}
+
+fn source_text(source_id: &str) -> String {
+    super::inventory::loaded(Primitive::Logs)
+        .into_iter()
+        .find(|item| item.id == source_id)
+        .map(|item| {
+            if item.name.is_empty() {
+                item.id
+            } else {
+                item.name
+            }
+        })
+        .unwrap_or_else(|| source_id.to_owned())
 }
 
 fn source_label(item: &inventory::Item) -> String {
@@ -193,85 +207,65 @@ fn source_label(item: &inventory::Item) -> String {
     }
 }
 
-fn on_change(page: &Page, transport: &Transport) {
-    let Some(element) = page.element("log-view-source") else {
-        return;
-    };
-    let page = page.clone();
-    let transport = transport.clone();
-    let closure = Closure::wrap(Box::new(move |_event: Event| {
-        let page = page.clone();
-        let transport = transport.clone();
-        spawn_local(async move {
-            load(&page, &transport, false).await;
-        });
-    }) as Box<dyn FnMut(Event)>);
-    let _ = element.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
-    closure.forget();
-}
-
-async fn load(page: &Page, transport: &Transport, append: bool) {
+async fn load(page: &Page, transport: &Transport) {
     if !calls_allowed(page) {
         return;
     }
-    let source = page.control_value("log-view-source");
-    if source.is_empty() {
+    let sources = active_sources();
+    if sources.is_empty() {
         page.set_text("log-view-alert", "Choose a log source.");
         return;
     }
-    let cursor = if append {
-        page.data("log-view-status", "data-next")
-    } else {
-        String::new()
+    let range = selected_range();
+    let (start, end) = match &range {
+        logs::QueryRange::Window => ("", ""),
+        logs::QueryRange::Bounded { start, end } => (start.as_str(), end.as_str()),
     };
-    if append && cursor.is_empty() {
-        page.set_text("log-view-alert", "There is no further page.");
-        return;
-    }
-    let Ok(secret) = take_secret(page, &[source.as_str()]) else {
-        return;
-    };
-    let command = logs::command(&source, (!cursor.is_empty()).then_some(cursor.as_str()));
-    let Ok(body) = crate::codec::command_message(&message_id(), &command, "") else {
-        show_alert(page, "The log query could not be built.");
+    let mut visible = vec![start.to_owned(), end.to_owned()];
+    visible.extend(sources.iter().cloned());
+    let visible = visible.iter().map(String::as_str).collect::<Vec<_>>();
+    let Ok(secret) = take_secret(page, &visible) else {
         return;
     };
     let generation = bump(page);
     page.set_text("log-view-status", "Loading logs.");
     page.set_text("log-view-alert", "");
     page.set_data("log-view", "aria-busy", "true");
-    let result = transport.send(&body, secret.as_deref()).await;
-    if page.data("log-view-status", "data-gen") != generation.to_string() {
-        return;
+    let mut records = Vec::new();
+    for source in &sources {
+        let command = logs::command(source, None, &range);
+        let Ok(body) = crate::codec::command_message(&message_id(), &command, "") else {
+            show_alert(page, "The log query could not be built.");
+            return;
+        };
+        let result = transport.send(&body, secret.as_deref()).await;
+        if page.data("log-view-status", "data-gen") != generation.to_string() {
+            return;
+        }
+        match result {
+            Err(()) => {
+                show_alert(page, "The browser could not reach this origin.");
+                return;
+            }
+            Ok(reply) => match logs::interpret(&reply, secret.as_deref()) {
+                Ok(read) => records.extend(read.records),
+                Err(fault) => {
+                    show_alert(page, &fault_message(&fault));
+                    return;
+                }
+            },
+        }
     }
     page.set_data("log-view", "aria-busy", "false");
-    match result {
-        Err(()) => show_alert(page, "The browser could not reach this origin."),
-        Ok(reply) => match logs::interpret(&reply, secret.as_deref()) {
-            Ok(read) => show_records(page, read.records, read.next_cursor.as_deref(), append),
-            Err(fault) => show_alert(page, &fault_message(&fault)),
-        },
-    }
+    records.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+    show_records(page, records);
 }
 
-fn show_records(page: &Page, incoming: Vec<Record>, next: Option<&str>, append: bool) {
-    let records = if append {
-        let mut kept = remembered();
-        kept.extend(incoming);
-        kept
-    } else {
-        incoming
-    };
+fn show_records(page: &Page, records: Vec<Record>) {
+    let empty = records.is_empty();
     remember(&records);
     paint(page);
-    let next = next.unwrap_or("");
-    page.set_data("log-view-status", "data-next", next);
-    page.set_data(
-        "log-view-more",
-        "aria-disabled",
-        if next.is_empty() { "true" } else { "false" },
-    );
-    if records.is_empty() {
+    if empty {
         page.set_text("log-view-status", "No logs for this source.");
     } else {
         page.set_text("log-view-status", "");
@@ -287,6 +281,7 @@ fn paint(page: &Page) {
         .cloned()
         .collect();
     sync_facets(page);
+    sync_sources(page);
     render_chips(page);
     render(page, &shown);
     page.set_text("log-filter-count", &count_text(shown.len(), records.len()));
@@ -344,6 +339,7 @@ fn render(page: &Page, records: &[Record]) {
         identity.append_child(&title).ok();
         let tags = present::node(page, "div", None);
         page::attr(&tags, "class", "log-card-tags");
+        meta(page, &tags, "Source", &source_text(&record.source_id), None);
         meta(page, &tags, "Severity", &record.level, None);
         if !record.attributes.is_empty() {
             meta(page, &tags, "Attributes", &record.attributes, None);
@@ -364,7 +360,15 @@ fn render_chips(page: &Page) {
         let filter = slot.borrow();
         (filter.query.clone(), filter.levels.clone())
     });
-    if query.is_empty() && levels.is_empty() {
+    let sources = selected_sources();
+    let range = match selected_range() {
+        logs::QueryRange::Window => None,
+        logs::QueryRange::Bounded { .. } => Some((
+            page.control_value("log-range-start"),
+            page.control_value("log-range-end"),
+        )),
+    };
+    if query.is_empty() && levels.is_empty() && sources.is_empty() && range.is_none() {
         page.set_data("log-filter-chips", "hidden", "hidden");
         return;
     }
@@ -373,8 +377,26 @@ fn render_chips(page: &Page) {
     page::attr(&heading, "class", "log-chips-label");
     heading.set_text_content(Some("Filters"));
     chips.append_child(&heading).ok();
+    for (id, source) in sources {
+        meta(
+            page,
+            &chips,
+            "Source",
+            &source,
+            Some(&format!("source:{id}")),
+        );
+    }
     if !query.is_empty() {
         meta(page, &chips, "Search", &query, Some("search"));
+    }
+    if let Some((start, end)) = range {
+        meta(
+            page,
+            &chips,
+            "Date",
+            &format!("{start} – {end}"),
+            Some("range"),
+        );
     }
     for level in levels {
         meta(page, &chips, "Severity", &level, Some(&level));
@@ -453,12 +475,18 @@ fn on_filters(page: &Page) {
     if let Some(filters) = page.element("log-filters") {
         let page = page.clone();
         let closure = Closure::wrap(Box::new(move |event: Event| {
-            let Some(level) = event
+            let Some(button) = event
                 .target()
                 .and_then(|target| target.dyn_ref::<web_sys::Element>().cloned())
                 .and_then(|element| element.closest("button").ok().flatten())
-                .and_then(|button| button.get_attribute("data-level"))
             else {
+                return;
+            };
+            if let Some(source) = button.get_attribute("data-source") {
+                toggle_source(&page, &source);
+                return;
+            }
+            let Some(level) = button.get_attribute("data-level") else {
                 return;
             };
             FILTER.with(|slot| {
@@ -489,21 +517,183 @@ fn on_filters(page: &Page) {
         else {
             return;
         };
-        FILTER.with(|slot| {
-            let mut filter = slot.borrow_mut();
-            if clear == "search" {
-                filter.query.clear();
-            } else {
-                filter.levels.retain(|level| level != &clear);
+        match clear.as_str() {
+            "search" => {
+                FILTER.with(|slot| slot.borrow_mut().query.clear());
+                page.set_control("log-filter-search", "");
+                paint(&page);
             }
-        });
-        if clear == "search" {
-            page.set_control("log-filter-search", "");
+            clear if clear.starts_with("source:") => {
+                let id = clear.trim_start_matches("source:").to_owned();
+                SELECTED.with(|slot| slot.borrow_mut().retain(|source| source != &id));
+                sync_sources(&page);
+                reload(&page);
+            }
+            "range" => {
+                RANGE.with(|slot| *slot.borrow_mut() = logs::QueryRange::Window);
+                page.set_control("log-range-start", "");
+                page.set_control("log-range-end", "");
+                reload(&page);
+            }
+            level => {
+                let level = level.to_owned();
+                FILTER.with(|slot| slot.borrow_mut().levels.retain(|item| item != &level));
+                paint(&page);
+            }
         }
-        paint(&page);
     }) as Box<dyn FnMut(Event)>);
     let _ = chips.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
     closure.forget();
+}
+
+fn on_range(page: &Page) {
+    for id in ["log-range-start", "log-range-end"] {
+        let Some(input) = page.element(id) else {
+            continue;
+        };
+        let page = page.clone();
+        let change = Closure::wrap(Box::new(move |_event: Event| {
+            commit_range(&page);
+        }) as Box<dyn FnMut(Event)>);
+        let _ = input.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
+        change.forget();
+    }
+}
+
+fn commit_range(page: &Page) {
+    let start = page.control_value("log-range-start");
+    let end = page.control_value("log-range-end");
+    match logs::date_range(&start, &end) {
+        Ok(range) => {
+            page.set_text("log-view-alert", "");
+            let changed = RANGE.with(|slot| {
+                let mut current = slot.borrow_mut();
+                if *current == range {
+                    return false;
+                }
+                *current = range;
+                true
+            });
+            if changed {
+                reload(page);
+            }
+        }
+        Err(message) => page.set_text("log-view-alert", message),
+    }
+}
+
+fn reload(page: &Page) {
+    let Some(transport) = transport() else {
+        return;
+    };
+    let page = page.clone();
+    spawn_local(async move {
+        load(&page, &transport).await;
+    });
+}
+
+fn selected_range() -> logs::QueryRange {
+    RANGE.with(|slot| slot.borrow().clone())
+}
+
+fn selected_sources() -> Vec<(String, String)> {
+    selected_ids()
+        .into_iter()
+        .map(|id| {
+            let label = super::inventory::loaded(Primitive::Logs)
+                .into_iter()
+                .find(|item| item.id == id)
+                .map(|item| source_label(&item))
+                .unwrap_or_else(|| id.clone());
+            (id, label)
+        })
+        .collect()
+}
+
+fn selected_ids() -> Vec<String> {
+    SELECTED.with(|slot| slot.borrow().clone())
+}
+
+fn active_sources() -> Vec<String> {
+    let items = super::inventory::loaded(Primitive::Logs);
+    let selected = selected_ids();
+    if selected.is_empty() {
+        items.into_iter().map(|item| item.id).collect()
+    } else {
+        selected
+            .into_iter()
+            .filter(|id| items.iter().any(|item| item.id == *id))
+            .collect()
+    }
+}
+
+fn toggle_source(page: &Page, source: &str) {
+    let changed = SELECTED.with(|slot| {
+        let mut selected = slot.borrow_mut();
+        if source.is_empty() {
+            if selected.is_empty() {
+                return false;
+            }
+            selected.clear();
+        } else if let Some(index) = selected.iter().position(|id| id == source) {
+            selected.remove(index);
+        } else {
+            selected.push(source.to_owned());
+        }
+        true
+    });
+    if changed {
+        sync_sources(page);
+        reload(page);
+    }
+}
+
+fn sync_sources(page: &Page) {
+    let selected = selected_ids();
+    let items = super::inventory::loaded(Primitive::Logs);
+    page.set_data(
+        "log-source-all",
+        "aria-pressed",
+        if items.is_empty() || selected.is_empty() {
+            "true"
+        } else {
+            "false"
+        },
+    );
+    for (index, item) in items.iter().enumerate() {
+        page.set_data(
+            &format!("log-source-{index}"),
+            "aria-pressed",
+            if selected.iter().any(|id| id == &item.id) {
+                "true"
+            } else {
+                "false"
+            },
+        );
+    }
+}
+
+fn source_facet(
+    page: &Page,
+    parent: &web_sys::Element,
+    id: &str,
+    source: &str,
+    label: &str,
+    pressed: bool,
+) {
+    let button = present::node(page, "button", Some(id));
+    page::attr(&button, "type", "button");
+    page::attr(&button, "class", "log-facet");
+    page::attr(&button, "data-source", source);
+    page::attr(&button, "aria-pressed", if pressed { "true" } else { "false" });
+    let mark = present::node(page, "span", None);
+    page::attr(&mark, "class", "log-facet-mark");
+    page::attr(&mark, "aria-hidden", "true");
+    let text = present::node(page, "span", None);
+    text.set_text_content(Some(label));
+    button.append_child(&mark).ok();
+    button.append_child(&text).ok();
+    parent.append_child(&button).ok();
 }
 
 fn commit_search(page: &Page) {
@@ -584,6 +774,9 @@ std::thread_local! {
     static TRANSPORT: RefCell<Option<Transport>> = const { RefCell::new(None) };
     static RECORDS: RefCell<Vec<Record>> = const { RefCell::new(Vec::new()) };
     static FILTER: RefCell<LogFilter> = const { RefCell::new(LogFilter::new()) };
+    static RANGE: RefCell<logs::QueryRange> = const { RefCell::new(logs::QueryRange::Window) };
+    static SELECTED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static CATALOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 struct LogFilter {

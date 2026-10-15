@@ -104,8 +104,8 @@ The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-1
 
 Each primitive page lists that primitive and runs its commands:
 
-- Logs runs `list_log_sources` and `query_logs`. The page is a list: a filter sidebar chooses the source, searches messages, and narrows severity, and the other column shows those records as cards. The source catalog and the command runner stay off that page.
-- Metrics runs `list_metrics` and `query_metric`. The page is a list: the sidebar lists each metric so one click switches the series, a start and end limit the UTC time range, a search narrows sample values, and the other column draws those samples as a line graph that fills the column. Hovering a point shows that sample's time and value, and the graph resizes with the page. A visually hidden list keeps the same readings for assistive technology. The catalog and the command runner stay off that page.
+- Logs runs `list_log_sources` and `query_logs`. The page is a list: a filter sidebar toggles sources, searches messages, limits the UTC date range, and narrows severity, and the other column shows those records as cards, each with its source. The source catalog and the command runner stay off that page.
+- Metrics runs `list_metrics` and `query_metric`. The page is a list: the sidebar lists each metric so one click switches the series, a start and end limit the UTC time range, and the other column draws those samples as a line graph that fills the column. Hovering a point shows that sample's time and value, and the graph resizes with the page. A visually hidden list keeps the same readings for assistive technology. The catalog and the command runner stay off that page.
 - Tasks runs `list_tasks`, `start_task`, and `get_task_status`.
 - Images runs `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`.
 

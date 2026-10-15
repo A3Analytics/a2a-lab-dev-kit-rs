@@ -61,17 +61,6 @@ pub fn mount(page: &Page, parent: &web_sys::Element) {
         source_group.append_child(&source_label).ok();
         source_group.append_child(&sources).ok();
         filters.append_child(&source_group).ok();
-        let search_group = present::node(page, "div", None);
-        page::attr(&search_group, "class", "log-filter-group");
-        let search_label = present::node(page, "label", None);
-        page::attr(&search_label, "for", "metric-filter-search");
-        search_label.set_text_content(Some("Search"));
-        let search = present::node(page, "input", Some("metric-filter-search"));
-        page::attr(&search, "type", "search");
-        page::attr(&search, "placeholder", "Value");
-        search_group.append_child(&search_label).ok();
-        search_group.append_child(&search).ok();
-        filters.append_child(&search_group).ok();
         let results = present::node(page, "div", Some("metric-results"));
         page::attr(&results, "class", "log-results");
         let count = present::node(page, "p", Some("metric-filter-count"));
@@ -83,10 +72,6 @@ pub fn mount(page: &Page, parent: &web_sys::Element) {
         page::attr(&chips, "class", "log-chips");
         page::attr(&chips, "hidden", "hidden");
         scroll.append_child(&chips).ok();
-        let empty = present::node(page, "p", Some("metric-filter-empty"));
-        empty.set_text_content(Some("No samples match this filter."));
-        page::attr(&empty, "hidden", "hidden");
-        scroll.append_child(&empty).ok();
         let plot = present::node(page, "div", Some("metric-plot"));
         page::attr(&plot, "class", "metric-plot");
         page::attr(&plot, "hidden", "hidden");
@@ -117,8 +102,8 @@ pub fn redraw(page: &Page) {
 pub fn install(page: &Page, transport: &Transport) {
     TRANSPORT.with(|slot| *slot.borrow_mut() = Some(transport.clone()));
     on_sources(page, transport);
-    on_search(page);
     on_range(page);
+    on_chips(page);
 }
 
 pub fn catalog_changed(page: &Page) {
@@ -141,7 +126,6 @@ pub fn catalog_changed(page: &Page) {
         return;
     }
     if next != previous {
-        reset_filter(page);
         reload(page);
     }
 }
@@ -223,7 +207,6 @@ fn on_sources(page: &Page, transport: &Transport) {
         if id.is_empty() || id == selected() {
             return;
         }
-        reset_filter(&page_for_click);
         choose(&page_for_click, &id);
         let page = page_for_click.clone();
         let transport = transport_for_click.clone();
@@ -251,7 +234,6 @@ fn on_sources(page: &Page, transport: &Transport) {
         if id == selected() {
             return;
         }
-        reset_filter(&page_for_key);
         choose(&page_for_key, &id);
         focus_selected(&page_for_key);
         let page = page_for_key.clone();
@@ -264,28 +246,7 @@ fn on_sources(page: &Page, transport: &Transport) {
     key.forget();
 }
 
-fn on_search(page: &Page) {
-    if let Some(search) = page.element("metric-filter-search") {
-        let committed = page.clone();
-        let change = Closure::wrap(Box::new(move |_event: Event| {
-            commit_search(&committed);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = search.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
-        change.forget();
-        let committed = page.clone();
-        let key = Closure::wrap(Box::new(move |event: Event| {
-            let Some(key_event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
-                return;
-            };
-            if key_event.key() != "Enter" {
-                return;
-            }
-            key_event.prevent_default();
-            commit_search(&committed);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = search.add_event_listener_with_callback("keydown", key.as_ref().unchecked_ref());
-        key.forget();
-    }
+fn on_chips(page: &Page) {
     let Some(chips) = page.element("metric-filter-chips") else {
         return;
     };
@@ -299,20 +260,13 @@ fn on_search(page: &Page) {
         else {
             return;
         };
-        match clear.as_str() {
-            "search" => {
-                FILTER.with(|slot| slot.borrow_mut().clear());
-                page.set_control("metric-filter-search", "");
-                paint(&page);
-            }
-            "range" => {
-                RANGE.with(|slot| *slot.borrow_mut() = metrics::QueryRange::Window);
-                page.set_control("metric-range-start", "");
-                page.set_control("metric-range-end", "");
-                reload(&page);
-            }
-            _ => {}
+        if clear != "range" {
+            return;
         }
+        RANGE.with(|slot| *slot.borrow_mut() = metrics::QueryRange::Window);
+        page.set_control("metric-range-start", "");
+        page.set_control("metric-range-end", "");
+        reload(&page);
     }) as Box<dyn FnMut(Event)>);
     let _ = chips.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
     closure.forget();
@@ -417,39 +371,16 @@ fn show_samples(page: &Page, samples: Vec<Sample>) {
 
 fn paint(page: &Page) {
     let samples = remembered();
-    let query = FILTER.with(|slot| slot.borrow().clone());
-    let shown: Vec<Sample> = samples
-        .iter()
-        .filter(|sample| matches_query(sample, &query))
-        .cloned()
-        .collect();
-    render_chips(page, &query);
-    render(page, &shown);
-    page.set_text(
-        "metric-filter-count",
-        &count_text(shown.len(), samples.len()),
-    );
-    if samples.is_empty() || !shown.is_empty() {
-        page.set_data("metric-filter-empty", "hidden", "hidden");
-    } else {
-        page.remove_attr("metric-filter-empty", "hidden");
-    }
+    render_chips(page);
+    render(page, &samples);
+    page.set_text("metric-filter-count", &count_text(samples.len()));
 }
 
-fn count_text(shown: usize, total: usize) -> String {
-    if total == 0 || shown == total {
-        match total {
-            1 => "1 sample".to_owned(),
-            count => format!("{count} samples"),
-        }
-    } else {
-        format!("{shown} of {total} samples")
+fn count_text(total: usize) -> String {
+    match total {
+        1 => "1 sample".to_owned(),
+        count => format!("{count} samples"),
     }
-}
-
-fn matches_query(sample: &Sample, query: &str) -> bool {
-    let query = query.trim().to_lowercase();
-    query.is_empty() || sample.value.to_lowercase().contains(&query)
 }
 
 fn render(page: &Page, samples: &[Sample]) {
@@ -511,7 +442,7 @@ extern "C" {
     ) -> Result<(), wasm_bindgen::JsValue>;
 }
 
-fn render_chips(page: &Page, query: &str) {
+fn render_chips(page: &Page) {
     let Some(chips) = page.element("metric-filter-chips") else {
         return;
     };
@@ -520,27 +451,22 @@ fn render_chips(page: &Page, query: &str) {
         metrics::QueryRange::Window => None,
         metrics::QueryRange::Bounded { start, end } => Some((start, end)),
     };
-    if query.is_empty() && range.is_none() {
+    let Some((start, end)) = range else {
         page.set_data("metric-filter-chips", "hidden", "hidden");
         return;
-    }
+    };
     page.remove_attr("metric-filter-chips", "hidden");
     let heading = present::node(page, "span", None);
     page::attr(&heading, "class", "log-chips-label");
     heading.set_text_content(Some("Filters"));
     chips.append_child(&heading).ok();
-    if !query.is_empty() {
-        chip(page, &chips, "Search", query, "search");
-    }
-    if let Some((start, end)) = range {
-        chip(
-            page,
-            &chips,
-            "Time",
-            &format!("{} – {}", clock_label(&start), clock_label(&end)),
-            "range",
-        );
-    }
+    chip(
+        page,
+        &chips,
+        "Time",
+        &format!("{} – {}", clock_label(&start), clock_label(&end)),
+        "range",
+    );
 }
 
 fn chip(page: &Page, parent: &web_sys::Element, label: &str, value: &str, clear: &str) {
@@ -620,30 +546,9 @@ fn selected_range() -> metrics::QueryRange {
     RANGE.with(|slot| slot.borrow().clone())
 }
 
-fn commit_search(page: &Page) {
-    let query = page.control_value("metric-filter-search").trim().to_owned();
-    let changed = FILTER.with(|slot| {
-        let mut filter = slot.borrow_mut();
-        if *filter == query {
-            return false;
-        }
-        *filter = query;
-        true
-    });
-    if changed {
-        paint(page);
-    }
-}
-
 fn clear_samples(page: &Page) {
     remember(&[]);
-    reset_filter(page);
     paint(page);
-}
-
-fn reset_filter(page: &Page) {
-    FILTER.with(|slot| slot.borrow_mut().clear());
-    page.set_control("metric-filter-search", "");
 }
 
 fn fault_message(fault: &Fault) -> String {
@@ -683,7 +588,6 @@ std::thread_local! {
     static TRANSPORT: RefCell<Option<Transport>> = const { RefCell::new(None) };
     static SAMPLES: RefCell<Vec<Sample>> = const { RefCell::new(Vec::new()) };
     static SELECTED: RefCell<String> = const { RefCell::new(String::new()) };
-    static FILTER: RefCell<String> = const { RefCell::new(String::new()) };
     static RANGE: RefCell<metrics::QueryRange> = const { RefCell::new(metrics::QueryRange::Window) };
 }
 

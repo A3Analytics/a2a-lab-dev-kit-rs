@@ -191,7 +191,7 @@ fn assert_narrow(page: &mut Browser) {
         narrow["scroll"].as_u64().unwrap_or(u64::MAX) <= narrow["width"].as_u64().unwrap_or(0) + 24
     );
     let button = page
-        .eval("document.getElementById('log-view-get').getBoundingClientRect().width")
+        .eval("document.getElementById('log-range-start').getBoundingClientRect().width")
         .as_f64()
         .unwrap_or(0.0);
     assert!(button > 0.0);

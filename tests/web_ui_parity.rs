@@ -652,7 +652,15 @@ fn access(page: &mut Browser, status: &str) {
             assert_unreachable(page, &["nav-toggle"]);
         }
         page.show("#logs");
-        assert_reachable(page, &["log-view-source", "log-view-get"]);
+        assert_reachable(
+            page,
+            &[
+                "log-source-all",
+                "log-filter-search",
+                "log-range-start",
+                "log-range-end",
+            ],
+        );
         assert_unreachable(
             page,
             &[

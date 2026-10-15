@@ -513,7 +513,7 @@ fn chart_flow(base: &str) {
     assert_point_tooltip(&mut page);
     assert_metric_switch(&mut page);
     assert_chart_resizes(&mut page);
-    assert_value_filter(&mut page);
+    assert_time_range(&mut page);
     let console = page.console_text();
     assert!(!console.contains("EvalError"), "{console}");
     assert!(!console.contains("Content Security Policy"), "{console}");
@@ -588,12 +588,14 @@ fn assert_chart_resizes(page: &mut Browser) {
     assert!(wide > narrow + 40.0, "{wide} vs {narrow}");
 }
 
-fn assert_value_filter(page: &mut Browser) {
+fn assert_time_range(page: &mut Browser) {
     page.eval(
         "(() => {
-            const input = document.getElementById('metric-filter-search');
-            input.value = '12';
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+            const start = document.getElementById('metric-range-start');
+            const end = document.getElementById('metric-range-end');
+            start.value = '2024-01-01T00:01:00';
+            end.value = '2024-01-01T00:02:00';
+            end.dispatchEvent(new Event('change', { bubbles: true }));
             return true;
         })()",
     );
@@ -605,6 +607,7 @@ fn assert_value_filter(page: &mut Browser) {
     assert_eq!(filtered["ariaHidden"], Value::Null);
     let readings = filtered["readings"].as_str().unwrap_or_default();
     assert!(readings.contains("12 ms"), "{filtered}");
+    assert_eq!(page.eval("document.getElementById('metric-filter-search')"), Value::Null);
 }
 
 const CHART_STATE: &str = "(() => {

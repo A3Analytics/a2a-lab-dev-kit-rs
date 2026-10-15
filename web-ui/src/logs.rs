@@ -13,6 +13,7 @@ const RANGE_END: &str = "2100-01-01T00:00:00Z";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
+    pub source_id: String,
     pub timestamp: String,
     pub level: String,
     pub message: String,
@@ -25,20 +26,90 @@ pub struct Page {
     pub next_cursor: Option<String>,
 }
 
-pub fn command(source_id: &str, cursor: Option<&str>) -> Value {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueryRange {
+    Window,
+    Bounded { start: String, end: String },
+}
+
+pub fn date_range(start: &str, end: &str) -> Result<QueryRange, &'static str> {
+    let start = start.trim();
+    let end = end.trim();
+    if start.is_empty() && end.is_empty() {
+        return Ok(QueryRange::Window);
+    }
+    if start.is_empty() || end.is_empty() {
+        return Err("Enter a start and an end.");
+    }
+    let start = calendar_day(start).ok_or("Enter a UTC date range.")?;
+    let end = calendar_day(end).ok_or("Enter a UTC date range.")?;
+    if start > end {
+        return Err("The start must be on or before the end.");
+    }
+    let end = next_day(end).ok_or("Enter a UTC date range.")?;
+    Ok(QueryRange::Bounded {
+        start: format!("{}T00:00:00Z", format_day(start)),
+        end: format!("{}T00:00:00Z", format_day(end)),
+    })
+}
+
+pub fn command(source_id: &str, cursor: Option<&str>, range: &QueryRange) -> Value {
     let mut page = Map::new();
     page.insert("limit".to_owned(), Value::from(LIMIT));
     if let Some(cursor) = cursor.filter(|cursor| !cursor.is_empty()) {
         page.insert("cursor".to_owned(), Value::String(cursor.to_owned()));
     }
+    let (start, end) = match range {
+        QueryRange::Window => (RANGE_START, RANGE_END),
+        QueryRange::Bounded { start, end } => (start.as_str(), end.as_str()),
+    };
     serde_json::json!({
         "operation": "query_logs",
         "params": {
             "source_id": source_id,
-            "range": {"start": RANGE_START, "end": RANGE_END},
+            "range": {"start": start, "end": end},
             "page": page
         }
     })
+}
+
+fn calendar_day(value: &str) -> Option<(i32, u8, u8)> {
+    let mut parts = value.split('-');
+    let year = parts.next()?;
+    let month = parts.next()?.parse::<u8>().ok()?;
+    let day = parts.next()?.parse::<u8>().ok()?;
+    if year.len() != 4 || parts.next().is_some() {
+        return None;
+    }
+    let year = year.parse::<i32>().ok()?;
+    if month == 0 || month > 12 || day == 0 || day > days_in_month(year, month) {
+        return None;
+    }
+    Some((year, month, day))
+}
+
+fn next_day((year, month, day): (i32, u8, u8)) -> Option<(i32, u8, u8)> {
+    if day < days_in_month(year, month) {
+        return Some((year, month, day + 1));
+    }
+    if month < 12 {
+        return Some((year, month + 1, 1));
+    }
+    year.checked_add(1).map(|year| (year, 1, 1))
+}
+
+fn format_day((year, month, day): (i32, u8, u8)) -> String {
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn days_in_month(year: i32, month: u8) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => 0,
+    }
 }
 
 pub fn interpret(reply: &Reply, secret: Option<&str>) -> Result<Page, Fault> {
@@ -61,6 +132,7 @@ pub fn interpret(reply: &Reply, secret: Option<&str>) -> Result<Page, Fault> {
         Ok(outcome) => page_from(&outcome)?,
     };
     for record in &mut page.records {
+        record.source_id = codec::redact(&record.source_id, secret);
         record.timestamp = codec::redact(&record.timestamp, secret);
         record.level = codec::redact(&record.level, secret);
         record.message = codec::redact(&record.message, secret);
@@ -126,6 +198,7 @@ fn parse_payload(payload: &str) -> Result<Page, Fault> {
 fn parse_record(value: &Value) -> Result<Record, Fault> {
     let object = value.as_object().ok_or(Fault::Malformed)?;
     Ok(Record {
+        source_id: required(object, "source_id")?,
         timestamp: required(object, "timestamp")?,
         level: required(object, "level")?,
         message: required(object, "message")?,
@@ -155,13 +228,33 @@ mod tests {
 
     #[test]
     fn query_reads_one_source_across_the_viewer_window() {
-        let first = command("app", None);
+        let first = command("app", None, &QueryRange::Window);
         assert_eq!(first["operation"], "query_logs");
         assert_eq!(first["params"]["source_id"], "app");
         assert_eq!(first["params"]["range"]["start"], RANGE_START);
         assert_eq!(first["params"]["range"]["end"], RANGE_END);
         assert!(first["params"]["page"].get("cursor").is_none());
-        assert_eq!(command("app", Some("2"))["params"]["page"]["cursor"], "2");
+        assert_eq!(
+            command("app", Some("2"), &QueryRange::Window)["params"]["page"]["cursor"],
+            "2"
+        );
+    }
+
+    #[test]
+    fn date_range_includes_the_end_date() {
+        let range = date_range("2024-01-01", "2024-01-01").unwrap();
+        let query = command("app", None, &range);
+        assert_eq!(query["params"]["range"]["start"], "2024-01-01T00:00:00Z");
+        assert_eq!(query["params"]["range"]["end"], "2024-01-02T00:00:00Z");
+        assert_eq!(date_range("", "").unwrap(), QueryRange::Window);
+        assert_eq!(
+            date_range("2024-01-02", "").unwrap_err(),
+            "Enter a start and an end."
+        );
+        assert_eq!(
+            date_range("2024-01-02", "2024-01-01").unwrap_err(),
+            "The start must be on or before the end."
+        );
     }
 
     #[test]
@@ -190,6 +283,7 @@ mod tests {
         }));
         let page = interpret(&reply, Some("lab ready")).unwrap();
         assert_eq!(page.next_cursor.as_deref(), Some("2"));
+        assert_eq!(page.records[0].source_id, "app");
         assert_eq!(page.records[0].message, "[redacted]");
         assert_eq!(page.records[0].attributes, "");
         assert_eq!(page.records[1].level, "warn");

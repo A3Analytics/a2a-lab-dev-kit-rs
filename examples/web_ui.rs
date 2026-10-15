@@ -90,14 +90,8 @@ async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
 
 async fn seed_logs() -> Result<MemoryLogs, A2aLabError> {
     let logs = MemoryLogs::new();
-    logs.insert_source(LogSource {
-        id: SourceId::new("app")?,
-        name: "App".to_owned(),
-        description: "Application logs".to_owned(),
-        asset_id: None,
-        semantic_id: None,
-    })
-    .await;
+    insert_source(&logs, "app", "App", "Application logs").await?;
+    insert_source(&logs, "device", "Device", "Device logs").await?;
     for (timestamp, level, message, attributes) in [
         (
             "2024-01-01T00:00:00Z",
@@ -148,16 +142,60 @@ async fn seed_logs() -> Result<MemoryLogs, A2aLabError> {
             JsonObject::empty(),
         ),
     ] {
-        logs.insert_record(LogRecord {
-            source_id: SourceId::new("app")?,
-            timestamp: UtcTimestamp::parse(timestamp)?,
+        insert_record(&logs, "app", timestamp, level, message, attributes).await?;
+    }
+    for (timestamp, level, message) in [
+        ("2024-01-01T00:00:03Z", LogLevel::Info, "motor enabled"),
+        ("2024-01-01T00:00:20Z", LogLevel::Warn, "limit switch"),
+        ("2024-01-01T00:01:15Z", LogLevel::Error, "axis stalled"),
+        ("2024-01-01T00:02:00Z", LogLevel::Info, "home complete"),
+    ] {
+        insert_record(
+            &logs,
+            "device",
+            timestamp,
             level,
-            message: message.to_owned(),
-            attributes,
-        })
+            message,
+            JsonObject::empty(),
+        )
         .await?;
     }
     Ok(logs)
+}
+
+async fn insert_source(
+    logs: &MemoryLogs,
+    id: &str,
+    name: &str,
+    description: &str,
+) -> Result<(), A2aLabError> {
+    logs.insert_source(LogSource {
+        id: SourceId::new(id)?,
+        name: name.to_owned(),
+        description: description.to_owned(),
+        asset_id: None,
+        semantic_id: None,
+    })
+    .await;
+    Ok(())
+}
+
+async fn insert_record(
+    logs: &MemoryLogs,
+    source: &str,
+    timestamp: &str,
+    level: LogLevel,
+    message: &str,
+    attributes: JsonObject,
+) -> Result<(), A2aLabError> {
+    logs.insert_record(LogRecord {
+        source_id: SourceId::new(source)?,
+        timestamp: UtcTimestamp::parse(timestamp)?,
+        level,
+        message: message.to_owned(),
+        attributes,
+    })
+    .await
 }
 
 async fn seed_metrics() -> Result<MemoryMetrics, A2aLabError> {
