@@ -219,6 +219,7 @@ fn drive(mut script: Script) -> Result<(), String> {
     for case in &script.successes {
         compare_success(&mut page, &script.lab, case);
     }
+    tasks_reader_parity(&mut page, &script.lab);
     access(&mut page, "Success");
     chat_parity(&mut page, &script.chat_unavailable);
     for case in &script.failures {
@@ -268,7 +269,7 @@ fn drive(mut script: Script) -> Result<(), String> {
     let after = message_sends(&page, &script.bare);
     if before != after || !denied.contains("does not advertise agent-message") {
         return Err(format!(
-            "parity difference: unavailable agent-message\nclient card: skill absent\nbrowser: {denied}"
+            "parity difference: Chat reader, case unavailable agent-message\nexpected: skill absent\nobserved: {denied}"
         ));
     }
     compare_failure(&mut page, &script.bare, &script.bare_images);
@@ -280,33 +281,34 @@ fn drive(mut script: Script) -> Result<(), String> {
 }
 
 fn compare_success(page: &mut Browser, base: &str, case: &Success) {
+    let label = format!("{} reader, case {}", reader_of(&case.operation), case.name);
     let observed = send_command(page, &case.command);
     let sent = latest_command(page, base, &case.operation);
     if sent != case.command {
-        diverge(case.name, &case.command.to_string(), &sent.to_string());
+        diverge(&label, &case.command.to_string(), &sent.to_string());
     }
     if observed["operation"] != case.operation {
         diverge(
-            case.name,
+            &label,
             &case.operation,
             observed["operation"].as_str().unwrap_or(""),
         );
     }
     if observed["protocol"] != case.protocol_state {
         diverge(
-            case.name,
+            &label,
             &case.protocol_state,
             observed["protocol"].as_str().unwrap_or(""),
         );
     }
     let tree = observed["tree"].as_str().unwrap_or("");
     if case.operation == "start_task" && !tree.contains("run-") {
-        diverge(case.name, "fresh run id", tree);
+        diverge(&label, "fresh run id", tree);
     }
     for needle in needles(&case.result) {
         if !tree.contains(&needle) {
             diverge(
-                case.name,
+                &label,
                 &format!("result contains {needle}: {}", case.result),
                 tree,
             );
@@ -314,13 +316,13 @@ fn compare_success(page: &mut Browser, base: &str, case: &Success) {
     }
     for absent in &case.absent {
         if tree.contains(absent) {
-            diverge(case.name, &format!("result omits {absent}"), tree);
+            diverge(&label, &format!("result omits {absent}"), tree);
         }
     }
     let cursor = case.result.get("next_cursor").and_then(Value::as_str);
     let has_cursor = tree.contains("next_cursor");
     if cursor.is_some() != has_cursor {
-        diverge(case.name, &format!("next_cursor {cursor:?}"), tree);
+        diverge(&label, &format!("next_cursor {cursor:?}"), tree);
     }
     match case.preview_bytes {
         Some(size) => {
@@ -332,7 +334,7 @@ fn compare_success(page: &mut Browser, base: &str, case: &Success) {
                 || !preview.starts_with("data:image/png;base64,")
             {
                 diverge(
-                    case.name,
+                    &label,
                     &format!("png preview of {size} bytes"),
                     &format!("{image} {preview}"),
                 );
@@ -341,21 +343,22 @@ fn compare_success(page: &mut Browser, base: &str, case: &Success) {
         None => {
             if !observed["preview"].as_str().unwrap_or("").is_empty() {
                 diverge(
-                    case.name,
+                    &label,
                     "no image preview",
                     observed["preview"].as_str().unwrap_or(""),
                 );
             }
         }
     }
-    assert_inert(page, case.name);
+    assert_inert(page, &label);
 }
 
 fn compare_failure(page: &mut Browser, base: &str, case: &Failure) {
+    let label = format!("{} reader, case {}", reader_of(&case.operation), case.name);
     let observed = send_command(page, &case.command);
     let sent = latest_command(page, base, &case.operation);
     if sent != case.command {
-        diverge(case.name, &case.command.to_string(), &sent.to_string());
+        diverge(&label, &case.command.to_string(), &sent.to_string());
     }
     let browser = format!(
         "{} {} {} {}",
@@ -368,9 +371,106 @@ fn compare_failure(page: &mut Browser, base: &str, case: &Failure) {
         || observed["status"] != case.status
         || !agrees(&case.client, &browser)
     {
-        diverge(case.name, &case.client, &browser);
+        diverge(&label, &case.client, &browser);
     }
-    assert_inert(page, case.name);
+    assert_inert(page, &label);
+}
+
+fn tasks_reader_parity(page: &mut Browser, base: &str) {
+    page.show("#tasks");
+    page.wait_until("document.getElementById('task-pick-0')?.getAttribute('data-task') === 'heat'");
+    let listed = latest_command(page, base, "list_tasks");
+    if listed["operation"] != "list_tasks" {
+        diverge(
+            "Tasks reader, case list_tasks",
+            "list_tasks",
+            &listed.to_string(),
+        );
+    }
+    let names = text(
+        page,
+        "[...document.querySelectorAll('#task-sources [data-task]')].map(el => el.getAttribute('data-task')).join(' ')",
+    );
+    if !names.contains("heat") || !names.contains("mix") {
+        diverge(
+            "Tasks reader, case list_tasks",
+            "heat and mix in the Tasks reader",
+            &names,
+        );
+    }
+    let before = message_sends(page, base);
+    page.click("task-start");
+    page.wait_until("document.querySelector('#task-runs [data-run]')");
+    if message_sends(page, base) <= before {
+        diverge(
+            "Tasks reader, case start_task",
+            "a start_task message:send",
+            "none",
+        );
+    }
+    let started = latest_command(page, base, "start_task");
+    if started["params"]["wait"] != false
+        || started["params"]["task_id"] != "heat"
+        || started["params"]["input"] != json!({})
+    {
+        diverge(
+            "Tasks reader, case start_task",
+            "task_id heat, wait false, empty input",
+            &started.to_string(),
+        );
+    }
+    let card = text(
+        page,
+        "document.querySelector('#task-runs [data-run]')?.textContent ?? ''",
+    );
+    if !card.contains("heat")
+        || !(card.contains("completed") || card.contains("submitted") || card.contains("working"))
+    {
+        diverge(
+            "Tasks reader, case start_task",
+            "session-local heat run card",
+            &card,
+        );
+    }
+    let polled = page.requests(base).iter().any(|request| {
+        request_url(request).contains("message:send")
+            && request["params"]["request"]["postData"]
+                .as_str()
+                .unwrap_or("")
+                .contains("get_task_status")
+    });
+    if polled {
+        let status = latest_command(page, base, "get_task_status");
+        if status["params"]["id"].as_str().unwrap_or("").is_empty() {
+            diverge(
+                "Tasks reader, case get_task_status",
+                "lab run id",
+                &status.to_string(),
+            );
+        }
+    }
+    if page
+        .requests(base)
+        .iter()
+        .any(|request| request_url(request).contains("/tasks?"))
+    {
+        diverge(
+            "Tasks reader, case protocol GET /tasks",
+            "no protocol GET /tasks",
+            "a GET /tasks request",
+        );
+    }
+    if page.eval("document.getElementById('workbench')?.hasAttribute('hidden')")
+        != Value::Bool(true)
+        || page.eval("document.getElementById('inventory-tasks')?.hasAttribute('hidden')")
+            != Value::Bool(true)
+    {
+        diverge(
+            "Tasks reader, case hidden inventory and workbench",
+            "inventory-tasks and workbench hidden",
+            "visible on #tasks",
+        );
+    }
 }
 
 fn send_command(page: &mut Browser, command: &Value) -> Value {
@@ -428,13 +528,23 @@ fn latest_command(page: &Browser, base: &str, operation: &str) -> Value {
             continue;
         }
         if body["message"].get("contextId").is_some() {
-            diverge(operation, "lab command omits contextId", post);
+            diverge(
+                &format!("{} reader, case {operation}", reader_of(operation)),
+                "lab command omits contextId",
+                post,
+            );
         }
         assert_eq!(request_method(&request), "POST");
         assert!(header(&request, "authorization").is_none(), "{post}");
         found = Some(data);
     }
-    found.unwrap_or_else(|| diverge(operation, "a message:send envelope", "none"))
+    found.unwrap_or_else(|| {
+        diverge(
+            &format!("{} reader, case {operation}", reader_of(operation)),
+            "a message:send envelope",
+            "none",
+        )
+    })
 }
 
 fn message_sends(page: &Browser, base: &str) -> usize {
@@ -453,7 +563,7 @@ fn chat_parity(page: &mut Browser, unavailable: &str) {
     let first_tasks = task_ids(page);
     if first_context.is_empty() || first_tasks.len() != 1 {
         diverge(
-            "chat first turn",
+            "Chat reader, case first turn",
             "one context and one protocol task",
             &format!("{first_context} {first_tasks:?} {}", chat_log(page)),
         );
@@ -469,7 +579,7 @@ fn chat_parity(page: &mut Browser, unavailable: &str) {
         || second_tasks[0] == second_tasks[1]
     {
         diverge(
-            "chat continued turn",
+            "Chat reader, case continued turn",
             &format!("reuse {first_context} with two task ids"),
             &format!("{second_context} {second_tasks:?}"),
         );
@@ -482,7 +592,11 @@ fn chat_parity(page: &mut Browser, unavailable: &str) {
     page.wait_until("document.getElementById('chat-alert')?.textContent.length > 0");
     let alert = text(page, "document.getElementById('chat-alert')?.textContent");
     if !agrees(unavailable, &alert) {
-        diverge("unavailable agent-message", unavailable, &alert);
+        diverge(
+            "Chat reader, case unavailable agent-message",
+            unavailable,
+            &alert,
+        );
     }
     assert_storage(
         page,
@@ -490,6 +604,7 @@ fn chat_parity(page: &mut Browser, unavailable: &str) {
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn security_parity(page: &mut Browser, script: &Script) {
     let anonymous = send_command(
         page,
@@ -504,7 +619,11 @@ fn security_parity(page: &mut Browser, script: &Script) {
         anonymous["status"].as_str().unwrap_or("")
     );
     if anonymous["kind"] != "unauthorized" || !agrees(&script.anonymous_auth, &anonymous_text) {
-        diverge("anonymous 401", &script.anonymous_auth, &anonymous_text);
+        diverge(
+            "Agent reader, case anonymous 401",
+            &script.anonymous_auth,
+            &anonymous_text,
+        );
     }
     assert!(
         page.requests(&script.secure)
@@ -528,7 +647,11 @@ fn security_parity(page: &mut Browser, script: &Script) {
         forbidden["status"].as_str().unwrap_or("")
     );
     if forbidden["kind"] != "forbidden" || !agrees(&script.forbidden_auth, &forbidden_text) {
-        diverge("noscope 403", &script.forbidden_auth, &forbidden_text);
+        diverge(
+            "Agent reader, case noscope 403",
+            &script.forbidden_auth,
+            &forbidden_text,
+        );
     }
     page.show("#overview");
     page.set_value("bearer-token", ALICE);
@@ -553,7 +676,7 @@ fn security_parity(page: &mut Browser, script: &Script) {
         || !chat_log(page).contains("echo:bob-only")
     {
         diverge(
-            "caller isolation",
+            "Agent reader, case caller isolation",
             &format!("bob gets a new context besides {alice_context}"),
             &format!("{bob_context} {}", chat_log(page)),
         );
@@ -566,7 +689,11 @@ fn security_parity(page: &mut Browser, script: &Script) {
         .unwrap_or("")
         .to_owned();
     if token_header != format!("Bearer {BOB}") {
-        diverge("bearer header", &format!("Bearer {BOB}"), &token_header);
+        diverge(
+            "Agent reader, case bearer header",
+            &format!("Bearer {BOB}"),
+            &token_header,
+        );
     }
     page.show("#overview");
     assert_eq!(
@@ -575,7 +702,11 @@ fn security_parity(page: &mut Browser, script: &Script) {
     );
     let stored = text(page, "JSON.stringify(localStorage)");
     if stored.contains("alice-only") || stored.contains("bob-only") {
-        diverge("local storage", "no saved transcripts", &stored);
+        diverge(
+            "shell reader, case local storage",
+            "no saved transcripts",
+            &stored,
+        );
     }
     assert_storage(page, &[ALICE, BOB, NOSCOPE, "alice-only", "bob-only"]);
     access(page, "Forbidden");
@@ -606,7 +737,7 @@ fn access(page: &mut Browser, status: &str) {
         let overflow = page.eval("document.documentElement.scrollWidth <= window.innerWidth + 24");
         if overflow != Value::Bool(true) {
             diverge(
-                "viewport",
+                "shell reader, case viewport",
                 &format!("{width}x{height} stays within the viewport"),
                 "page scrolls horizontally",
             );
@@ -614,14 +745,15 @@ fn access(page: &mut Browser, status: &str) {
         assert_names(page);
         assert_status(page, status);
         if width < 768 {
-            assert_reachable(page, &["nav-toggle", "Skip to content"]);
-            assert_unreachable(page, &["nav-logs", "workbench-send", "chat-send"]);
+            assert_reachable(page, "shell", &["nav-toggle", "Skip to content"]);
+            assert_unreachable(page, "shell", &["nav-logs", "workbench-send", "chat-send"]);
             page.click("nav-toggle");
             page.wait_until(
                 "document.getElementById('nav-toggle')?.getAttribute('aria-expanded') === 'true'",
             );
             assert_reachable(
                 page,
+                "shell",
                 &[
                     "nav-agent",
                     "nav-logs",
@@ -640,6 +772,7 @@ fn access(page: &mut Browser, status: &str) {
         } else {
             assert_reachable(
                 page,
+                "shell",
                 &[
                     "nav-agent",
                     "nav-logs",
@@ -649,58 +782,78 @@ fn access(page: &mut Browser, status: &str) {
                     "nav-chat",
                 ],
             );
-            assert_unreachable(page, &["nav-toggle"]);
+            assert_unreachable(page, "shell", &["nav-toggle"]);
         }
-        page.show("#logs");
-        assert_reachable(
-            page,
-            &[
-                "log-source-all",
-                "log-filter-search",
-                "log-range-start",
-                "log-range-end",
-            ],
-        );
-        assert_unreachable(
-            page,
-            &[
-                "inventory-logs-more",
-                "inventory-metrics-more",
-                "workbench-send",
-                "send-text",
-            ],
-        );
-        page.show("#metrics");
-        assert_reachable(
-            page,
-            &["metric-pick-0", "metric-range-start", "metric-range-end"],
-        );
-        assert_unreachable(
-            page,
-            &[
-                "inventory-metrics-more",
-                "inventory-logs-more",
-                "workbench-send",
-            ],
-        );
+        assert_reader_keys(page);
         page.show("#agent");
         page.eval("document.getElementById('protocol-advanced').open = false");
-        assert_reachable(page, &["protocol-advanced-summary"]);
-        assert_unreachable(page, &["send-text", "workbench-send"]);
+        assert_reachable(page, "Agent", &["protocol-advanced-summary"]);
+        assert_unreachable(page, "Agent", &["send-text", "workbench-send"]);
         page.click("protocol-advanced-summary");
         page.wait_until("document.getElementById('protocol-advanced')?.open === true");
-        assert_reachable(page, &["send-text"]);
+        assert_reachable(page, "Agent", &["send-text"]);
         page.show("#chat");
-        assert_reachable(page, &["chat-draft", "chat-send"]);
+        assert_reachable(page, "Chat", &["chat-draft", "chat-send"]);
     }
 }
 
-fn assert_reachable(page: &mut Browser, required: &[&str]) {
+fn assert_reader_keys(page: &mut Browser) {
+    page.show("#logs");
+    assert_reachable(
+        page,
+        "Logs",
+        &[
+            "log-source-all",
+            "log-filter-search",
+            "log-range-start",
+            "log-range-end",
+        ],
+    );
+    assert_unreachable(
+        page,
+        "Logs",
+        &[
+            "inventory-logs-more",
+            "inventory-metrics-more",
+            "workbench-send",
+            "send-text",
+        ],
+    );
+    page.show("#metrics");
+    assert_reachable(
+        page,
+        "Metrics",
+        &["metric-pick-0", "metric-range-start", "metric-range-end"],
+    );
+    assert_unreachable(
+        page,
+        "Metrics",
+        &[
+            "inventory-metrics-more",
+            "inventory-logs-more",
+            "workbench-send",
+        ],
+    );
+    page.show("#tasks");
+    assert_reachable(page, "Tasks", &["task-pick-0"]);
+    assert_unreachable(
+        page,
+        "Tasks",
+        &[
+            "inventory-tasks-more",
+            "inventory-tasks-limit",
+            "workbench-send",
+            "inventory-logs-more",
+        ],
+    );
+}
+
+fn assert_reachable(page: &mut Browser, reader: &str, required: &[&str]) {
     let stops = tab_stops(page);
     for required in required {
         if !stops.iter().any(|stop| stop == required) {
             diverge(
-                "keyboard",
+                &format!("{reader} reader, case keyboard"),
                 &format!("{required} is reachable"),
                 &stops.join(", "),
             );
@@ -708,12 +861,12 @@ fn assert_reachable(page: &mut Browser, required: &[&str]) {
     }
 }
 
-fn assert_unreachable(page: &mut Browser, hidden: &[&str]) {
+fn assert_unreachable(page: &mut Browser, reader: &str, hidden: &[&str]) {
     let stops = tab_stops(page);
     for hidden in hidden {
         if stops.iter().any(|stop| stop == hidden) {
             diverge(
-                "keyboard",
+                &format!("{reader} reader, case keyboard"),
                 &format!("{hidden} stays out of the hidden view"),
                 &stops.join(", "),
             );
@@ -735,7 +888,7 @@ fn assert_names(page: &mut Browser) {
     );
     if unnamed.as_array().is_some_and(|items| !items.is_empty()) {
         diverge(
-            "accessible name",
+            "shell reader, case accessible name",
             "every control has a name",
             &unnamed.to_string(),
         );
@@ -745,7 +898,11 @@ fn assert_names(page: &mut Browser) {
 fn assert_status(page: &mut Browser, workbench: &str) {
     let nav = page.eval("document.querySelector('nav')?.getAttribute('aria-label') || ''");
     if nav.as_str() != Some("Lab sections") {
-        diverge("status text", "Lab sections", &nav.to_string());
+        diverge(
+            "shell reader, case status text",
+            "Lab sections",
+            &nav.to_string(),
+        );
     }
     expect_live(page, "connection", "status", "polite");
     page.show("#workbench");
@@ -755,7 +912,11 @@ fn assert_status(page: &mut Browser, workbench: &str) {
     expect_labelled(page, "workbench");
     let text = page.eval("document.getElementById('workbench-status')?.textContent.trim()");
     if text.as_str() != Some(workbench) {
-        diverge("status text", workbench, &text.to_string());
+        diverge(
+            "shell reader, case workbench status",
+            workbench,
+            &text.to_string(),
+        );
     }
     assert_only_view(page, "view-logs");
     page.show("#chat");
@@ -776,6 +937,11 @@ fn assert_status(page: &mut Browser, workbench: &str) {
         if section == "inventory-logs" {
             expect_live(page, "inventory-logs-alert", "alert", "assertive");
         }
+        if section == "inventory-tasks" {
+            expect_live(page, "task-view-status", "status", "polite");
+            expect_live(page, "task-view-alert", "alert", "assertive");
+            expect_labelled(page, "task-view");
+        }
         expect_labelled(page, section);
         assert_only_view(page, view);
         let others = [
@@ -791,7 +957,7 @@ fn assert_status(page: &mut Browser, workbench: &str) {
         .join(" || ");
         if page.eval(&format!("!!({others})")) == Value::Bool(true) {
             diverge(
-                "inventory",
+                "shell reader, case inventory",
                 &format!("{section} is the only inventory panel"),
                 "another inventory panel is in the page",
             );
@@ -872,17 +1038,25 @@ fn assert_storage(page: &mut Browser, forbidden: &[&str]) {
     let stored = text(page, "JSON.stringify(localStorage)");
     for phrase in forbidden {
         if stored.contains(phrase) {
-            diverge("local storage", &format!("omits {phrase}"), &stored);
+            diverge(
+                "shell reader, case local storage",
+                &format!("omits {phrase}"),
+                &stored,
+            );
         }
     }
     if stored != "{}" {
-        diverge("local storage", "an empty document", &stored);
+        diverge(
+            "shell reader, case local storage",
+            "an empty document",
+            &stored,
+        );
     }
     let session = text(page, "JSON.stringify(sessionStorage)");
     let cookie = text(page, "document.cookie");
     if session != "{}" || !cookie.is_empty() {
         diverge(
-            "storage",
+            "shell reader, case storage",
             "sessionStorage and cookies stay empty",
             &format!("{session} {cookie}"),
         );
@@ -969,10 +1143,21 @@ fn shares_phrase(source: &str, other: &str) -> bool {
         })
 }
 
-fn diverge(case: &str, client: &str, browser: &str) -> ! {
-    let client = clip(client);
-    let browser = clip(browser);
-    panic!("parity difference: {case}\nclient: {client}\nbrowser: {browser}");
+fn reader_of(operation: &str) -> &'static str {
+    match operation {
+        "list_tasks" | "start_task" | "get_task_status" => "Tasks",
+        "list_metrics" | "query_metric" => "Metrics",
+        "list_log_sources" | "query_logs" => "Logs",
+        "list_image_sources" | "list_images" | "search_images" | "get_image"
+        | "get_current_image" => "Images",
+        _ => "browser",
+    }
+}
+
+fn diverge(case: &str, expected: &str, observed: &str) -> ! {
+    let expected = clip(expected);
+    let observed = clip(observed);
+    panic!("parity difference: {case}\nexpected: {expected}\nobserved: {observed}");
 }
 
 fn clip(text: &str) -> String {

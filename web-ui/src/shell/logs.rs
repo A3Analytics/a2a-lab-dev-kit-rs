@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use crate::inventory::{self, Fault, Primitive};
 use crate::logs::{self, Record};
 use crate::shell::http::Transport;
+use crate::shell::log_chrome::{facet, meta, source_facet};
 use crate::shell::page::{self, Page};
 use crate::shell::present;
 use crate::shell::session::{calls_allowed, message_id, take_secret};
@@ -118,10 +119,7 @@ pub fn install(page: &Page, transport: &Transport) {
 
 pub fn sources_changed(page: &Page) {
     let items = super::inventory::loaded(Primitive::Logs);
-    let ids = items
-        .iter()
-        .map(|item| item.id.clone())
-        .collect::<Vec<_>>();
+    let ids = items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
     let catalog_changed = CATALOG.with(|slot| {
         let mut catalog = slot.borrow_mut();
         if *catalog == ids {
@@ -403,51 +401,10 @@ fn render_chips(page: &Page) {
     }
 }
 
-fn meta(page: &Page, parent: &web_sys::Element, label: &str, value: &str, clear: Option<&str>) {
-    let chip = present::node(page, "span", None);
-    page::attr(&chip, "class", "log-meta");
-    let name = present::node(page, "span", None);
-    page::attr(&name, "class", "log-meta-label");
-    name.set_text_content(Some(&format!("{label}:")));
-    let text = present::node(page, "span", None);
-    text.set_text_content(Some(value));
-    chip.append_child(&name).ok();
-    chip.append_child(&text).ok();
-    if let Some(clear) = clear {
-        let button = present::node(page, "button", None);
-        page::attr(&button, "type", "button");
-        page::attr(&button, "data-clear", clear);
-        page::attr(&button, "aria-label", &format!("Remove {label} {value}"));
-        button.set_text_content(Some("×"));
-        chip.append_child(&button).ok();
-    }
-    parent.append_child(&chip).ok();
-}
-
 fn clear_entries(page: &Page) {
     remember(&[]);
     reset_filters(page);
     paint(page);
-}
-
-fn facet(page: &Page, parent: &web_sys::Element, id: &str, level: &str, label: &str) {
-    let button = present::node(page, "button", Some(id));
-    page::attr(&button, "type", "button");
-    page::attr(&button, "class", "log-facet");
-    page::attr(&button, "data-level", level);
-    page::attr(
-        &button,
-        "aria-pressed",
-        if level.is_empty() { "true" } else { "false" },
-    );
-    let mark = present::node(page, "span", None);
-    page::attr(&mark, "class", "log-facet-mark");
-    page::attr(&mark, "aria-hidden", "true");
-    let text = present::node(page, "span", None);
-    text.set_text_content(Some(label));
-    button.append_child(&mark).ok();
-    button.append_child(&text).ok();
-    parent.append_child(&button).ok();
 }
 
 fn on_filters(page: &Page) {
@@ -547,16 +504,40 @@ fn on_filters(page: &Page) {
 }
 
 fn on_range(page: &Page) {
-    for id in ["log-range-start", "log-range-end"] {
+    for (id, next) in [
+        ("log-range-start", "log-range-end"),
+        ("log-range-end", "log-filter-all"),
+    ] {
         let Some(input) = page.element(id) else {
             continue;
         };
-        let page = page.clone();
+        let page_for_change = page.clone();
         let change = Closure::wrap(Box::new(move |_event: Event| {
-            commit_range(&page);
+            commit_range(&page_for_change);
         }) as Box<dyn FnMut(Event)>);
         let _ = input.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
         change.forget();
+        let page_for_tab = page.clone();
+        let back = id == "log-range-end";
+        let tab = Closure::wrap(Box::new(move |event: Event| {
+            let Some(key) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
+                return;
+            };
+            if key.key() != "Tab" {
+                return;
+            }
+            if key.shift_key() {
+                if back {
+                    key.prevent_default();
+                    page_for_tab.focus("log-range-start");
+                }
+                return;
+            }
+            key.prevent_default();
+            page_for_tab.focus(next);
+        }) as Box<dyn FnMut(Event)>);
+        let _ = input.add_event_listener_with_callback("keydown", tab.as_ref().unchecked_ref());
+        tab.forget();
     }
 }
 
@@ -671,29 +652,6 @@ fn sync_sources(page: &Page) {
             },
         );
     }
-}
-
-fn source_facet(
-    page: &Page,
-    parent: &web_sys::Element,
-    id: &str,
-    source: &str,
-    label: &str,
-    pressed: bool,
-) {
-    let button = present::node(page, "button", Some(id));
-    page::attr(&button, "type", "button");
-    page::attr(&button, "class", "log-facet");
-    page::attr(&button, "data-source", source);
-    page::attr(&button, "aria-pressed", if pressed { "true" } else { "false" });
-    let mark = present::node(page, "span", None);
-    page::attr(&mark, "class", "log-facet-mark");
-    page::attr(&mark, "aria-hidden", "true");
-    let text = present::node(page, "span", None);
-    text.set_text_content(Some(label));
-    button.append_child(&mark).ok();
-    button.append_child(&text).ok();
-    parent.append_child(&button).ok();
 }
 
 fn commit_search(page: &Page) {

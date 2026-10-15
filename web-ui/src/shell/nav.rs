@@ -107,7 +107,10 @@ fn show(page: &Page, focus: bool) {
         if let Some(host) = page.element(route.view) {
             place(page, "workbench", &host, true);
         }
-        if matches!(primitive, Primitive::Logs | Primitive::Metrics) {
+        if matches!(
+            primitive,
+            Primitive::Logs | Primitive::Metrics | Primitive::Tasks
+        ) {
             page.set_data("workbench", "hidden", "hidden");
         } else {
             page.remove_attr("workbench", "hidden");
@@ -210,7 +213,7 @@ fn route_for(hash: &str) -> Route {
             "view-tasks",
             "nav-tasks",
             "Tasks",
-            "inventory-tasks-heading",
+            "task-view-heading",
         ),
         "images" | "inventory/images" => primitive(
             Primitive::Images,

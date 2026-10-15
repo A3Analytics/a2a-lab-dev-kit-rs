@@ -88,6 +88,10 @@ run = "bash .mise/scripts/web-ui.sh feature-off"
 description = "Check opt-in web UI HTTP serving"
 run = "bash .mise/scripts/web-ui.sh serve"
 
+[web-ui-watch]
+description = "Rebuild and restart the web_ui example when sources change"
+run = "bash .mise/scripts/web-ui.sh watch"
+
 [quality]
 description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, web UI checks, clippy, tests, the A2A TCK, and SiLA provider checks"
 run = "bash .mise/scripts/quality.sh"

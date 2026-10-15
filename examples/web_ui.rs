@@ -8,11 +8,14 @@ use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
     A2aLabApi, A2aLabError, A2aLabService, A2aServer, AgentMessageFuture, AgentMessageHandler,
-    AgentMessageReply, AgentMessageRequest, Image, ImageDescriptor, ImageId, ImageSource,
-    ImageSourceId, JsonObject, LogLevel, LogRecord, LogSource, MemoryImages, MemoryLogs,
-    MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, SourceId, TaskDefinition,
-    TaskId, UtcTimestamp, WEB_UI_PATH, bind_local,
+    AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest, Image, ImageDescriptor, ImageId,
+    ImageSource, ImageSourceId, JsonObject, LogLevel, LogRecord, LogSource, MemoryImages,
+    MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, RunId,
+    SourceId, TaskDefinition, TaskId, TaskProvider, TaskState, UtcTimestamp, WEB_UI_PATH,
 };
+use tokio::net::TcpListener;
+
+const DEFAULT_BIND: &str = "127.0.0.1:3847";
 
 const FRAME: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -41,7 +44,8 @@ impl AgentMessageHandler for Echo {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let service = lab().await?;
-    let (listener, address) = bind_local().await?;
+    let listener = bind().await?;
+    let address = listener.local_addr()?;
     writeln!(stdout(), "http://{address}{WEB_UI_PATH}")?;
     stdout().flush()?;
     A2aServer::new(&service)
@@ -52,21 +56,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
+async fn bind() -> Result<TcpListener, Box<dyn std::error::Error + Send + Sync>> {
+    let address = std::env::var("WEB_UI_BIND")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_BIND.to_owned());
+    Ok(TcpListener::bind(&address).await?)
+}
+
 async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
     let logs = seed_logs().await?;
     let metrics = seed_metrics().await?;
-    let tasks = MemoryTasks::new();
-    tasks
-        .insert(TaskDefinition {
-            id: TaskId::new("build")?,
-            name: "Build".to_owned(),
-            description: "Build the lab".to_owned(),
-            asset_id: None,
-            semantic_id: None,
-            input_schema: None,
-            output_schema: None,
-        })
-        .await;
+    let tasks = seed_tasks().await?;
+    complete_started(tasks.clone());
 
     let images = MemoryImages::new();
     images
@@ -279,6 +282,89 @@ async fn seed_metric(
             .await?;
     }
     Ok(())
+}
+
+const BUILD_INPUT_SCHEMA: &str = r#"{
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "title": "Name",
+      "minLength": 2,
+      "pattern": "^[a-z]+$",
+      "default": "lab"
+    },
+    "count": {
+      "type": "integer",
+      "title": "Count",
+      "minimum": 1,
+      "maximum": 9,
+      "default": 1
+    },
+    "ratio": {"type": "number", "title": "Ratio", "minimum": 0.5},
+    "enabled": {"type": "boolean", "title": "Enabled", "default": true},
+    "mode": {"type": "string", "title": "Mode", "enum": ["fast", "slow"]},
+    "day": {"type": "string", "format": "date", "title": "Day"},
+    "config": {
+      "type": "object",
+      "title": "Config",
+      "properties": {
+        "retries": {"type": "integer", "title": "Retries", "default": 2}
+      }
+    },
+    "tags": {"type": "array", "title": "Tags", "items": {"type": "string"}},
+    "choice": {"title": "Choice", "oneOf": [{"type": "string"}, {"type": "number"}]}
+  }
+}"#;
+
+async fn seed_tasks() -> Result<MemoryTasks, A2aLabError> {
+    let tasks = MemoryTasks::new();
+    tasks
+        .insert(TaskDefinition {
+            id: TaskId::new("build")?,
+            name: "Build".to_owned(),
+            description: "Build the lab".to_owned(),
+            asset_id: None,
+            semantic_id: None,
+            input_schema: Some(BUILD_INPUT_SCHEMA.to_owned()),
+            output_schema: None,
+        })
+        .await;
+    tasks
+        .insert(TaskDefinition {
+            id: TaskId::new("home")?,
+            name: "Home".to_owned(),
+            description: "Home the axes".to_owned(),
+            asset_id: None,
+            semantic_id: None,
+            input_schema: None,
+            output_schema: None,
+        })
+        .await;
+    Ok(tasks)
+}
+
+fn complete_started(tasks: MemoryTasks) {
+    tokio::spawn(async move {
+        loop {
+            for number in 1..=32 {
+                let Ok(id) = RunId::new(format!("run-{number}")) else {
+                    continue;
+                };
+                let Ok(run) = tasks.status(GetTaskStatusRequest { id: id.clone() }).await else {
+                    continue;
+                };
+                let (state, message) = match run.state {
+                    TaskState::Submitted => (TaskState::Working, Some("working".to_owned())),
+                    TaskState::Working => (TaskState::Completed, Some("done".to_owned())),
+                    _ => continue,
+                };
+                let _ = tasks.transition(&id, state, message).await;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    });
 }
 
 fn frame() -> Result<Image, A2aLabError> {

@@ -101,11 +101,29 @@ serve() {
   cargo nextest run --all-features --test web_ui
 }
 
+watch() {
+  export WEB_UI_BIND="${WEB_UI_BIND:-127.0.0.1:3847}"
+  exec watchexec \
+    --watch web-ui \
+    --watch examples/web_ui.rs \
+    --watch src \
+    --watch build.rs \
+    --watch Cargo.toml \
+    --ignore 'target/**' \
+    --ignore 'web-ui/target/**' \
+    --exts rs,css,js,html,toml \
+    --debounce 500ms \
+    --restart \
+    --stop-signal SIGTERM \
+    --stop-timeout 15s \
+    -- cargo run --example web_ui --features web-ui --locked
+}
+
 case "$mode" in
-  build|feature-off|freshness|serve)
+  build|feature-off|freshness|serve|watch)
     ;;
   *)
-    echo "usage: web-ui.sh [build|feature-off|freshness|serve]" >&2
+    echo "usage: web-ui.sh [build|feature-off|freshness|serve|watch]" >&2
     exit 2
     ;;
 esac
@@ -115,4 +133,5 @@ case "$mode" in
   build) build ;;
   freshness) freshness ;;
   serve) serve ;;
+  watch) watch ;;
 esac

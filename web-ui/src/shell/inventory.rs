@@ -56,7 +56,10 @@ pub fn mount(page: &Page, main: &web_sys::Element, primitive: Primitive) {
             body.append_child(&items).ok();
         });
         show(page, primitive, Kind::Pending, "", "");
-        if matches!(primitive, Primitive::Logs | Primitive::Metrics) {
+        if matches!(
+            primitive,
+            Primitive::Logs | Primitive::Metrics | Primitive::Tasks
+        ) {
             page.set_data(spec.section, "hidden", "hidden");
         }
         page.set_data(spec.more, "aria-disabled", "true");
@@ -221,6 +224,9 @@ fn succeed(page: &Page, primitive: Primitive, listed: Listed, append: bool) {
     if primitive == Primitive::Metrics {
         super::metrics::catalog_changed(page);
     }
+    if primitive == Primitive::Tasks {
+        super::tasks::catalog_changed(page);
+    }
     let next = listed.next_cursor.as_deref().unwrap_or("");
     page.set_data(spec.status, "data-next", next);
     page.set_data(
@@ -261,6 +267,9 @@ fn fail(page: &Page, primitive: Primitive, fault: &Fault) {
     if primitive == Primitive::Metrics {
         super::metrics::catalog_changed(page);
     }
+    if primitive == Primitive::Tasks {
+        super::tasks::catalog_changed(page);
+    }
 }
 
 fn show_loading(page: &Page, primitive: Primitive) {
@@ -269,6 +278,9 @@ fn show_loading(page: &Page, primitive: Primitive) {
     page.set_text(spec.status, &Kind::Loading.message(primitive, ""));
     page.set_text(spec.alert, "");
     page.set_data(spec.section, "aria-busy", "true");
+    if primitive == Primitive::Tasks {
+        super::tasks::catalog_changed(page);
+    }
 }
 
 fn show(page: &Page, primitive: Primitive, kind: Kind, extra: &str, alert: &str) {
@@ -282,6 +294,9 @@ fn show(page: &Page, primitive: Primitive, kind: Kind, extra: &str, alert: &str)
     page.set_text(spec.status, &kind.message(primitive, extra));
     page.set_text(spec.alert, alert);
     page.set_data(spec.section, "aria-busy", "false");
+    if primitive == Primitive::Tasks {
+        super::tasks::catalog_changed(page);
+    }
 }
 
 fn render(page: &Page, primitive: Primitive, items: &[Item]) {

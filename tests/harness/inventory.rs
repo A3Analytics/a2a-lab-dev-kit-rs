@@ -62,6 +62,15 @@ fn assert_advertised(page: &mut Browser) {
         assert_eq!(view["alertRole"], "alert");
         assert!(view["items"].as_array().unwrap().is_empty());
         assert!(!view["heading"].as_str().unwrap_or("").is_empty());
+        if slug == "tasks" {
+            assert!(
+                eval_str(
+                    page,
+                    "document.getElementById('task-view-status').textContent"
+                )
+                .contains("not authorized")
+            );
+        }
     }
 }
 
@@ -148,13 +157,21 @@ fn assert_log_text(page: &mut Browser) {
 }
 
 fn assert_task_text(page: &mut Browser) {
-    let task_body = inventory_view(page, "tasks")["body"]
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
+    page.show("#tasks");
+    page.wait_until(
+        "document.getElementById('task-pick-0')?.getAttribute('data-task') === 'task-a'",
+    );
+    let task_body = eval_str(
+        page,
+        "document.getElementById('task-detail')?.textContent ?? ''",
+    );
     assert!(task_body.contains("<b>in</b>"));
     assert!(task_body.contains("<b>out</b>"));
-    assert!(task_body.contains("Id task-a"));
+    assert!(task_body.contains("task-a"));
+    assert_eq!(
+        page.eval("document.getElementById('inventory-tasks')?.hasAttribute('hidden')"),
+        Value::Bool(true)
+    );
     assert_eq!(
         eval_str(
             page,
@@ -277,6 +294,20 @@ fn page_scripted_metrics(page: &mut Browser) {
 fn fail_remaining_primitives(page: &mut Browser, base: &str) {
     page.show("#inventory/tasks");
     wait_inventory(page, "tasks", "malformed");
+    assert!(
+        eval_str(
+            page,
+            "document.getElementById('task-view-status').textContent"
+        )
+        .contains("malformed")
+    );
+    assert!(
+        !eval_str(
+            page,
+            "document.getElementById('task-view-alert').textContent"
+        )
+        .is_empty()
+    );
     assert_eq!(inventory_view(page, "metrics")["state"], "empty");
     page.show("#inventory/images");
     wait_inventory(page, "images", "unavailable");
@@ -666,6 +697,10 @@ pub(super) async fn scripted_send(body: Bytes) -> Response {
                 "application/json",
                 listed("list_metrics", &json!([]), None),
             )
+        }
+        "list_tasks" => {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            bytes(StatusCode::OK, "application/json", b"not-json".to_vec())
         }
         "list_image_sources" => bytes(
             StatusCode::INTERNAL_SERVER_ERROR,

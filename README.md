@@ -71,7 +71,13 @@ Run the [web interface example](examples/web_ui.rs) from the repository root:
 mise exec -- cargo run --example web_ui --features web-ui
 ```
 
-The example prints a local `/ui/` URL and serves an in-memory lab until you stop it. A downstream application enables the same Cargo feature and calls `A2aServer::with_web_ui`. It does not copy the `web-ui` sources.
+The example listens on `http://127.0.0.1:3847/ui/` unless `WEB_UI_BIND` is set. To rebuild and restart that process when `web-ui/`, `examples/web_ui.rs`, or the crate sources change:
+
+```bash
+mise run web-ui-watch
+```
+
+Refresh the tab after a restart. This is a full `wasm32` compile, not Vite-style HMR. A downstream application enables the same Cargo feature and calls `A2aServer::with_web_ui`. It does not copy the `web-ui` sources.
 
 ## Check A2A-LAB compliance
 

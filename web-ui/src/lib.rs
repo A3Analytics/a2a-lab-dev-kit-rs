@@ -5,6 +5,7 @@ mod codec;
 mod inventory;
 mod logs;
 mod metrics;
+mod tasks;
 mod workbench;
 
 #[cfg(target_arch = "wasm32")]

@@ -13,8 +13,8 @@ Everything runs through `mise`. The `backlog` binary is provided by mise and is 
 - Install tools: `mise install`
 - List tasks: `mise tasks`
 - Run a task: `mise run <task>`
-- Configured tools: Rust 1.98.1, cargo-nextest, kiss-ai, and Backlog.md (`mise.toml`)
-- Configured tasks: `build`, `fmt`, `fmt-check`, `check`, `clippy`, `test`, `kiss`, `duplication`, `duplication-test-code`, `quality`, and `backlog-browser` (`.mise/run.toml`)
+- Configured tools: Rust 1.98.1, cargo-nextest, kiss-ai, watchexec, and Backlog.md (`mise.toml`)
+- Configured tasks: `build`, `fmt`, `fmt-check`, `check`, `clippy`, `test`, `kiss`, `duplication`, `duplication-test-code`, `quality`, `web-ui-watch`, and `backlog-browser` (`.mise/run.toml`)
 
 Add tools under `[tools]` in `mise.toml`; add tasks in `.mise/run.toml`.
 

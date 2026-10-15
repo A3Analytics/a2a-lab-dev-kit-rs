@@ -507,16 +507,40 @@ fn selected_unit() -> String {
 }
 
 fn on_range(page: &Page) {
-    for id in ["metric-range-start", "metric-range-end"] {
+    for (id, next) in [
+        ("metric-range-start", "metric-range-end"),
+        ("metric-range-end", "metric-pick-0"),
+    ] {
         let Some(input) = page.element(id) else {
             continue;
         };
-        let page = page.clone();
+        let page_for_change = page.clone();
         let change = Closure::wrap(Box::new(move |_event: Event| {
-            commit_range(&page);
+            commit_range(&page_for_change);
         }) as Box<dyn FnMut(Event)>);
         let _ = input.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
         change.forget();
+        let page_for_tab = page.clone();
+        let back = id == "metric-range-end";
+        let tab = Closure::wrap(Box::new(move |event: Event| {
+            let Some(key) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
+                return;
+            };
+            if key.key() != "Tab" {
+                return;
+            }
+            if key.shift_key() {
+                if back {
+                    key.prevent_default();
+                    page_for_tab.focus("metric-range-start");
+                }
+                return;
+            }
+            key.prevent_default();
+            page_for_tab.focus(next);
+        }) as Box<dyn FnMut(Event)>);
+        let _ = input.add_event_listener_with_callback("keydown", tab.as_ref().unchecked_ref());
+        tab.forget();
     }
 }
 

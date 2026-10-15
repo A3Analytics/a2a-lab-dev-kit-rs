@@ -1,7 +1,9 @@
 #![cfg(feature = "web-ui")]
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -25,6 +27,8 @@ mod chat;
 
 #[path = "harness/inventory.rs"]
 mod inventory_browser;
+#[path = "harness/tasks.rs"]
+mod tasks_browser;
 #[path = "harness/workbench.rs"]
 mod workbench_browser;
 
@@ -607,7 +611,10 @@ fn assert_time_range(page: &mut Browser) {
     assert_eq!(filtered["ariaHidden"], Value::Null);
     let readings = filtered["readings"].as_str().unwrap_or_default();
     assert!(readings.contains("12 ms"), "{filtered}");
-    assert_eq!(page.eval("document.getElementById('metric-filter-search')"), Value::Null);
+    assert_eq!(
+        page.eval("document.getElementById('metric-filter-search')"),
+        Value::Null
+    );
 }
 
 const CHART_STATE: &str = "(() => {
@@ -736,6 +743,8 @@ enum MockRoute {
     Default,
     Inventory,
     Workbench,
+    Tasks,
+    TaskRuns,
 }
 
 #[derive(Clone)]
@@ -748,6 +757,8 @@ struct MockState {
     route: MockRoute,
     tasks_status: StatusCode,
     tasks_body: Vec<u8>,
+    run_starts: Arc<AtomicU32>,
+    run_polls: Arc<Mutex<BTreeMap<String, u32>>>,
 }
 
 async fn serve_mock(
@@ -767,6 +778,8 @@ async fn serve_mock(
         route,
         tasks_status,
         tasks_body,
+        run_starts: Arc::new(AtomicU32::new(0)),
+        run_polls: Arc::new(Mutex::new(BTreeMap::new())),
     };
     let app = Router::new()
         .route(
@@ -831,6 +844,10 @@ async fn send_route(State(state): State<MockState>, body: Bytes) -> Response {
     match state.route {
         MockRoute::Workbench => return workbench_browser::scripted_send(&body),
         MockRoute::Inventory => return inventory_browser::scripted_send(body).await,
+        MockRoute::Tasks => return tasks_browser::scripted_send(body).await,
+        MockRoute::TaskRuns => {
+            return tasks_browser::scripted_run_send(&body, &state.run_starts, &state.run_polls);
+        }
         MockRoute::Default => {}
     }
     let hit = state.sends.fetch_add(1, Ordering::Relaxed);

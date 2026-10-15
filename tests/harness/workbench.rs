@@ -45,6 +45,15 @@ fn open_protocol(page: &mut Browser) {
 }
 
 fn assert_commands(page: &mut Browser) {
+    page.show("#tasks");
+    assert_eq!(
+        page.eval("document.getElementById('workbench')?.hasAttribute('hidden')"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        page.eval("document.getElementById('inventory-tasks')?.hasAttribute('hidden')"),
+        Value::Bool(true)
+    );
     let mut values = Vec::new();
     for hash in ["#logs", "#metrics", "#tasks", "#images"] {
         page.show(hash);

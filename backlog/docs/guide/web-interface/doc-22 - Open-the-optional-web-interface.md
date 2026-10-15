@@ -70,13 +70,21 @@ Run these commands from the repository root.
    mise exec -- cargo run --example web_ui --features web-ui
    ```
 
-The example prints a line of the form `http://127.0.0.1:<port>/ui/`. Open that URL. Stop the process to shut the listener down.
+The example listens on `http://127.0.0.1:3847/ui/` unless `WEB_UI_BIND` overrides the socket. Open that URL. Stop the process to shut the listener down.
+
+To rebuild and restart the example when the shell or example sources change:
+
+```bash
+mise run web-ui-watch
+```
+
+`web-ui-watch` keeps the same bind address. Refresh the tab after a restart. The loop is a full `wasm32` compile and server restart, not an in-browser hot reload.
 
 The process inserts this representative data:
 
 - Log source `app`, with one info record `lab ready` at `2024-01-01T00:00:00Z`.
 - Metric `latency`, with one sample of value `5` at that same timestamp.
-- Task definition `build`.
+- Task definition `build`, with an input schema that covers typed, required, defaulted, constrained, nested, array, and JSON-fallback fields, and task definition `home`, with no input schema.
 - Image source `bench`, with a 1 by 1 PNG frame `current`.
 - An `agent-message` handler that replies `echo` plus the user text.
 
@@ -106,7 +114,7 @@ Each primitive page lists that primitive and runs its commands:
 
 - Logs runs `list_log_sources` and `query_logs`. The page is a list: a filter sidebar toggles sources, searches messages, limits the UTC date range, and narrows severity, and the other column shows those records as cards, each with its source. The source catalog and the command runner stay off that page.
 - Metrics runs `list_metrics` and `query_metric`. The page is a list: the sidebar lists each metric so one click switches the series, a start and end limit the UTC time range, and the other column draws those samples as a line graph that fills the column. Hovering a point shows that sample's time and value, and the graph resizes with the page. A visually hidden list keeps the same readings for assistive technology. The catalog and the command runner stay off that page.
-- Tasks runs `list_tasks`, `start_task`, and `get_task_status`.
+- Tasks runs `list_tasks`, `start_task`, and `get_task_status`. The page is a list: the sidebar is a single-select of definitions, and the other column shows that definition plus a generated input form. Supported schema fields become labeled controls. An unsupported construct becomes a labeled JSON fallback. A missing schema needs no input. Start sends `start_task` with `wait` set to false and then polls `get_task_status` until the run is completed, failed, or canceled. Run cards stay in page memory for that load. The catalog and the command runner stay off that page. The page does not cancel runs and does not call protocol `GET /tasks`.
 - Images runs `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`.
 
 Choosing a row action stays on that page and fills the matching command. A log source, metric, task, or image source is chosen from a dropdown of the items listed on that page. The filled command stays until Send or until another primitive page replaces it with that page's first command. Command history is page memory, at most 20 entries, and a reload drops it. A continued list keeps the cursor returned by the latest chunk.
@@ -164,6 +172,8 @@ The page has these boundaries:
 - It does not run an OAuth or OpenID Connect login flow.
 - It does not configure providers. Provider setup stays in the Rust process that builds `A2aLabService`.
 - It does not add production administration controls.
+- It does not cancel a lab run from Tasks.
+- It does not call protocol `GET /tasks`. Lab runs use `list_tasks`, `start_task`, and `get_task_status` on the A2A message path.
 
 ## Related
 
