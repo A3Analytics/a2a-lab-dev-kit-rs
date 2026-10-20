@@ -7,11 +7,14 @@ use serde_json::{Map, Value};
 use crate::codec;
 use crate::inventory::Item;
 
+mod present;
 mod run;
 
 #[cfg(test)]
 mod tests;
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_imports))]
+pub use present::{Presented, present};
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_imports))]
 pub use run::{Run, Tracked, apply, interpret, next_seq, start_command, status_command};
 

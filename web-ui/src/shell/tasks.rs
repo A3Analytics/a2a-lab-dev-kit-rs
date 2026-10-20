@@ -9,7 +9,7 @@ use web_sys::HtmlElement;
 
 use crate::inventory::{Fault, Item, Primitive};
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
-use crate::tasks::{self as schema, Field, Form, Kind, Run, Tracked};
+use crate::tasks::{self as schema, Field, Form, Kind, Presented, Run, Tracked};
 
 #[derive(Clone, PartialEq)]
 pub struct TaskUi {
@@ -227,7 +227,7 @@ pub fn TaskView(ui: Signal<TaskUi>) -> Element {
                                 }
                             }
                             if state.form.is_some() {
-                                button { id: "task-start", r#type: "submit", "Start" }
+                                button { id: "task-start", r#type: "submit", "Run" }
                             }
                         }
                         if let Some(item) = selected {
@@ -462,9 +462,6 @@ fn RunCard(tracked: Tracked) -> Element {
                     if !tracked.run.message.is_empty() {
                         Meta { label: "Message", value: tracked.run.message.clone() }
                     }
-                    if !tracked.run.result.is_empty() {
-                        Meta { label: "Result", value: tracked.run.result.clone() }
-                    }
                     if !tracked.run.error_kind.is_empty() {
                         Meta { label: "Error kind", value: tracked.run.error_kind.clone() }
                     }
@@ -472,8 +469,41 @@ fn RunCard(tracked: Tracked) -> Element {
                         Meta { label: "Error identifier", value: tracked.run.error_identifier.clone() }
                     }
                 }
+                ResultBlock { result: tracked.run.result.clone() }
             }
         }
+    }
+}
+
+#[component]
+fn ResultBlock(result: String) -> Element {
+    let Some(shown) = schema::present(&result) else {
+        return rsx! {};
+    };
+    rsx! {
+        section { class: "task-result", "data-kind": shown.kind,
+            header { class: "task-result-head",
+                h3 { "Result" }
+                span { class: "task-result-kind", "{shown.kind}" }
+            }
+            ResultBody { shown: shown.clone() }
+        }
+    }
+}
+
+#[component]
+fn ResultBody(shown: Presented) -> Element {
+    rsx! {
+        if let Some(image) = shown.image.clone() {
+            if let Some(url) = image.preview_url.clone() {
+                img {
+                    class: "task-result-image",
+                    alt: "Task result image",
+                    src: "{url}",
+                }
+            }
+        }
+        pre { class: "task-result-body", "{shown.text}" }
     }
 }
 

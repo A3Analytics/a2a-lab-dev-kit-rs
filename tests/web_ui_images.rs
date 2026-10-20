@@ -227,7 +227,10 @@ fn assert_first_frame(page: &mut Browser) {
 }
 
 fn assert_page(page: &mut Browser, base: &str) {
-    assert_eq!(page.eval("document.getElementById('image-count')"), Value::Null);
+    assert_eq!(
+        page.eval("document.getElementById('image-count')"),
+        Value::Null
+    );
     let before = sends(page, base, "list_images");
     page.click("image-more");
     page.wait_until(FULL_PAGE);

@@ -84,7 +84,10 @@ fn flow(
         "document.querySelectorAll('#image-history [data-id]').length === 101 && document.querySelector('#image-history [data-id]:last-child')?.dataset.image === 'frame-100'",
     );
     assert_eq!(page.eval(UNIQUE_IDS), Value::Bool(true));
-    assert_eq!(page.eval("document.getElementById('image-count')"), Value::Null);
+    assert_eq!(
+        page.eval("document.getElementById('image-count')"),
+        Value::Null
+    );
     assert_focus_survives(&mut page);
     assert_stale_list(&mut page);
     assert_preview(&mut page);
