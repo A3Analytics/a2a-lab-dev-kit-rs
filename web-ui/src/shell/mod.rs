@@ -1,19 +1,20 @@
 //! WASM shell: DOM, fetch, and page session.
 
+mod agent;
+mod app;
 mod chat;
 mod http;
+mod images;
 mod inventory;
-mod log_chrome;
+mod loading;
 mod logs;
+mod metric_chart;
 mod metrics;
 mod nav;
-mod page;
-mod present;
 mod session;
-mod task_runs;
 mod tasks;
 mod workbench;
 
 pub fn start() {
-    session::start();
+    app::start();
 }

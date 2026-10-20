@@ -1,78 +1,82 @@
-//! Task-definition reader. The sidebar lists definitions; the main column shows details and the generated input form.
-
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
-use web_sys::Event;
+//! Task-definition reader. The sidebar lists definitions; the main column shows the form and a closed Details disclosure.
 
 use std::cell::RefCell;
 
-use crate::inventory::{Item, Primitive};
-use crate::shell::http::Transport;
-use crate::shell::page::{self, Page};
-use crate::shell::present;
-use crate::tasks::{self as schema, Field, Form, Kind};
+use dioxus::prelude::*;
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::HtmlElement;
 
-pub fn mount(page: &Page, parent: &web_sys::Element) {
-    present::section(page, parent, "task-view", "Tasks", |body| {
-        let status = present::node(page, "p", Some("task-view-status"));
-        page::attr(&status, "role", "status");
-        page::attr(&status, "aria-live", "polite");
-        body.append_child(&status).ok();
-        let alert = present::node(page, "div", Some("task-view-alert"));
-        page::attr(&alert, "role", "alert");
-        page::attr(&alert, "aria-live", "assertive");
-        body.append_child(&alert).ok();
-        let browser = present::node(page, "div", Some("task-browser"));
-        page::attr(&browser, "class", "log-browser");
-        let filters = present::node(page, "div", Some("task-filters"));
-        page::attr(&filters, "role", "group");
-        page::attr(&filters, "aria-label", "Task filters");
-        let source_group = present::node(page, "div", None);
-        page::attr(&source_group, "class", "log-filter-group");
-        let source_label = present::node(page, "p", None);
-        source_label.set_text_content(Some("Task"));
-        let sources = present::node(page, "div", Some("task-sources"));
-        page::attr(&sources, "role", "radiogroup");
-        page::attr(&sources, "aria-label", "Task definitions");
-        source_group.append_child(&source_label).ok();
-        source_group.append_child(&sources).ok();
-        filters.append_child(&source_group).ok();
-        let results = present::node(page, "div", Some("task-results"));
-        page::attr(&results, "class", "log-results");
-        let scroll = present::node(page, "div", None);
-        page::attr(&scroll, "class", "log-scroll");
-        let detail = present::node(page, "dl", Some("task-detail"));
-        page::attr(&detail, "class", "task-detail");
-        scroll.append_child(&detail).ok();
-        let form = present::node(page, "form", Some("task-form"));
-        page::attr(&form, "class", "task-form");
-        page::attr(&form, "aria-label", "Task input");
-        page::attr(&form, "novalidate", "novalidate");
-        scroll.append_child(&form).ok();
-        let runs = present::node(page, "ul", Some("task-runs"));
-        page::attr(&runs, "class", "log-cards");
-        page::attr(&runs, "aria-label", "Task runs");
-        scroll.append_child(&runs).ok();
-        results.append_child(&scroll).ok();
-        browser.append_child(&filters).ok();
-        browser.append_child(&results).ok();
-        body.append_child(&browser).ok();
-    });
-    fill_sources(page, &[]);
-    page.set_data("task-view-status", "data-gen", "0");
-    page.set_text("task-view-status", "Choose a task.");
+use crate::inventory::{Fault, Item, Primitive};
+use crate::shell::session::{self, calls_allowed, message_id, take_secret};
+use crate::tasks::{self as schema, Field, Form, Kind, Run, Tracked};
+
+#[derive(Clone, PartialEq)]
+pub struct TaskUi {
+    pub selected: String,
+    pub form: Option<Form>,
+    pub runs: Vec<Tracked>,
+    pub status: String,
+    pub alert: String,
+    pub tick: u32,
 }
 
-pub fn install(page: &Page, transport: &Transport) {
-    super::task_runs::install(transport);
-    on_sources(page);
-    on_form(page);
+impl TaskUi {
+    pub fn new() -> Self {
+        Self {
+            selected: String::new(),
+            form: None,
+            runs: Vec::new(),
+            status: "Choose a task.".to_owned(),
+            alert: String::new(),
+            tick: 0,
+        }
+    }
 }
 
-pub fn catalog_changed(page: &Page) {
+#[derive(Clone, PartialEq)]
+enum TaskJob {
+    Idle,
+    Start {
+        tick: u32,
+        task_id: String,
+        input: serde_json::Value,
+    },
+}
+
+#[derive(Clone, PartialEq)]
+enum TaskOutcome {
+    Idle,
+    Started {
+        tick: u32,
+        run: Run,
+    },
+    Failed {
+        tick: u32,
+        start: bool,
+        message: String,
+    },
+}
+
+thread_local! {
+    static UI: RefCell<Option<Signal<TaskUi>>> = const { RefCell::new(None) };
+    static JOB: RefCell<Option<Signal<TaskJob>>> = const { RefCell::new(None) };
+    static WAVE: RefCell<Option<Signal<u32>>> = const { RefCell::new(None) };
+    static BEAT: RefCell<Option<Signal<u32>>> = const { RefCell::new(None) };
+    static SNAPSHOTS: RefCell<Vec<Tracked>> = const { RefCell::new(Vec::new()) };
+    static WATCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn bind(ui: Signal<TaskUi>) {
+    UI.with(|slot| *slot.borrow_mut() = Some(ui));
+}
+
+pub fn catalog_changed() {
     let items = super::inventory::loaded(Primitive::Tasks);
-    let previous = selected();
-    fill_sources(page, &items);
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let previous = ui.peek().selected.clone();
     let next = if items.iter().any(|item| item.id == previous) {
         previous
     } else {
@@ -81,56 +85,787 @@ pub fn catalog_changed(page: &Page) {
             .map(|item| item.id.clone())
             .unwrap_or_default()
     };
-    choose(page, &next);
+    let mut state = ui.peek().clone();
+    state.selected = next.clone();
     if next.is_empty() {
-        clear_definition(page);
-        copy_catalog_state(page);
+        state.form = Some(schema::form(None, None));
+        let snap = super::inventory::snapshot(Primitive::Tasks);
+        state.status = snap.status(Primitive::Tasks);
+        state.alert = snap.alert;
+        ui.set(state);
         return;
     }
-    show_definition(page, &next);
+    if let Some(item) = items.into_iter().find(|item| item.id == next) {
+        state.form = Some(schema::form_for(&item, session::native_secret().as_deref()));
+        state.status.clear();
+        state.alert.clear();
+    }
+    ui.set(state);
 }
 
-fn fill_sources(page: &Page, items: &[Item]) {
-    let Some(list) = page.element("task-sources") else {
+fn bound() -> Option<Signal<TaskUi>> {
+    UI.with(|slot| *slot.borrow())
+}
+
+#[component]
+pub fn TaskView(ui: Signal<TaskUi>) -> Element {
+    let job = use_signal(|| TaskJob::Idle);
+    let wave = use_signal(|| 0u32);
+    let mut beat = use_signal(|| 0u32);
+    use_hook(|| {
+        JOB.with(|slot| *slot.borrow_mut() = Some(job));
+        WAVE.with(|slot| *slot.borrow_mut() = Some(wave));
+        BEAT.with(|slot| *slot.borrow_mut() = Some(beat));
+    });
+    let reply = use_resource(move || {
+        let n = wave();
+        let job = job();
+        let secret = session::native_secret();
+        async move { (n, run_job(job, secret).await) }
+    });
+    let pulse = use_resource(move || {
+        let n = beat();
+        async move {
+            if n > 0 {
+                pause_ms(50).await;
+            }
+            n
+        }
+    });
+    let mut applied = use_signal(|| 0u32);
+    use_effect(move || {
+        let form = ui.read().form.clone();
+        if let Some(form) = form {
+            prime_form(&form);
+        }
+    });
+    let _ = pulse.read();
+    if let Some(n) = pulse()
+        && n == beat()
+        && n > 0
+    {
+        sync_snapshots(ui);
+        if watching() {
+            beat.set(n.wrapping_add(1));
+        }
+    }
+    let _ = reply.read();
+    if let Some((n, outcome)) = reply()
+        && !matches!(outcome, TaskOutcome::Idle)
+    {
+        apply_outcome(ui, &mut applied, n, outcome);
+    }
+    let state = ui();
+    let items = super::inventory::loaded(Primitive::Tasks);
+    let snap = super::inventory::snapshot(Primitive::Tasks);
+    let selected = items.iter().find(|item| item.id == state.selected);
+    let busy = snap.kind == crate::inventory::Kind::Loading;
+    rsx! {
+        section {
+            id: "task-view",
+            aria_labelledby: "task-view-heading",
+            aria_busy: if busy { "true" } else { "false" },
+            h2 { id: "task-view-heading", class: "visually-hidden", tabindex: "-1", "Tasks" }
+            p {
+                id: "task-view-status",
+                role: "status",
+                aria_live: "polite",
+                "data-gen": state.tick.to_string(),
+                "{state.status}"
+            }
+            div { id: "task-view-alert", role: "alert", aria_live: "assertive", "{state.alert}" }
+            div { id: "task-browser", class: "log-browser",
+                div { id: "task-filters", role: "group", aria_label: "Task filters",
+                    div { class: "log-filter-group",
+                        p { "Task" }
+                        div {
+                            id: "task-sources",
+                            role: "radiogroup",
+                            aria_label: "Task definitions",
+                            onkeydown: pick_key,
+                            if items.is_empty() {
+                                button {
+                                    id: "task-pick-0",
+                                    r#type: "button",
+                                    class: "task-source",
+                                    role: "radio",
+                                    tabindex: "0",
+                                    aria_checked: "false",
+                                    aria_disabled: "true",
+                                    "None loaded"
+                                }
+                            } else {
+                                for (index, item) in items.iter().enumerate() {
+                                    TaskPick { index, item: item.clone(), selected: state.selected.clone() }
+                                }
+                            }
+                        }
+                    }
+                }
+                div { id: "task-results", class: "log-results",
+                    div { class: "log-scroll",
+                        if let Some(item) = selected {
+                            header { class: "task-heading",
+                                h3 { id: "task-detail-name", "{item.name}" }
+                                p { id: "task-detail-description", "{item.description}" }
+                            }
+                        }
+                        form {
+                            id: "task-form",
+                            class: "task-form",
+                            aria_label: "Task input",
+                            novalidate: true,
+                            onsubmit: move |event| {
+                                event.prevent_default();
+                                start_selected();
+                            },
+                            if let Some(form) = state.form.as_ref() {
+                                if form.needs_input() {
+                                    TaskField { field: form.root.clone() }
+                                } else {
+                                    p { id: "task-form-empty", "This task has no input fields." }
+                                }
+                            }
+                            if state.form.is_some() {
+                                button { id: "task-start", r#type: "submit", "Start" }
+                            }
+                        }
+                        if let Some(item) = selected {
+                            details { id: "task-details",
+                                summary { id: "task-details-summary", "Details" }
+                                dl { id: "task-detail", class: "task-detail",
+                                    TaskDetail { item: item.clone() }
+                                }
+                            }
+                        }
+                        ul { id: "task-runs", class: "log-cards", aria_label: "Task runs",
+                            for tracked in state.runs.iter() {
+                                RunCard { tracked: tracked.clone() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TaskPick(index: usize, item: Item, selected: String) -> Element {
+    let id = item.id.clone();
+    let name = if item.name.is_empty() {
+        item.id.clone()
+    } else {
+        item.name.clone()
+    };
+    let detail = source_detail(&item);
+    let checked = item.id == selected;
+    rsx! {
+        button {
+            id: "task-pick-{index}",
+            r#type: "button",
+            class: "task-source",
+            role: "radio",
+            tabindex: radio_tab(checked),
+            "data-task": "{item.id}",
+            aria_checked: if checked { "true" } else { "false" },
+            onclick: move |_| choose(&id),
+            span { class: "task-source-name", "{name}" }
+            span { class: "task-source-detail", "{detail}" }
+        }
+    }
+}
+
+#[component]
+fn TaskDetail(item: Item) -> Element {
+    rsx! {
+        dt { "Id" } dd { id: "task-detail-id", "{item.id}" }
+        dt { "Asset id" } dd { id: "task-detail-asset-id", "{named(&item.details, \"Asset id\")}" }
+        dt { "Semantic id" } dd { id: "task-detail-semantic-id", "{named(&item.details, \"Semantic id\")}" }
+        dt { "Input schema" } dd { id: "task-detail-input-schema", "{named(&item.details, \"Input schema\")}" }
+        dt { "Output schema" } dd { id: "task-detail-output-schema", "{named(&item.details, \"Output schema\")}" }
+    }
+}
+
+#[component]
+fn TaskField(field: Field) -> Element {
+    match field.kind {
+        Kind::Object => rsx! {
+            fieldset { class: "task-field-group",
+                legend { "{field.label}" }
+                FieldHelp { field: field.clone() }
+                for child in field.children.iter() {
+                    TaskField { field: child.clone() }
+                }
+            }
+        },
+        Kind::Array => rsx! {
+            fieldset { class: "task-field-group",
+                legend { "{field.label}" }
+                FieldHelp { field: field.clone() }
+                for child in field.children.iter() {
+                    div { class: "task-array-item",
+                        TaskField { field: child.clone() }
+                        button {
+                            r#type: "button",
+                            "data-task-remove": "{child.path}",
+                            aria_label: "Remove {child.label}",
+                            onclick: {
+                                let path = child.path.clone();
+                                move |_| remove_item(&path)
+                            },
+                            "Remove"
+                        }
+                    }
+                }
+                button {
+                    r#type: "button",
+                    "data-task-add": "{field.path}",
+                    aria_label: "Add {field.label}",
+                    onclick: {
+                        let path = field.path.clone();
+                        move |_| add_item(&path)
+                    },
+                    "Add item"
+                }
+            }
+        },
+        Kind::Enum => rsx! {
+            div { class: "task-field",
+                label { r#for: field.id(), "{field.label}" }
+                FieldHelp { field: field.clone() }
+                select {
+                    id: field.id(),
+                    "data-task-path": "{field.path}",
+                    required: required_attr(&field),
+                    aria_required: required_aria(&field),
+                    aria_invalid: invalid_aria(&field),
+                    aria_describedby: described(&field),
+                    onchange: {
+                        let path = field.path.clone();
+                        move |_| commit_path(&path)
+                    },
+                    option { value: "", "Choose" }
+                    for option in field.options.iter() {
+                        option { value: option_label(option), "{option_label(option)}" }
+                    }
+                }
+                FieldError { field: field.clone() }
+            }
+        },
+        Kind::Json => rsx! {
+            div { class: "task-field",
+                label { r#for: field.id(), "{field.label}" }
+                FieldHelp { field: field.clone() }
+                textarea {
+                    id: field.id(),
+                    "data-task-path": "{field.path}",
+                    rows: "6",
+                    required: required_attr(&field),
+                    aria_required: required_aria(&field),
+                    aria_invalid: invalid_aria(&field),
+                    aria_describedby: described(&field),
+                    oninput: {
+                        let path = field.path.clone();
+                        move |_| commit_path(&path)
+                    },
+                }
+                FieldError { field: field.clone() }
+            }
+        },
+        Kind::Boolean => rsx! {
+            div { class: "task-field task-field-check",
+                input {
+                    id: field.id(),
+                    "data-task-path": "{field.path}",
+                    r#type: "checkbox",
+                    aria_invalid: invalid_aria(&field),
+                    aria_describedby: described(&field),
+                    onchange: {
+                        let path = field.path.clone();
+                        move |_| commit_path(&path)
+                    },
+                }
+                label { r#for: field.id(), "{field.label}" }
+                FieldHelp { field: field.clone() }
+                FieldError { field: field.clone() }
+            }
+        },
+        _ => rsx! {
+            div { class: "task-field",
+                label { r#for: field.id(), "{field.label}" }
+                FieldHelp { field: field.clone() }
+                input {
+                    id: field.id(),
+                    "data-task-path": "{field.path}",
+                    r#type: field.kind.input_type().unwrap_or("text"),
+                    step: step_attr(&field),
+                    required: required_attr(&field),
+                    aria_required: required_aria(&field),
+                    aria_invalid: invalid_aria(&field),
+                    aria_describedby: described(&field),
+                    min: field.minimum.clone(),
+                    max: field.maximum.clone(),
+                    minlength: length_attr(field.min_length),
+                    maxlength: length_attr(field.max_length),
+                    pattern: field.pattern.clone(),
+                    "data-exclusive-minimum": field.exclusive_minimum.clone().unwrap_or_default(),
+                    "data-exclusive-maximum": field.exclusive_maximum.clone().unwrap_or_default(),
+                    oninput: {
+                        let path = field.path.clone();
+                        move |_| commit_path(&path)
+                    },
+                    onchange: {
+                        let path = field.path.clone();
+                        move |_| commit_path(&path)
+                    },
+                }
+                FieldError { field: field.clone() }
+            }
+        },
+    }
+}
+
+#[component]
+fn FieldHelp(field: Field) -> Element {
+    if field.description.is_empty() {
+        return rsx! {};
+    }
+    rsx! { p { id: field.help_id(), class: "task-field-help", "{field.description}" } }
+}
+
+#[component]
+fn FieldError(field: Field) -> Element {
+    let Some(message) = field.error.clone() else {
+        return rsx! {};
+    };
+    rsx! { p { id: field.error_id(), class: "task-field-error", "{message}" } }
+}
+
+#[component]
+fn RunCard(tracked: Tracked) -> Element {
+    rsx! {
+        li {
+            div {
+                class: "log-card",
+                "data-run": "{tracked.run.id}",
+                "data-gen": tracked.poll.to_string(),
+                div { class: "log-card-identity",
+                    span { class: "log-card-time", "{tracked.run.id}" }
+                    p { class: "log-card-title", "{tracked.run.task_id}" }
+                }
+                div { class: "log-card-tags",
+                    Meta { label: "State", value: tracked.run.state.clone() }
+                    if !tracked.run.progress.is_empty() {
+                        Meta { label: "Progress", value: tracked.run.progress.clone() }
+                    }
+                    if !tracked.run.message.is_empty() {
+                        Meta { label: "Message", value: tracked.run.message.clone() }
+                    }
+                    if !tracked.run.result.is_empty() {
+                        Meta { label: "Result", value: tracked.run.result.clone() }
+                    }
+                    if !tracked.run.error_kind.is_empty() {
+                        Meta { label: "Error kind", value: tracked.run.error_kind.clone() }
+                    }
+                    if !tracked.run.error_identifier.is_empty() {
+                        Meta { label: "Error identifier", value: tracked.run.error_identifier.clone() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn Meta(label: String, value: String) -> Element {
+    rsx! {
+        span { class: "log-meta",
+            span { class: "log-meta-label", "{label}:" }
+            span { "{value}" }
+        }
+    }
+}
+
+fn choose(id: &str) {
+    let Some(mut ui) = bound() else {
         return;
     };
-    page::clear_children(&list);
-    if items.is_empty() {
-        let button = present::node(page, "button", Some("task-pick-0"));
-        page::attr(&button, "type", "button");
-        page::attr(&button, "class", "task-source");
-        page::attr(&button, "role", "radio");
-        page::attr(&button, "aria-checked", "false");
-        page::attr(&button, "aria-disabled", "true");
-        button.set_text_content(Some("None loaded"));
-        list.append_child(&button).ok();
+    if ui.peek().selected == id {
         return;
     }
-    let current = selected();
-    for (index, item) in items.iter().enumerate() {
-        let button = present::node(page, "button", Some(&format!("task-pick-{index}")));
-        page::attr(&button, "type", "button");
-        page::attr(&button, "class", "task-source");
-        page::attr(&button, "role", "radio");
-        page::attr(&button, "data-task", &item.id);
-        page::attr(
-            &button,
-            "aria-checked",
-            if item.id == current { "true" } else { "false" },
-        );
-        let name = present::node(page, "span", None);
-        page::attr(&name, "class", "task-source-name");
-        name.set_text_content(Some(if item.name.is_empty() {
-            &item.id
+    let items = super::inventory::loaded(Primitive::Tasks);
+    let Some(item) = items.into_iter().find(|item| item.id == id) else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    next.selected = id.to_owned();
+    next.form = Some(schema::form_for(&item, session::native_secret().as_deref()));
+    next.status.clear();
+    next.alert.clear();
+    ui.set(next);
+}
+
+fn pick_key(event: KeyboardEvent) {
+    let delta: isize = match event.key() {
+        Key::ArrowDown | Key::ArrowRight => 1,
+        Key::ArrowUp | Key::ArrowLeft => -1,
+        _ => return,
+    };
+    event.prevent_default();
+    let items = super::inventory::loaded(Primitive::Tasks);
+    if items.is_empty() {
+        return;
+    }
+    let Some(ui) = bound() else {
+        return;
+    };
+    let current = ui.peek().selected.clone();
+    let index = items
+        .iter()
+        .position(|item| item.id == current)
+        .unwrap_or(0);
+    let next = (index as isize + delta).rem_euclid(items.len() as isize) as usize;
+    let id = items[next].id.clone();
+    choose(&id);
+    focus_control(&format!("task-pick-{next}"));
+}
+
+fn bump_wave() {
+    WAVE.with(|slot| {
+        if let Some(mut wave) = *slot.borrow() {
+            wave.set(wave().wrapping_add(1));
+        }
+    });
+}
+
+fn start_selected() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let Some(job) = JOB.with(|slot| *slot.borrow()) else {
+        return;
+    };
+    let task_id = ui.peek().selected.clone();
+    if task_id.is_empty() {
+        return;
+    }
+    let mut state = ui();
+    let input = state.form.as_mut().and_then(Form::submit);
+    let Some(input) = input else {
+        ui.set(state);
+        return;
+    };
+    ui.set(state);
+    begin_start(&task_id, input, ui, job);
+}
+
+fn begin_start(
+    task_id: &str,
+    input: serde_json::Value,
+    mut ui: Signal<TaskUi>,
+    mut job: Signal<TaskJob>,
+) {
+    if !calls_allowed() {
+        return;
+    }
+    let rendered = input.to_string();
+    if take_secret(&[task_id, rendered.as_str()]).is_err() {
+        return;
+    }
+    let mut next = ui();
+    next.tick = next.tick.wrapping_add(1);
+    next.status = "Starting.".to_owned();
+    next.alert.clear();
+    let tick = next.tick;
+    ui.set(next);
+    set_watching(true);
+    bump_wave();
+    bump_beat();
+    job.set(TaskJob::Start {
+        tick,
+        task_id: task_id.to_owned(),
+        input,
+    });
+}
+
+fn bump_beat() {
+    BEAT.with(|slot| {
+        if let Some(mut beat) = *slot.borrow() {
+            beat.set(beat().wrapping_add(1).max(1));
+        }
+    });
+}
+
+fn set_watching(on: bool) {
+    WATCHING.with(|slot| slot.set(on));
+}
+
+fn watching() -> bool {
+    WATCHING.with(std::cell::Cell::get)
+}
+
+async fn poll_live_runs(secret: Option<&str>) -> Result<(), String> {
+    loop {
+        let live = SNAPSHOTS.with(|slot| {
+            slot.borrow()
+                .iter()
+                .filter(|item| !item.run.terminal())
+                .map(|item| item.run.id.clone())
+                .collect::<Vec<_>>()
+        });
+        if live.is_empty() {
+            return Ok(());
+        }
+        pause().await;
+        for id in live {
+            let run = send_command(&schema::status_command(&id), secret).await?;
+            let seq = SNAPSHOTS.with(|slot| schema::next_seq(&slot.borrow(), &id));
+            remember_run(run, seq);
+        }
+    }
+}
+
+fn remember_run(run: Run, seq: u32) {
+    SNAPSHOTS.with(|slot| {
+        let _ = schema::apply(&mut slot.borrow_mut(), run, seq);
+    });
+}
+
+fn sync_snapshots(mut ui: Signal<TaskUi>) {
+    let snapshots = SNAPSHOTS.with(|slot| slot.borrow().clone());
+    if snapshots.is_empty() {
+        return;
+    }
+    let mut next = ui.peek().clone();
+    if next.runs == snapshots {
+        return;
+    }
+    next.runs = snapshots;
+    next.status.clear();
+    ui.set(next);
+}
+
+fn apply_outcome(
+    mut ui: Signal<TaskUi>,
+    applied: &mut Signal<u32>,
+    wave: u32,
+    outcome: TaskOutcome,
+) {
+    match outcome {
+        TaskOutcome::Idle => {}
+        TaskOutcome::Started { tick, run: _ } => {
+            if wave <= applied() {
+                return;
+            }
+            applied.set(wave);
+            let mut next = ui();
+            if next.tick != tick {
+                return;
+            }
+            next.status.clear();
+            next.alert.clear();
+            ui.set(next);
+            sync_snapshots(ui);
+        }
+        TaskOutcome::Failed {
+            tick,
+            start,
+            message,
+        } => {
+            if wave <= applied() {
+                return;
+            }
+            applied.set(wave);
+            let mut next = ui();
+            if next.tick != tick {
+                return;
+            }
+            next.status = if start {
+                "The task could not be started.".to_owned()
+            } else {
+                "The task run could not be read.".to_owned()
+            };
+            next.alert = message;
+            ui.set(next);
+        }
+    }
+}
+
+async fn run_job(job: TaskJob, secret: Option<String>) -> TaskOutcome {
+    match job {
+        TaskJob::Idle => TaskOutcome::Idle,
+        TaskJob::Start {
+            tick,
+            task_id,
+            input,
+        } => {
+            let command = schema::start_command(&task_id, &input);
+            match send_command(&command, secret.as_deref()).await {
+                Ok(run) => {
+                    remember_run(run.clone(), 1);
+                    if let Err(message) = poll_live_runs(secret.as_deref()).await {
+                        set_watching(false);
+                        return TaskOutcome::Failed {
+                            tick,
+                            start: false,
+                            message,
+                        };
+                    }
+                    set_watching(false);
+                    TaskOutcome::Started { tick, run }
+                }
+                Err(message) => {
+                    set_watching(false);
+                    TaskOutcome::Failed {
+                        tick,
+                        start: true,
+                        message,
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn send_command(command: &serde_json::Value, secret: Option<&str>) -> Result<Run, String> {
+    let Some(transport) = session::transport() else {
+        return Err("The browser could not reach this origin.".to_owned());
+    };
+    let Ok(body) = crate::codec::command_message(&message_id(), command, "") else {
+        return Err("The task start could not be built.".to_owned());
+    };
+    match transport.send(&body, secret).await {
+        Err(()) => Err("The browser could not reach this origin.".to_owned()),
+        Ok(reply) => schema::interpret(&reply, secret).map_err(fault_message),
+    }
+}
+
+async fn pause() {
+    pause_ms(250).await;
+}
+
+async fn pause_ms(ms: i32) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
+    });
+    let _ = JsFuture::from(promise).await;
+}
+
+fn commit_path(path: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let value = control_at(path);
+    let mut next = ui();
+    if let Some(form) = next.form.as_mut() {
+        form.set(path, &value);
+    }
+    ui.set(next);
+}
+
+fn add_item(path: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui();
+    if let Some(form) = next.form.as_mut() {
+        form.add(path);
+    }
+    ui.set(next);
+}
+
+fn remove_item(path: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui();
+    if let Some(form) = next.form.as_mut() {
+        form.remove(path);
+    }
+    ui.set(next);
+}
+
+fn prime_form(form: &Form) {
+    prime_field(&form.root);
+}
+
+fn prime_field(field: &Field) {
+    match field.kind {
+        Kind::Object | Kind::Array => {
+            for child in &field.children {
+                prime_field(child);
+            }
+        }
+        _ => write_field(field),
+    }
+}
+
+fn write_field(field: &Field) {
+    let Some(element) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(&field.id()))
+    else {
+        return;
+    };
+    if let Ok(input) = element.clone().dyn_into::<web_sys::HtmlInputElement>() {
+        if input.type_() == "checkbox" {
+            input.set_checked(field.raw == "true");
         } else {
-            &item.name
-        }));
-        let detail = present::node(page, "span", None);
-        page::attr(&detail, "class", "task-source-detail");
-        detail.set_text_content(Some(&source_detail(item)));
-        button.append_child(&name).ok();
-        button.append_child(&detail).ok();
-        list.append_child(&button).ok();
+            input.set_value(&field.raw);
+        }
+        return;
+    }
+    if let Ok(select) = element.clone().dyn_into::<web_sys::HtmlSelectElement>() {
+        select.set_value(&field.raw);
+        return;
+    }
+    if let Ok(area) = element.dyn_into::<web_sys::HtmlTextAreaElement>() {
+        area.set_value(&field.raw);
+    }
+}
+
+fn control_at(path: &str) -> String {
+    let field_id = if path.is_empty() {
+        "task-input".to_owned()
+    } else {
+        format!("task-input-{}", path.replace('.', "-"))
+    };
+    let Some(element) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(&field_id))
+    else {
+        return String::new();
+    };
+    if let Ok(input) = element.clone().dyn_into::<web_sys::HtmlInputElement>() {
+        if input.type_() == "checkbox" {
+            return if input.checked() {
+                "true".to_owned()
+            } else {
+                "false".to_owned()
+            };
+        }
+        return input.value();
+    }
+    if let Ok(select) = element.clone().dyn_into::<web_sys::HtmlSelectElement>() {
+        return select.value();
+    }
+    element
+        .dyn_into::<web_sys::HtmlTextAreaElement>()
+        .map(|area| area.value())
+        .unwrap_or_default()
+}
+
+fn focus_control(id: &str) {
+    if let Some(element) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(id))
+        && let Ok(html) = element.dyn_into::<HtmlElement>()
+    {
+        let _ = html.focus();
     }
 }
 
@@ -142,445 +877,12 @@ fn source_detail(item: &Item) -> String {
     }
 }
 
-fn on_sources(page: &Page) {
-    let Some(sources) = page.element("task-sources") else {
-        return;
-    };
-    let page_for_click = page.clone();
-    let click = Closure::wrap(Box::new(move |event: Event| {
-        let Some(id) = event
-            .target()
-            .and_then(|target| target.dyn_ref::<web_sys::Element>().cloned())
-            .and_then(|element| element.closest("button").ok().flatten())
-            .and_then(|button| button.get_attribute("data-task"))
-        else {
-            return;
-        };
-        if id.is_empty() || id == selected() {
-            return;
-        }
-        choose(&page_for_click, &id);
-        show_definition(&page_for_click, &id);
-    }) as Box<dyn FnMut(Event)>);
-    let _ = sources.add_event_listener_with_callback("click", click.as_ref().unchecked_ref());
-    click.forget();
-    let page_for_key = page.clone();
-    let key = Closure::wrap(Box::new(move |event: Event| {
-        let Some(key_event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
-            return;
-        };
-        let delta: isize = match key_event.key().as_str() {
-            "ArrowDown" | "ArrowRight" => 1,
-            "ArrowUp" | "ArrowLeft" => -1,
-            _ => return,
-        };
-        key_event.prevent_default();
-        let Some(id) = neighbor(delta) else {
-            return;
-        };
-        if id == selected() {
-            return;
-        }
-        choose(&page_for_key, &id);
-        focus_selected(&page_for_key);
-        show_definition(&page_for_key, &id);
-    }) as Box<dyn FnMut(Event)>);
-    let _ = sources.add_event_listener_with_callback("keydown", key.as_ref().unchecked_ref());
-    key.forget();
-}
-
-fn on_form(page: &Page) {
-    let Some(form) = page.element("task-form") else {
-        return;
-    };
-    let input = Closure::wrap(Box::new(move |event: Event| {
-        commit_field(&event);
-    }) as Box<dyn FnMut(Event)>);
-    let _ = form.add_event_listener_with_callback("input", input.as_ref().unchecked_ref());
-    input.forget();
-    let change = Closure::wrap(Box::new(move |event: Event| {
-        commit_field(&event);
-    }) as Box<dyn FnMut(Event)>);
-    let _ = form.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
-    change.forget();
-    let page_for_click = page.clone();
-    let click = Closure::wrap(Box::new(move |event: Event| {
-        let Some(button) = event
-            .target()
-            .and_then(|target| target.dyn_ref::<web_sys::Element>().cloned())
-            .and_then(|element| element.closest("button").ok().flatten())
-        else {
-            return;
-        };
-        if let Some(path) = button.get_attribute("data-task-add") {
-            event.prevent_default();
-            FORM.with(|slot| {
-                if let Some(form) = slot.borrow_mut().as_mut() {
-                    form.add(&path);
-                }
-            });
-            paint_form(&page_for_click);
-            return;
-        }
-        if let Some(path) = button.get_attribute("data-task-remove") {
-            event.prevent_default();
-            FORM.with(|slot| {
-                if let Some(form) = slot.borrow_mut().as_mut() {
-                    form.remove(&path);
-                }
-            });
-            paint_form(&page_for_click);
-        }
-    }) as Box<dyn FnMut(Event)>);
-    let _ = form.add_event_listener_with_callback("click", click.as_ref().unchecked_ref());
-    click.forget();
-    let page_for_submit = page.clone();
-    let submit = Closure::wrap(Box::new(move |event: Event| {
-        event.prevent_default();
-        start_selected(&page_for_submit);
-    }) as Box<dyn FnMut(Event)>);
-    let _ = form.add_event_listener_with_callback("submit", submit.as_ref().unchecked_ref());
-    submit.forget();
-}
-
-fn commit_field(event: &Event) {
-    let Some(element) = event
-        .target()
-        .and_then(|target| target.dyn_ref::<web_sys::Element>().cloned())
-    else {
-        return;
-    };
-    let Some(path) = element.get_attribute("data-task-path") else {
-        return;
-    };
-    let value = if let Ok(input) = element.clone().dyn_into::<web_sys::HtmlInputElement>() {
-        if input.type_() == "checkbox" {
-            if input.checked() {
-                "true".to_owned()
-            } else {
-                "false".to_owned()
-            }
-        } else {
-            input.value()
-        }
-    } else if let Ok(select) = element.clone().dyn_into::<web_sys::HtmlSelectElement>() {
-        select.value()
-    } else if let Ok(area) = element.dyn_into::<web_sys::HtmlTextAreaElement>() {
-        area.value()
-    } else {
-        return;
-    };
-    FORM.with(|slot| {
-        if let Some(form) = slot.borrow_mut().as_mut() {
-            form.set(&path, &value);
-        }
-    });
-}
-
-fn neighbor(delta: isize) -> Option<String> {
-    let items = super::inventory::loaded(Primitive::Tasks);
-    if items.is_empty() {
-        return None;
-    }
-    let current = selected();
-    let index = items
-        .iter()
-        .position(|item| item.id == current)
-        .unwrap_or(0);
-    let next = (index as isize + delta).rem_euclid(items.len() as isize) as usize;
-    Some(items[next].id.clone())
-}
-
-fn choose(page: &Page, id: &str) {
-    SELECTED.with(|slot| *slot.borrow_mut() = id.to_owned());
-    let items = super::inventory::loaded(Primitive::Tasks);
-    for (index, item) in items.iter().enumerate() {
-        page.set_data(
-            &format!("task-pick-{index}"),
-            "aria-checked",
-            if item.id == id { "true" } else { "false" },
-        );
-    }
-}
-
-fn focus_selected(page: &Page) {
-    let items = super::inventory::loaded(Primitive::Tasks);
-    let current = selected();
-    if let Some(index) = items.iter().position(|item| item.id == current) {
-        page.focus(&format!("task-pick-{index}"));
-    }
-}
-
-fn show_definition(page: &Page, id: &str) {
-    let items = super::inventory::loaded(Primitive::Tasks);
-    let Some(item) = items.into_iter().find(|item| item.id == id) else {
-        clear_definition(page);
-        copy_catalog_state(page);
-        return;
-    };
-    render_detail(page, &item);
-    let secret = page.secret();
-    remember_form(schema::form_for(&item, secret.as_deref()));
-    paint_form(page);
-    page.set_text("task-view-status", "");
-    page.set_text("task-view-alert", "");
-    page.set_data("task-view", "aria-busy", "false");
-}
-
-fn render_detail(page: &Page, item: &Item) {
-    let Some(detail) = page.element("task-detail") else {
-        return;
-    };
-    page::clear_children(&detail);
-    fact(page, &detail, "task-detail-id", "Id", &item.id);
-    fact(page, &detail, "task-detail-name", "Name", &item.name);
-    fact(
-        page,
-        &detail,
-        "task-detail-description",
-        "Description",
-        &item.description,
-    );
-    fact(
-        page,
-        &detail,
-        "task-detail-asset-id",
-        "Asset id",
-        &named(&item.details, "Asset id"),
-    );
-    fact(
-        page,
-        &detail,
-        "task-detail-semantic-id",
-        "Semantic id",
-        &named(&item.details, "Semantic id"),
-    );
-    fact(
-        page,
-        &detail,
-        "task-detail-input-schema",
-        "Input schema",
-        &named(&item.details, "Input schema"),
-    );
-    fact(
-        page,
-        &detail,
-        "task-detail-output-schema",
-        "Output schema",
-        &named(&item.details, "Output schema"),
-    );
-}
-
-fn fact(page: &Page, parent: &web_sys::Element, id: &str, label: &str, value: &str) {
-    let term = present::node(page, "dt", None);
-    term.set_text_content(Some(label));
-    let data = present::node(page, "dd", Some(id));
-    data.set_text_content(Some(value));
-    parent.append_child(&term).ok();
-    parent.append_child(&data).ok();
-}
-
 fn named(details: &[(&'static str, String)], label: &str) -> String {
     details
         .iter()
         .find(|(name, _)| *name == label)
         .map(|(_, value)| value.clone())
         .unwrap_or_default()
-}
-
-fn paint_form(page: &Page) {
-    let Some(root) = page.element("task-form") else {
-        return;
-    };
-    page::clear_children(&root);
-    let Some(form) = remembered_form() else {
-        return;
-    };
-    if form.needs_input() {
-        draw_field(page, &root, &form.root);
-    } else {
-        let empty = present::node(page, "p", Some("task-form-empty"));
-        empty.set_text_content(Some("This task has no input fields."));
-        root.append_child(&empty).ok();
-    }
-    let start = present::node(page, "button", Some("task-start"));
-    page::attr(&start, "type", "submit");
-    start.set_text_content(Some("Start"));
-    root.append_child(&start).ok();
-}
-
-fn draw_field(page: &Page, parent: &web_sys::Element, field: &Field) {
-    match field.kind {
-        Kind::Object => draw_object(page, parent, field),
-        Kind::Array => draw_array(page, parent, field),
-        Kind::Enum => draw_enum(page, parent, field),
-        Kind::Json => draw_json(page, parent, field),
-        Kind::Boolean => draw_checkbox(page, parent, field),
-        _ => draw_input(page, parent, field),
-    }
-}
-
-fn draw_object(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let group = present::node(page, "fieldset", None);
-    page::attr(&group, "class", "task-field-group");
-    let legend = present::node(page, "legend", None);
-    legend.set_text_content(Some(&field.label));
-    group.append_child(&legend).ok();
-    help(page, &group, field);
-    for child in &field.children {
-        draw_field(page, &group, child);
-    }
-    parent.append_child(&group).ok();
-}
-
-fn draw_array(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let group = present::node(page, "fieldset", None);
-    page::attr(&group, "class", "task-field-group");
-    let legend = present::node(page, "legend", None);
-    legend.set_text_content(Some(&field.label));
-    group.append_child(&legend).ok();
-    help(page, &group, field);
-    for child in &field.children {
-        let item = present::node(page, "div", None);
-        page::attr(&item, "class", "task-array-item");
-        draw_field(page, &item, child);
-        let remove = present::node(page, "button", None);
-        page::attr(&remove, "type", "button");
-        page::attr(&remove, "data-task-remove", &child.path);
-        page::attr(&remove, "aria-label", &format!("Remove {}", child.label));
-        remove.set_text_content(Some("Remove"));
-        item.append_child(&remove).ok();
-        group.append_child(&item).ok();
-    }
-    let add = present::node(page, "button", None);
-    page::attr(&add, "type", "button");
-    page::attr(&add, "data-task-add", &field.path);
-    page::attr(&add, "aria-label", &format!("Add {}", field.label));
-    add.set_text_content(Some("Add item"));
-    group.append_child(&add).ok();
-    parent.append_child(&group).ok();
-}
-
-fn draw_enum(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let wrap = wrap_control(page, parent, field);
-    let select = present::node(page, "select", Some(&field.id()));
-    page::attr(&select, "data-task-path", &field.path);
-    apply_attrs(&select, field);
-    describe(&select, field);
-    let blank = present::node(page, "option", None);
-    page::attr(&blank, "value", "");
-    blank.set_text_content(Some("Choose"));
-    select.append_child(&blank).ok();
-    for option in &field.options {
-        let label = option_label(option);
-        let node = present::node(page, "option", None);
-        page::attr(&node, "value", &label);
-        if field.raw == label {
-            page::attr(&node, "selected", "selected");
-        }
-        node.set_text_content(Some(&label));
-        select.append_child(&node).ok();
-    }
-    wrap.append_child(&select).ok();
-    error(page, &wrap, field);
-}
-
-fn draw_json(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let wrap = wrap_control(page, parent, field);
-    let area = present::node(page, "textarea", Some(&field.id()));
-    page::attr(&area, "data-task-path", &field.path);
-    page::attr(&area, "rows", "6");
-    apply_attrs(&area, field);
-    describe(&area, field);
-    if let Ok(control) = area.clone().dyn_into::<web_sys::HtmlTextAreaElement>() {
-        control.set_value(&field.raw);
-    }
-    wrap.append_child(&area).ok();
-    error(page, &wrap, field);
-}
-
-fn draw_checkbox(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let wrap = present::node(page, "div", None);
-    page::attr(&wrap, "class", "task-field task-field-check");
-    let input = present::node(page, "input", Some(&field.id()));
-    page::attr(&input, "data-task-path", &field.path);
-    apply_attrs(&input, field);
-    describe(&input, field);
-    if field.raw == "true" {
-        page::attr(&input, "checked", "checked");
-    }
-    let label = present::node(page, "label", None);
-    page::attr(&label, "for", &field.id());
-    label.set_text_content(Some(&field.label));
-    wrap.append_child(&input).ok();
-    wrap.append_child(&label).ok();
-    help(page, &wrap, field);
-    error(page, &wrap, field);
-    parent.append_child(&wrap).ok();
-}
-
-fn draw_input(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let wrap = wrap_control(page, parent, field);
-    let input = present::node(page, "input", Some(&field.id()));
-    page::attr(&input, "data-task-path", &field.path);
-    apply_attrs(&input, field);
-    describe(&input, field);
-    if let Ok(control) = input.clone().dyn_into::<web_sys::HtmlInputElement>() {
-        control.set_value(&field.raw);
-    }
-    wrap.append_child(&input).ok();
-    error(page, &wrap, field);
-}
-
-fn wrap_control(page: &Page, parent: &web_sys::Element, field: &Field) -> web_sys::Element {
-    let wrap = present::node(page, "div", None);
-    page::attr(&wrap, "class", "task-field");
-    let label = present::node(page, "label", None);
-    page::attr(&label, "for", &field.id());
-    label.set_text_content(Some(&field.label));
-    wrap.append_child(&label).ok();
-    help(page, &wrap, field);
-    parent.append_child(&wrap).ok();
-    wrap
-}
-
-fn help(page: &Page, parent: &web_sys::Element, field: &Field) {
-    if field.description.is_empty() {
-        return;
-    }
-    let help = present::node(page, "p", Some(&field.help_id()));
-    page::attr(&help, "class", "task-field-help");
-    help.set_text_content(Some(&field.description));
-    parent.append_child(&help).ok();
-}
-
-fn error(page: &Page, parent: &web_sys::Element, field: &Field) {
-    let Some(message) = &field.error else {
-        return;
-    };
-    let error = present::node(page, "p", Some(&field.error_id()));
-    page::attr(&error, "class", "task-field-error");
-    error.set_text_content(Some(message));
-    parent.append_child(&error).ok();
-}
-
-fn apply_attrs(element: &web_sys::Element, field: &Field) {
-    for (name, value) in schema::attrs(field) {
-        page::attr(element, name, &value);
-    }
-}
-
-fn describe(element: &web_sys::Element, field: &Field) {
-    let mut described = Vec::new();
-    if !field.description.is_empty() {
-        described.push(field.help_id());
-    }
-    if field.error.is_some() {
-        described.push(field.error_id());
-    }
-    if !described.is_empty() {
-        page::attr(element, "aria-describedby", &described.join(" "));
-    }
 }
 
 fn option_label(value: &serde_json::Value) -> String {
@@ -593,63 +895,52 @@ fn option_label(value: &serde_json::Value) -> String {
     }
 }
 
-fn copy_catalog_state(page: &Page) {
-    let spec = Primitive::Tasks.spec();
-    let kind = page.data(spec.status, "data-state");
-    let status = page
-        .element(spec.status)
-        .and_then(|element| element.text_content())
-        .unwrap_or_default();
-    let alert = page
-        .element(spec.alert)
-        .and_then(|element| element.text_content())
-        .unwrap_or_default();
-    page.set_data(
-        "task-view",
-        "aria-busy",
-        if kind == "loading" { "true" } else { "false" },
-    );
-    page.set_text("task-view-status", &status);
-    page.set_text("task-view-alert", &alert);
+fn required_attr(field: &Field) -> bool {
+    schema::attrs(field)
+        .iter()
+        .any(|(name, _)| *name == "required")
 }
 
-fn clear_definition(page: &Page) {
-    remember_form(schema::form(None, None));
-    if let Some(detail) = page.element("task-detail") {
-        page::clear_children(&detail);
+fn required_aria(field: &Field) -> Option<&'static str> {
+    required_attr(field).then_some("true")
+}
+
+fn invalid_aria(field: &Field) -> Option<&'static str> {
+    field.error.is_some().then_some("true")
+}
+
+fn described(field: &Field) -> String {
+    let mut ids = Vec::new();
+    if !field.description.is_empty() {
+        ids.push(field.help_id());
     }
-    if let Some(form) = page.element("task-form") {
-        page::clear_children(&form);
+    if field.error.is_some() {
+        ids.push(field.error_id());
     }
+    ids.join(" ")
 }
 
-fn selected() -> String {
-    SELECTED.with(|slot| slot.borrow().clone())
+fn radio_tab(checked: bool) -> &'static str {
+    if checked { "0" } else { "-1" }
 }
 
-fn remember_form(form: Form) {
-    FORM.with(|slot| *slot.borrow_mut() = Some(form));
+fn length_attr(value: Option<u64>) -> Option<String> {
+    value.map(|value| value.to_string())
 }
 
-fn remembered_form() -> Option<Form> {
-    FORM.with(|slot| slot.borrow().clone())
+fn step_attr(field: &Field) -> String {
+    schema::attrs(field)
+        .into_iter()
+        .find(|(name, _)| *name == "step")
+        .map(|(_, value)| value)
+        .unwrap_or_default()
 }
 
-fn start_selected(page: &Page) {
-    let task_id = selected();
-    if task_id.is_empty() {
-        return;
+fn fault_message(fault: Fault) -> String {
+    match fault {
+        Fault::Unavailable(message) => message,
+        Fault::Unauthorized(message) | Fault::Forbidden(message) => message,
+        Fault::Malformed => "The task result could not be read.".to_owned(),
+        Fault::Transport => "The browser could not reach this origin.".to_owned(),
     }
-    let input = FORM.with(|slot| slot.borrow_mut().as_mut().and_then(Form::submit));
-    let Some(input) = input else {
-        paint_form(page);
-        return;
-    };
-    paint_form(page);
-    super::task_runs::start(page, task_id, input);
-}
-
-std::thread_local! {
-    static SELECTED: RefCell<String> = const { RefCell::new(String::new()) };
-    static FORM: RefCell<Option<Form>> = const { RefCell::new(None) };
 }

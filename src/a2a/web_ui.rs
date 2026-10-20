@@ -14,7 +14,7 @@ pub const WEB_UI_PATH: &str = "/ui/";
 
 const ENTRY_CACHE: &str = "no-cache";
 const ASSET_CACHE: &str = "public, max-age=31536000, immutable";
-const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 
 mod packed {
     include!(concat!(env!("OUT_DIR"), "/web_ui_assets.rs"));
@@ -24,16 +24,12 @@ mod packed {
 #[path = "../../web-ui/build/freshness.rs"]
 mod freshness;
 
-#[cfg(all(test, feature = "web-ui"))]
-#[path = "../../web-ui/build/vendor.rs"]
-mod chart_vendor;
-
 pub(crate) fn router() -> Router {
     Router::new()
         .route("/ui", get(entry))
         .route("/ui/", get(entry))
         .route("/ui/index.html", get(entry))
-        .route("/ui/assets/{name}", get(asset))
+        .route("/ui/assets/{*path}", get(asset))
 }
 
 #[must_use]
@@ -51,8 +47,8 @@ async fn entry() -> Response {
     shell(packed::ENTRY_HTML, "text/html; charset=utf-8", ENTRY_CACHE)
 }
 
-async fn asset(Path(name): Path<String>) -> Response {
-    match packed_asset(&name) {
+async fn asset(Path(path): Path<String>) -> Response {
+    match packed_asset(&path) {
         Some(asset) => shell(asset.body, asset.content_type, ASSET_CACHE),
         None => not_found(),
     }
@@ -60,10 +56,18 @@ async fn asset(Path(name): Path<String>) -> Response {
 
 fn asset_name(path: &str) -> Option<&str> {
     let name = path.strip_prefix("/ui/assets/")?;
-    (name
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '.'))
-    .then_some(name)
+    if name.is_empty() || name.contains("..") {
+        return None;
+    }
+    name.chars()
+        .all(|character| {
+            character.is_ascii_alphanumeric()
+                || character == '-'
+                || character == '_'
+                || character == '.'
+                || character == '/'
+        })
+        .then_some(name)
 }
 
 fn packed_asset(name: &str) -> Option<&'static packed::PackedAsset> {

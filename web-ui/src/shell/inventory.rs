@@ -1,170 +1,461 @@
 //! Inventory views. List calls use the page bearer field and do not write storage.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen_futures::spawn_local;
-use web_sys::Event;
+use dioxus::prelude::*;
 
 use crate::card::Card;
 use crate::codec;
 use crate::inventory::{self, Fault, Item, Kind, Listed, Primitive, QueryFault};
 use crate::shell::http::Transport;
-use crate::shell::page::{self, Page};
-use crate::shell::present;
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 
-std::thread_local! {
-    static VIEWS: RefCell<BTreeMap<Primitive, Vec<Item>>> = const { RefCell::new(BTreeMap::new()) };
-    static TRANSPORT: RefCell<Option<Transport>> = const { RefCell::new(None) };
+#[derive(Clone, PartialEq)]
+pub struct InventoryUi {
+    pub kind: Kind,
+    pub advertised: bool,
+    pub next: String,
+    pub tick: u32,
+    pub alert: String,
+    pub items: Vec<Item>,
 }
 
-pub fn mount(page: &Page, main: &web_sys::Element, primitive: Primitive) {
-    {
-        let spec = primitive.spec();
-        present::section(page, main, spec.section, spec.heading, |body| {
-            page::attr(body, "class", "inventory");
-            let status = present::node(page, "p", Some(spec.status));
-            page::attr(&status, "role", "status");
-            page::attr(&status, "aria-live", "polite");
-            body.append_child(&status).ok();
-            let alert = present::node(page, "div", Some(spec.alert));
-            page::attr(&alert, "role", "alert");
-            page::attr(&alert, "aria-live", "assertive");
-            body.append_child(&alert).ok();
-            if primitive == Primitive::Tasks {
-                let note = present::node(page, "p", Some("inventory-tasks-note"));
-                note.set_text_content(Some(
-                    "Lab task definitions. This list does not use chat sessions or protocol tasks.",
-                ));
-                body.append_child(&note).ok();
-            }
-            present::field(page, body, spec.limit_label, spec.limit, false);
-            present::field(page, body, spec.cursor_label, spec.cursor, false);
-            quiet(page, spec.limit);
-            quiet(page, spec.cursor);
-            page.set_control(spec.limit, "100");
-            let actions = present::node(page, "div", None);
-            page::attr(&actions, "class", "actions");
-            present::button(page, &actions, spec.more, spec.more_label);
-            body.append_child(&actions).ok();
-            let items = present::node(page, "ul", Some(spec.items));
-            page::attr(&items, "class", "inventory-list");
-            page::attr(&items, "aria-label", spec.heading);
-            body.append_child(&items).ok();
-        });
-        show(page, primitive, Kind::Pending, "", "");
-        if matches!(
-            primitive,
-            Primitive::Logs | Primitive::Metrics | Primitive::Tasks
-        ) {
-            page.set_data(spec.section, "hidden", "hidden");
+impl InventoryUi {
+    pub fn pending() -> Self {
+        Self {
+            kind: Kind::Pending,
+            advertised: false,
+            next: String::new(),
+            tick: 0,
+            alert: String::new(),
+            items: Vec::new(),
         }
-        page.set_data(spec.more, "aria-disabled", "true");
-        page.set_data(spec.status, "data-next", "");
-        page.set_data(spec.status, "data-advertised", "false");
-        page.set_data(spec.status, "data-gen", "0");
+    }
+
+    pub fn status(&self, primitive: Primitive) -> String {
+        let extra = match self.kind {
+            Kind::Populated => self.items.len().to_string(),
+            Kind::Unavailable => self.alert.clone(),
+            _ => String::new(),
+        };
+        self.kind.message(primitive, &extra)
     }
 }
 
-pub fn install(page: &Page, transport: &Transport) {
-    TRANSPORT.with(|slot| *slot.borrow_mut() = Some(transport.clone()));
+#[derive(Clone, PartialEq)]
+enum InventoryJob {
+    Idle,
+    Load {
+        primitive: Primitive,
+        append: bool,
+        cursor: String,
+        limit: String,
+        tick: u32,
+        secret: Option<String>,
+    },
+}
+
+#[derive(Clone, PartialEq)]
+enum InventoryOutcome {
+    Idle,
+    QueryAlert {
+        tick: u32,
+        message: String,
+    },
+    Ready {
+        tick: u32,
+        listed: Listed,
+        append: bool,
+    },
+    Failed {
+        tick: u32,
+        fault: Fault,
+    },
+}
+
+#[derive(Clone, Copy)]
+struct Loader {
+    ui: Signal<InventoryUi>,
+    job: Signal<InventoryJob>,
+    tick: Signal<u32>,
+}
+
+thread_local! {
+    static LOGS: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
+    static METRICS: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
+    static TASKS: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
+    static IMAGES: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
+    static LOADERS: RefCell<[Option<Loader>; 4]> = const { RefCell::new([None, None, None, None]) };
+}
+
+pub fn bind(
+    logs: Signal<InventoryUi>,
+    metrics: Signal<InventoryUi>,
+    tasks: Signal<InventoryUi>,
+    images: Signal<InventoryUi>,
+) {
+    LOGS.with(|slot| *slot.borrow_mut() = Some(logs));
+    METRICS.with(|slot| *slot.borrow_mut() = Some(metrics));
+    TASKS.with(|slot| *slot.borrow_mut() = Some(tasks));
+    IMAGES.with(|slot| *slot.borrow_mut() = Some(images));
+}
+
+pub fn loaded(primitive: Primitive) -> Vec<Item> {
+    snapshot(primitive).items
+}
+
+pub fn snapshot(primitive: Primitive) -> InventoryUi {
+    slot(primitive)
+        .map(|ui| ui.peek().clone())
+        .unwrap_or_else(InventoryUi::pending)
+}
+
+pub fn note_card(card: &Card) {
     for primitive in Primitive::ALL {
-        let more = primitive.spec().more;
-        let items = primitive.spec().items;
-        let spec = primitive.spec();
-        on_field_change(page, spec.limit, primitive);
-        on_field_change(page, spec.cursor, primitive);
-        session::on_click(
-            page,
-            transport,
-            more,
-            move |page, transport, _event| async move {
-                load(&page, &transport, primitive, true).await;
-            },
-        );
-        session::on_click(
-            page,
-            transport,
-            items,
-            |page, _transport, event| async move {
-                if let Some((command, identifier)) = super::workbench::invoked(&event) {
-                    super::workbench::open(&page, &command, &identifier);
-                }
-            },
-        );
-    }
-}
-
-pub fn reveal(page: &Page, primitive: Primitive) {
-    if !shown(page, primitive) {
-        return;
-    }
-    let state = page.data(primitive.spec().status, "data-state");
-    if !matches!(
-        state.as_str(),
-        "" | "pending" | "advertised" | "unadvertised"
-    ) {
-        return;
-    }
-    let Some(transport) = TRANSPORT.with(|slot| slot.borrow().clone()) else {
-        return;
-    };
-    let page = page.clone();
-    spawn_local(async move {
-        load(&page, &transport, primitive, false).await;
-    });
-}
-
-pub fn reveal_visible(page: &Page) {
-    for primitive in Primitive::ALL {
-        reveal(page, primitive);
-    }
-}
-
-fn shown(page: &Page, primitive: Primitive) -> bool {
-    page.element(primitive.spec().section)
-        .and_then(|section| section.parent_element())
-        .and_then(|view| view.parent_element())
-        .is_some_and(|main| main.id() == "main")
-}
-
-pub fn note_card(page: &Page, card: &Card) {
-    for primitive in Primitive::ALL {
-        let spec = primitive.spec();
+        let Some(mut ui) = slot(primitive) else {
+            continue;
+        };
         let advertised = primitive.is_advertised(card);
-        page.set_data(
-            spec.status,
-            "data-advertised",
-            if advertised { "true" } else { "false" },
-        );
-        let state = page.data(spec.status, "data-state");
+        let mut next = ui();
+        next.advertised = advertised;
         if matches!(
-            state.as_str(),
-            "" | "pending" | "advertised" | "unadvertised"
+            next.kind,
+            Kind::Pending | Kind::Advertised | Kind::Unadvertised
         ) {
-            let kind = if advertised {
+            next.kind = if advertised {
                 Kind::Advertised
             } else {
                 Kind::Unadvertised
             };
-            show(page, primitive, kind, "", "");
+            next.alert.clear();
+        }
+        ui.set(next);
+    }
+}
+
+pub fn reveal(primitive: Primitive) {
+    let Some(loader) = loader(primitive) else {
+        return;
+    };
+    if should_load(&loader.ui.peek()) {
+        let _ = start_load(loader.ui, loader.job, loader.tick, primitive, false);
+    }
+}
+
+#[component]
+pub fn InventoryView(primitive: Primitive, ui: Signal<InventoryUi>, visible: bool) -> Element {
+    let spec = primitive.spec();
+    let job = use_signal(|| InventoryJob::Idle);
+    let tick = use_signal(|| 0u32);
+    use_hook(|| bind_loader(primitive, ui, job, tick));
+    let mut shown = use_signal(|| false);
+    if shown() != visible {
+        shown.set(visible);
+    }
+    use_effect(move || {
+        prime_fields(spec.limit, spec.cursor);
+        if shown() && should_load(&ui.peek()) {
+            let _ = start_load(ui, job, tick, primitive, false);
+        }
+    });
+    let reply = use_resource(move || {
+        let n = tick();
+        let job = job();
+        async move { (n, run_job(job).await) }
+    });
+    let mut applied = use_signal(|| 0u32);
+    let _ = reply.read();
+    if let Some((n, outcome)) = reply()
+        && n > applied()
+        && !matches!(outcome, InventoryOutcome::Idle)
+    {
+        applied.set(n);
+        apply_outcome(ui, primitive, outcome);
+    }
+    let mut armed = use_signal(|| true);
+    let state = ui.peek().clone();
+    if matches!(state.kind, Kind::Advertised | Kind::Unadvertised) {
+        if visible && armed() && start_load(ui, job, tick, primitive, false) {
+            armed.set(false);
+        }
+    } else if !armed() {
+        armed.set(true);
+    }
+    let state = ui();
+    let more = !state.next.is_empty();
+    rsx! {
+        section {
+            id: spec.section,
+            class: "inventory",
+            aria_labelledby: spec.section.to_string() + "-heading",
+            hidden: true,
+            aria_busy: if state.kind == Kind::Loading { "true" } else { "false" },
+            h2 { id: spec.section.to_string() + "-heading", tabindex: "-1", "{spec.heading}" }
+            p {
+                id: spec.status,
+                role: "status",
+                aria_live: "polite",
+                "data-state": state.kind.slug(),
+                "data-configured": if state.kind.configured() { "true" } else { "false" },
+                "data-advertised": if state.advertised { "true" } else { "false" },
+                "data-next": "{state.next}",
+                "data-gen": state.tick.to_string(),
+                "{state.status(primitive)}"
+            }
+            div { id: spec.alert, role: "alert", aria_live: "assertive", "{state.alert}" }
+            if primitive == Primitive::Tasks {
+                p { id: "inventory-tasks-note",
+                    "Lab task definitions. This list does not use chat sessions or protocol tasks."
+                }
+            }
+            label { r#for: spec.limit, "{spec.limit_label}" }
+            input {
+                id: spec.limit,
+                autocomplete: "off",
+                spellcheck: "false",
+                inputmode: "numeric",
+                onchange: move |_| {
+                    start_load(ui, job, tick, primitive, false);
+                },
+            }
+            label { r#for: spec.cursor, "{spec.cursor_label}" }
+            input {
+                id: spec.cursor,
+                autocomplete: "off",
+                spellcheck: "false",
+                inputmode: "numeric",
+                onchange: move |_| {
+                    start_load(ui, job, tick, primitive, false);
+                },
+            }
+            div { class: "actions",
+                button {
+                    id: spec.more,
+                    r#type: "button",
+                    "aria-disabled": if more { "false" } else { "true" },
+                    onclick: move |_| {
+                        start_load(ui, job, tick, primitive, true);
+                    },
+                    "{spec.more_label}"
+                }
+            }
+            ul { id: spec.items, class: "inventory-list", aria_label: spec.heading,
+                for item in state.items.iter() {
+                    InventoryRow { primitive, item: item.clone() }
+                }
+            }
         }
     }
 }
 
-async fn load(page: &Page, transport: &Transport, primitive: Primitive, append: bool) {
-    if !calls_allowed(page) {
-        return;
+#[component]
+fn InventoryRow(primitive: Primitive, item: Item) -> Element {
+    if primitive == Primitive::Images {
+        return rsx! { ImageCard { item } };
+    }
+    let identifier = item.id.clone();
+    rsx! {
+        li { "data-id": "{item.id}",
+            h3 { "{item.name}" }
+            p { "Id {item.id}" }
+            p { "{item.description}" }
+            if !item.details.is_empty() {
+                dl {
+                    for (label, value) in item.details.iter() {
+                        dt { "{label}" }
+                        dd { "{value}" }
+                    }
+                }
+            }
+            div { class: "actions",
+                for operation in crate::workbench::openings(primitive) {
+                    RowAction {
+                        command: operation.name(),
+                        identifier: identifier.clone(),
+                        label: operation.action(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ImageCard(item: Item) -> Element {
+    let identifier = item.id.clone();
+    rsx! {
+        li { class: "image-card", "data-id": "{item.id}",
+            div { class: "image-card-head",
+                h3 { class: "image-card-name", "{item.name}" }
+                span { class: "image-card-id", "{item.id}" }
+            }
+            if !item.description.is_empty() {
+                p { class: "image-card-desc", "{item.description}" }
+            }
+            if !item.details.is_empty() {
+                div { class: "image-card-meta",
+                    for (label, value) in item.details.iter() {
+                        span { class: "image-meta",
+                            span { class: "image-meta-label", "{label}" }
+                            span { "{value}" }
+                        }
+                    }
+                }
+            }
+            div { class: "actions",
+                for operation in crate::workbench::openings(Primitive::Images) {
+                    RowAction {
+                        command: operation.name(),
+                        identifier: identifier.clone(),
+                        label: operation.action(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn RowAction(command: &'static str, identifier: String, label: &'static str) -> Element {
+    rsx! {
+        button {
+            r#type: "button",
+            "data-command": command,
+            "data-identifier": "{identifier}",
+            onclick: move |_| open_row(command, &identifier),
+            "{label}"
+        }
+    }
+}
+
+fn start_load(
+    mut ui: Signal<InventoryUi>,
+    mut job: Signal<InventoryJob>,
+    mut tick: Signal<u32>,
+    primitive: Primitive,
+    append: bool,
+) -> bool {
+    if ui().kind == Kind::Loading {
+        return false;
+    }
+    if !calls_allowed() {
+        return false;
     }
     let spec = primitive.spec();
-    let limit = page.control_value(spec.limit);
+    let limit = session::control_value(spec.limit);
     let cursor = if append {
-        page.data(spec.status, "data-next")
+        ui().next
     } else {
-        page.control_value(spec.cursor)
+        session::control_value(spec.cursor)
+    };
+    let query = if append {
+        inventory::continued_query(&cursor, &limit)
+    } else {
+        inventory::field_query(&cursor, &limit)
+    };
+    if let Err(fault) = query {
+        let mut next = ui();
+        next.alert = QueryFault::message(fault).to_owned();
+        ui.set(next);
+        return false;
+    }
+    let secret = match take_secret(&[limit.as_str(), cursor.as_str()]) {
+        Ok(secret) => secret,
+        Err(()) => return false,
+    };
+    if session::transport().is_none() {
+        return false;
+    }
+    let mut next = ui();
+    next.tick = next.tick.wrapping_add(1);
+    next.kind = Kind::Loading;
+    next.alert.clear();
+    let stamp = next.tick;
+    ui.set(next);
+    if matches!(primitive, Primitive::Tasks | Primitive::Images) {
+        notify(primitive);
+    }
+    job.set(InventoryJob::Load {
+        primitive,
+        append,
+        cursor,
+        limit,
+        tick: stamp,
+        secret,
+    });
+    tick.set(tick() + 1);
+    true
+}
+
+fn should_load(ui: &InventoryUi) -> bool {
+    matches!(ui.kind, Kind::Advertised | Kind::Unadvertised)
+}
+
+fn apply_outcome(mut ui: Signal<InventoryUi>, primitive: Primitive, outcome: InventoryOutcome) {
+    match outcome {
+        InventoryOutcome::Idle => {}
+        InventoryOutcome::QueryAlert { tick, message } => {
+            let mut next = ui();
+            if next.tick == tick {
+                next.alert = message;
+                ui.set(next);
+            }
+        }
+        InventoryOutcome::Ready {
+            tick,
+            listed,
+            append,
+        } => {
+            let mut next = ui();
+            if next.tick != tick {
+                return;
+            }
+            next.items = inventory::merge_items(&next.items, &listed.items, !append);
+            next.next = listed.next_cursor.unwrap_or_default();
+            next.kind = if next.items.is_empty() {
+                Kind::Empty
+            } else {
+                Kind::Populated
+            };
+            next.alert.clear();
+            ui.set(next);
+            notify(primitive);
+        }
+        InventoryOutcome::Failed { tick, fault } => {
+            let mut next = ui();
+            if next.tick != tick {
+                return;
+            }
+            next.items.clear();
+            next.next.clear();
+            next.kind = inventory::fault_kind(&fault);
+            let (extra, alert) = match &fault {
+                Fault::Unavailable(message) => (message.as_str(), message.as_str()),
+                Fault::Unauthorized(message) | Fault::Forbidden(message) => ("", message.as_str()),
+                Fault::Malformed => ("", "The list result could not be read."),
+                Fault::Transport => ("", "The browser could not reach this origin."),
+            };
+            next.alert = alert.to_owned();
+            if matches!(fault, Fault::Unavailable(_)) {
+                next.alert = extra.to_owned();
+            }
+            ui.set(next);
+            notify(primitive);
+        }
+    }
+}
+
+async fn run_job(job: InventoryJob) -> InventoryOutcome {
+    let InventoryJob::Load {
+        primitive,
+        append,
+        cursor,
+        limit,
+        tick,
+        secret,
+    } = job
+    else {
+        return InventoryOutcome::Idle;
     };
     let query = if append {
         inventory::continued_query(&cursor, &limit)
@@ -174,208 +465,114 @@ async fn load(page: &Page, transport: &Transport, primitive: Primitive, append: 
     let query = match query {
         Ok(query) => query,
         Err(fault) => {
-            page.set_text(spec.alert, QueryFault::message(fault));
-            return;
+            return InventoryOutcome::QueryAlert {
+                tick,
+                message: QueryFault::message(fault).to_owned(),
+            };
         }
-    };
-    let Ok(secret) = take_secret(page, &[limit.as_str(), cursor.as_str()]) else {
-        return;
     };
     let command = inventory::command_value(primitive, &query);
     let Ok(body) = codec::command_message(&message_id(), &command, "") else {
-        show(
-            page,
-            primitive,
-            Kind::Malformed,
-            "",
-            "The list command could not be built.",
-        );
-        return;
+        return InventoryOutcome::Failed {
+            tick,
+            fault: Fault::Malformed,
+        };
     };
-    let generation = bump(page, spec.status);
-    show_loading(page, primitive);
-    let result = transport.send(&body, secret.as_deref()).await;
-    if page.data(spec.status, "data-gen") != generation.to_string() {
-        return;
-    }
-    match result {
-        Err(()) => fail(page, primitive, &Fault::Transport),
-        Ok(reply) => match inventory::interpret(primitive, &reply, secret.as_deref()) {
-            Ok(listed) => succeed(page, primitive, listed, append),
-            Err(fault) => fail(page, primitive, &fault),
+    let Some(transport) = session::transport() else {
+        return InventoryOutcome::Failed {
+            tick,
+            fault: Fault::Transport,
+        };
+    };
+    finish_load(
+        &transport,
+        primitive,
+        secret.as_deref(),
+        &body,
+        tick,
+        append,
+    )
+    .await
+}
+
+async fn finish_load(
+    transport: &Transport,
+    primitive: Primitive,
+    secret: Option<&str>,
+    body: &str,
+    tick: u32,
+    append: bool,
+) -> InventoryOutcome {
+    match transport.send(body, secret).await {
+        Err(()) => InventoryOutcome::Failed {
+            tick,
+            fault: Fault::Transport,
+        },
+        Ok(reply) => match inventory::interpret(primitive, &reply, secret) {
+            Ok(listed) => InventoryOutcome::Ready {
+                tick,
+                listed,
+                append,
+            },
+            Err(fault) => InventoryOutcome::Failed { tick, fault },
         },
     }
 }
 
-fn succeed(page: &Page, primitive: Primitive, listed: Listed, append: bool) {
-    let spec = primitive.spec();
-    let merged = VIEWS.with(|views| {
-        let mut views = views.borrow_mut();
-        let existing = views.get(&primitive).map(Vec::as_slice).unwrap_or(&[]);
-        let merged = inventory::merge_items(existing, &listed.items, !append);
-        views.insert(primitive, merged.clone());
-        merged
+fn notify(primitive: Primitive) {
+    super::workbench::note_loaded(primitive);
+    match primitive {
+        Primitive::Logs => super::logs::sources_changed(),
+        Primitive::Metrics => super::metrics::catalog_changed(),
+        Primitive::Tasks => super::tasks::catalog_changed(),
+        Primitive::Images => super::images::catalog_changed(),
+    }
+}
+
+fn open_row(command: &str, identifier: &str) {
+    super::workbench::open(command, identifier);
+}
+
+fn bind_loader(
+    primitive: Primitive,
+    ui: Signal<InventoryUi>,
+    job: Signal<InventoryJob>,
+    tick: Signal<u32>,
+) {
+    LOADERS.with(|slot| {
+        slot.borrow_mut()[loader_index(primitive)] = Some(Loader { ui, job, tick });
     });
-    render(page, primitive, &merged);
-    super::workbench::note_loaded(page, primitive);
-    if primitive == Primitive::Logs {
-        super::logs::sources_changed(page);
-    }
-    if primitive == Primitive::Metrics {
-        super::metrics::catalog_changed(page);
-    }
-    if primitive == Primitive::Tasks {
-        super::tasks::catalog_changed(page);
-    }
-    let next = listed.next_cursor.as_deref().unwrap_or("");
-    page.set_data(spec.status, "data-next", next);
-    page.set_data(
-        spec.more,
-        "aria-disabled",
-        if next.is_empty() { "true" } else { "false" },
-    );
-    let kind = if merged.is_empty() {
-        Kind::Empty
-    } else {
-        Kind::Populated
-    };
-    show(page, primitive, kind, &merged.len().to_string(), "");
 }
 
-fn fail(page: &Page, primitive: Primitive, fault: &Fault) {
-    let spec = primitive.spec();
-    VIEWS.with(|views| {
-        views.borrow_mut().remove(&primitive);
-    });
-    if let Some(list) = page.element(spec.items) {
-        page::clear_children(&list);
-    }
-    page.set_data(spec.status, "data-next", "");
-    page.set_data(spec.more, "aria-disabled", "true");
-    let kind = inventory::fault_kind(fault);
-    let (extra, alert) = match fault {
-        Fault::Unavailable(message) => (message.as_str(), message.as_str()),
-        Fault::Unauthorized(message) | Fault::Forbidden(message) => ("", message.as_str()),
-        Fault::Malformed => ("", "The list result could not be read."),
-        Fault::Transport => ("", "The browser could not reach this origin."),
-    };
-    show(page, primitive, kind, extra, alert);
-    super::workbench::note_loaded(page, primitive);
-    if primitive == Primitive::Logs {
-        super::logs::sources_changed(page);
-    }
-    if primitive == Primitive::Metrics {
-        super::metrics::catalog_changed(page);
-    }
-    if primitive == Primitive::Tasks {
-        super::tasks::catalog_changed(page);
+fn loader(primitive: Primitive) -> Option<Loader> {
+    LOADERS.with(|slot| slot.borrow()[loader_index(primitive)])
+}
+
+fn loader_index(primitive: Primitive) -> usize {
+    match primitive {
+        Primitive::Logs => 0,
+        Primitive::Metrics => 1,
+        Primitive::Tasks => 2,
+        Primitive::Images => 3,
     }
 }
 
-fn show_loading(page: &Page, primitive: Primitive) {
-    let spec = primitive.spec();
-    page.set_data(spec.status, "data-state", Kind::Loading.slug());
-    page.set_text(spec.status, &Kind::Loading.message(primitive, ""));
-    page.set_text(spec.alert, "");
-    page.set_data(spec.section, "aria-busy", "true");
-    if primitive == Primitive::Tasks {
-        super::tasks::catalog_changed(page);
+fn slot(primitive: Primitive) -> Option<Signal<InventoryUi>> {
+    match primitive {
+        Primitive::Logs => LOGS.with(|slot| *slot.borrow()),
+        Primitive::Metrics => METRICS.with(|slot| *slot.borrow()),
+        Primitive::Tasks => TASKS.with(|slot| *slot.borrow()),
+        Primitive::Images => IMAGES.with(|slot| *slot.borrow()),
     }
 }
 
-fn show(page: &Page, primitive: Primitive, kind: Kind, extra: &str, alert: &str) {
-    let spec = primitive.spec();
-    page.set_data(spec.status, "data-state", kind.slug());
-    page.set_data(
-        spec.status,
-        "data-configured",
-        if kind.configured() { "true" } else { "false" },
-    );
-    page.set_text(spec.status, &kind.message(primitive, extra));
-    page.set_text(spec.alert, alert);
-    page.set_data(spec.section, "aria-busy", "false");
-    if primitive == Primitive::Tasks {
-        super::tasks::catalog_changed(page);
+fn prime_fields(limit: &str, cursor: &str) {
+    if session::control_value(limit).is_empty() {
+        write_control(limit, "100");
     }
+    let _ = cursor;
 }
 
-fn render(page: &Page, primitive: Primitive, items: &[Item]) {
-    let Some(list) = page.element(primitive.spec().items) else {
-        return;
-    };
-    page::clear_children(&list);
-    for item in items {
-        let row = present::node(page, "li", None);
-        page::attr(&row, "data-id", &item.id);
-        let heading = present::node(page, "h3", None);
-        heading.set_text_content(Some(&item.name));
-        let id = present::node(page, "p", None);
-        id.set_text_content(Some(&format!("Id {}", item.id)));
-        let description = present::node(page, "p", None);
-        description.set_text_content(Some(&item.description));
-        row.append_child(&heading).ok();
-        row.append_child(&id).ok();
-        row.append_child(&description).ok();
-        if !item.details.is_empty() {
-            let meta = present::node(page, "dl", None);
-            for (label, value) in &item.details {
-                let term = present::node(page, "dt", None);
-                term.set_text_content(Some(label));
-                let data = present::node(page, "dd", None);
-                data.set_text_content(Some(value));
-                meta.append_child(&term).ok();
-                meta.append_child(&data).ok();
-            }
-            row.append_child(&meta).ok();
-        }
-        let actions = present::node(page, "div", None);
-        page::attr(&actions, "class", "actions");
-        for operation in crate::workbench::openings(primitive) {
-            let button = present::node(page, "button", None);
-            page::attr(&button, "type", "button");
-            page::attr(&button, "data-command", operation.name());
-            page::attr(&button, "data-identifier", &item.id);
-            button.set_text_content(Some(operation.action()));
-            actions.append_child(&button).ok();
-        }
-        row.append_child(&actions).ok();
-        list.append_child(&row).ok();
-    }
-}
-
-fn bump(page: &Page, status_id: &str) -> u32 {
-    let current = page.data(status_id, "data-gen").parse::<u32>().unwrap_or(0);
-    let next = current.wrapping_add(1);
-    page.set_data(status_id, "data-gen", &next.to_string());
-    next
-}
-
-fn on_field_change(page: &Page, id: &str, primitive: Primitive) {
-    let Some(element) = page.element(id) else {
-        return;
-    };
-    let page = page.clone();
-    let closure = Closure::wrap(Box::new(move |_event: Event| {
-        let Some(transport) = TRANSPORT.with(|slot| slot.borrow().clone()) else {
-            return;
-        };
-        let page = page.clone();
-        spawn_local(async move {
-            load(&page, &transport, primitive, false).await;
-        });
-    }) as Box<dyn FnMut(Event)>);
-    let _ = element.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
-    closure.forget();
-}
-
-pub(super) fn loaded(primitive: Primitive) -> Vec<Item> {
-    VIEWS.with(|views| views.borrow().get(&primitive).cloned().unwrap_or_default())
-}
-
-fn quiet(page: &Page, id: &str) {
-    if let Some(element) = page.element(id) {
-        page::attr(&element, "autocomplete", "off");
-        page::attr(&element, "spellcheck", "false");
-        page::attr(&element, "inputmode", "numeric");
-    }
+fn write_control(id: &str, value: &str) {
+    session::write_control(id, value);
 }

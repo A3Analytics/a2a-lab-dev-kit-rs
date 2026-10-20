@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 mod assemble;
 mod freshness;
-mod vendor;
 
 pub fn package() {
     println!("cargo:rerun-if-env-changed=WEB_UI_CHECK_ONLY");
@@ -29,9 +28,6 @@ pub fn package() {
             env::var_os("WEB_UI_CHECK_ONLY").is_none(),
             "stale generated web UI assets: packaged {recorded:?}, sources {fingerprint}"
         );
-        vendor::prepare(&ui_dir.join("vendor"), true).unwrap_or_else(|error| {
-            panic!("prepare web UI chart: {error}");
-        });
         let staging = assemble::compile(&ui_dir, &out_dir);
         let files = assemble::assemble(&ui_dir, &staging, &pkg);
         assert!(

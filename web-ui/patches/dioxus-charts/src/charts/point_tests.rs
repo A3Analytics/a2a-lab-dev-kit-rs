@@ -188,6 +188,14 @@ fn points_expose_identity_and_focusable_groups() {
         html.matches("dx-line-point").count() >= 3,
         "each point should be grouped: {html}"
     );
+    assert!(
+        html.contains("var(--chart-4)"),
+        "series uses a chart token: {html}"
+    );
+    assert!(
+        !html.contains("rgb(") && !html.contains("rgba(20, 20, 20, 0.8)"),
+        "series and grid stay off the hardcoded red and dark strokes: {html}"
+    );
 }
 
 thread_local! {

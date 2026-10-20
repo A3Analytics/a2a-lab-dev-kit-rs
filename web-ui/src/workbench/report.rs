@@ -415,7 +415,7 @@ fn image_preview(operation: &str, result: &Value) -> Option<ImagePreview> {
     Some(preview_for(&media_type, &encoded))
 }
 
-fn preview_for(media_type: &str, encoded: &str) -> ImagePreview {
+pub(crate) fn preview_for(media_type: &str, encoded: &str) -> ImagePreview {
     let decoded_bytes = decoded_len(encoded);
     let allowed = preview_allowed(media_type);
     let (preview_url, withheld) = preview_decision(media_type, encoded, decoded_bytes, allowed);

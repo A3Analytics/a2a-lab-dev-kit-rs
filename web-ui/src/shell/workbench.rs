@@ -1,264 +1,520 @@
 //! Command workbench. History and the bearer token stay in page memory.
 
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::cell::RefCell;
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
-use web_sys::{Element, Event};
+use dioxus::prelude::*;
 
 use crate::inventory::{Item, Primitive};
-use crate::shell::http::Transport;
-use crate::shell::page::{self, Page};
-use crate::shell::present;
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 use crate::workbench::report::{self as outcome, ImagePreview, Report};
 use crate::workbench::tree::Node;
 use crate::workbench::{self, HISTORY_LIMIT, HistoryItem, Operation};
 
-std::thread_local! {
-    static HISTORY: RefCell<Vec<HistoryItem>> = const { RefCell::new(Vec::new()) };
-    static SCOPED: Cell<Option<Primitive>> = const { Cell::new(None) };
+#[derive(Clone, PartialEq)]
+pub struct WorkbenchUi {
+    pub scoped: Option<Primitive>,
+    pub operations: Vec<Operation>,
+    pub targets: Vec<Item>,
+    pub target_label: String,
+    pub target_hidden: bool,
+    pub status: String,
+    pub kind: String,
+    pub alert: String,
+    pub sending: bool,
+    pub facts: Vec<Fact>,
+    pub tree: Node,
+    pub image: Option<ImagePreview>,
+    pub history: Vec<HistoryItem>,
+    pub operation: String,
+    pub tick: u32,
 }
 
-pub fn mount(page: &Page, main: &Element) {
-    present::section(page, main, "workbench", "Command", |body| {
-        page::attr(body, "class", "workbench");
-        let note = present::node(page, "p", Some("workbench-note"));
-        note.set_text_content(Some(&workbench::preview_note()));
-        body.append_child(&note).ok();
-        let status = present::node(page, "p", Some("workbench-status"));
-        page::attr(&status, "role", "status");
-        page::attr(&status, "aria-live", "polite");
-        body.append_child(&status).ok();
-        let alert = present::node(page, "div", Some("workbench-alert"));
-        page::attr(&alert, "role", "alert");
-        page::attr(&alert, "aria-live", "assertive");
-        body.append_child(&alert).ok();
-        operation_select(page, body);
-        target_select(page, body);
-        present::field(page, body, "Parameters", "workbench-params", true);
-        quiet(page, "workbench-params");
-        let actions = present::node(page, "div", None);
-        page::attr(&actions, "class", "actions");
-        present::button(page, &actions, "workbench-send", "Send command");
-        body.append_child(&actions).ok();
-        let facts = present::node(page, "dl", Some("workbench-facts"));
-        body.append_child(&facts).ok();
-        let tree = present::node(page, "div", Some("workbench-tree"));
-        page::attr(&tree, "class", "workbench-tree");
-        body.append_child(&tree).ok();
-        let image = present::node(page, "div", Some("workbench-image"));
-        body.append_child(&image).ok();
-        let history = present::node(page, "ul", Some("workbench-history"));
-        page::attr(&history, "class", "workbench-history");
-        page::attr(&history, "aria-label", "Command history");
-        body.append_child(&history).ok();
-    });
-    page.set_data("workbench-status", "data-gen", "0");
-    apply_template(page);
+#[derive(Clone, PartialEq)]
+pub struct Fact {
+    pub name: String,
+    pub label: String,
+    pub value: String,
 }
 
-pub fn install(page: &Page, transport: &Transport) {
-    session::on_click(
-        page,
-        transport,
-        "workbench-send",
-        |page, transport, _event| async move {
-            send(&page, &transport, false).await;
-        },
-    );
-    session::on_click(
-        page,
-        transport,
-        "workbench-history",
-        |page, transport, event| async move {
-            if let Some(index) = retry_index(&event) {
-                restore(&page, index);
-                send(&page, &transport, true).await;
-            }
-        },
-    );
-    on_change(page, "workbench-operation", retarget);
-    on_change(page, "workbench-target", choose_target);
+impl WorkbenchUi {
+    pub fn new() -> Self {
+        Self {
+            scoped: None,
+            operations: Vec::new(),
+            targets: Vec::new(),
+            target_label: "Choice".to_owned(),
+            target_hidden: true,
+            status: String::new(),
+            kind: String::new(),
+            alert: String::new(),
+            sending: false,
+            facts: Vec::new(),
+            tree: Node::Text(String::new()),
+            image: None,
+            history: Vec::new(),
+            operation: String::new(),
+            tick: 0,
+        }
+    }
 }
 
-pub(super) fn open(page: &Page, name: &str, identifier: &str) {
+#[derive(Clone, PartialEq)]
+enum WorkJob {
+    Idle,
+    Send {
+        restored: bool,
+        tick: u32,
+        operation: Operation,
+        params: serde_json::Value,
+        body: String,
+    },
+}
+
+#[derive(Clone, PartialEq)]
+enum WorkOutcome {
+    Idle,
+    Done {
+        tick: u32,
+        restored: bool,
+        operation: Operation,
+        params: serde_json::Value,
+        report: Box<Report>,
+    },
+}
+
+thread_local! {
+    static UI: RefCell<Option<Signal<WorkbenchUi>>> = const { RefCell::new(None) };
+}
+
+pub fn bind(ui: Signal<WorkbenchUi>) {
+    UI.with(|slot| *slot.borrow_mut() = Some(ui));
+}
+
+pub(super) fn open(name: &str, identifier: &str) {
     let Some(operation) = Operation::parse(name) else {
         return;
     };
-    page.set_control("workbench-operation", operation.name());
-    show_params(page, &operation.prefill(identifier));
-    page.set_text("workbench-alert", "");
-    if let Some(primitive) = scoped() {
-        sync_target(page, primitive);
-    }
-    if page.data("workbench-target-field", "hidden").is_empty() {
-        page.focus("workbench-target");
-    } else {
-        page.focus("workbench-params");
+    session::write_control("workbench-operation", operation.name());
+    write_params(&operation.prefill(identifier));
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    next.alert.clear();
+    next.operation = operation.name().to_owned();
+    sync_targets(&mut next);
+    if ui.peek().clone() != next {
+        ui.set(next);
     }
 }
 
-pub(super) fn scope(page: &Page, primitive: Primitive) {
-    SCOPED.with(|slot| slot.set(Some(primitive)));
-    let Some(select) = page.element("workbench-operation") else {
+pub(super) fn scope(primitive: Primitive) {
+    let Some(mut ui) = bound() else {
         return;
     };
     let commands = workbench::commands(primitive);
-    let current = page.control_value("workbench-operation");
+    let current = session::control_value("workbench-operation");
     let kept = commands.iter().any(|operation| operation.name() == current);
-    page::clear_children(&select);
-    for operation in commands {
-        let option = present::node(page, "option", None);
-        page::attr(&option, "value", operation.name());
-        option.set_text_content(Some(operation.label()));
-        select.append_child(&option).ok();
+    let mut next = ui.peek().clone();
+    next.scoped = Some(primitive);
+    next.operations = commands.to_vec();
+    if !kept && let Some(operation) = commands.first() {
+        session::write_control("workbench-operation", operation.name());
+        write_params(&operation.template());
+        next.operation = operation.name().to_owned();
+    } else if kept {
+        next.operation = current;
     }
-    if kept {
-        page.set_control("workbench-operation", &current);
-    } else if let Some(operation) = commands.first() {
-        page.set_control("workbench-operation", operation.name());
-        apply_template(page);
+    sync_targets(&mut next);
+    if ui.peek().clone() != next {
+        ui.set(next);
     }
-    sync_target(page, primitive);
 }
 
-pub(super) fn invoked(event: &Event) -> Option<(String, String)> {
-    let command = ancestor_attr(event, "data-command")?;
-    let identifier = ancestor_attr(event, "data-identifier")?;
-    Some((command, identifier))
-}
-
-async fn send(page: &Page, transport: &Transport, restored: bool) {
-    if !calls_allowed(page) {
+pub(super) fn note_loaded(primitive: Primitive) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    if next.scoped != Some(primitive) {
         return;
     }
-    let raw = page.control_value("workbench-params");
-    let Some(operation) = Operation::parse(&page.control_value("workbench-operation")) else {
-        page.set_text("workbench-alert", "Choose a lab command.");
+    sync_targets(&mut next);
+    if ui.peek().clone() != next {
+        ui.set(next);
+    }
+}
+
+fn bound() -> Option<Signal<WorkbenchUi>> {
+    UI.with(|slot| *slot.borrow())
+}
+
+#[component]
+pub fn WorkbenchView(ui: Signal<WorkbenchUi>, hidden: bool) -> Element {
+    let job = use_signal(|| WorkJob::Idle);
+    let reply = use_resource(move || {
+        let job = job();
+        let secret = session::native_secret();
+        async move { run_job(job, secret).await }
+    });
+    let mut applied = use_signal(|| 0u32);
+    let _ = reply.read();
+    if let Some(WorkOutcome::Done {
+        tick,
+        restored,
+        operation,
+        params,
+        report,
+    }) = reply()
+        && tick > applied()
+    {
+        applied.set(tick);
+        apply_report(ui, tick, restored, operation, params, *report);
+    }
+    let state = ui();
+    let busy = state.sending;
+    let busy_flag = if busy { "true" } else { "false" };
+    rsx! {
+        section {
+            id: "workbench",
+            class: "workbench",
+            aria_labelledby: "workbench-heading",
+            aria_busy: "{busy_flag}",
+            "data-kind": "{state.kind}",
+            hidden,
+            h2 { id: "workbench-heading", tabindex: "-1", "Command" }
+            p {
+                id: "workbench-selected",
+                class: "workbench-selected",
+                "data-operation": "{state.operation}",
+                hidden: state.operation.is_empty(),
+                "{selected_line(&state.operation)}"
+            }
+            p { id: "workbench-note", "{workbench::preview_note()}" }
+            p {
+                id: "workbench-status",
+                role: "status",
+                aria_live: "polite",
+                "data-state": "{state.kind}",
+                "data-gen": state.tick.to_string(),
+                "{state.status}"
+            }
+            div { id: "workbench-alert", role: "alert", aria_live: "assertive", "{state.alert}" }
+            div { class: "command-form",
+                div { class: "command-field",
+                    label { r#for: "workbench-operation", "Operation" }
+                    select {
+                        id: "workbench-operation",
+                        onchange: move |_| on_operation(ui),
+                        for operation in state.operations.iter() {
+                            option {
+                                value: operation.name(),
+                                selected: operation.name() == state.operation,
+                                "{operation.label()}"
+                            }
+                        }
+                    }
+                }
+                div { id: "workbench-target-field", class: "command-field", hidden: state.target_hidden,
+                    label { id: "workbench-target-label", r#for: "workbench-target", "{state.target_label}" }
+                    select {
+                        id: "workbench-target",
+                        onchange: move |_| on_target(),
+                        if state.targets.is_empty() {
+                            option { value: "", "None loaded" }
+                        }
+                        for item in state.targets.iter() {
+                            option { value: "{item.id}", "{target_text(item)}" }
+                        }
+                    }
+                }
+                div { class: "command-field command-params",
+                    label { r#for: "workbench-params", "Parameters" }
+                    textarea {
+                        id: "workbench-params",
+                        rows: "4",
+                        autocomplete: "off",
+                        spellcheck: false,
+                    }
+                }
+                div { class: "actions",
+                    button {
+                        id: "workbench-send",
+                        r#type: "button",
+                        disabled: busy,
+                        aria_disabled: "{busy_flag}",
+                        onclick: move |_| begin_send(ui, job, false),
+                        "Send command"
+                    }
+                }
+            }
+            dl { id: "workbench-facts",
+                for fact in state.facts.iter() {
+                    div {
+                        dt { "{fact.label}" }
+                        dd { "data-fact": "{fact.name}", "{fact.value}" }
+                    }
+                }
+            }
+            div { id: "workbench-tree", class: "workbench-tree",
+                TreeView { node: state.tree.clone() }
+            }
+            div { id: "workbench-image",
+                if let Some(image) = state.image.as_ref() {
+                    ImageSlot { image: image.clone() }
+                }
+            }
+            ul { id: "workbench-history", class: "workbench-history", aria_label: "Command history",
+                for (index, item) in state.history.iter().enumerate() {
+                    li {
+                        p { "{item.summary}" }
+                        button {
+                            r#type: "button",
+                            "data-retry": index.to_string(),
+                            onclick: move |_| retry(ui, job, index),
+                            "Retry"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TreeView(node: Node) -> Element {
+    match node {
+        Node::Text(text) => rsx! { span { "{text}" } },
+        Node::Group {
+            name,
+            children,
+            collapsed,
+        } => {
+            if collapsed {
+                rsx! {
+                    details {
+                        summary { "{name}" }
+                        for child in children {
+                            TreeView { node: child }
+                        }
+                    }
+                }
+            } else {
+                rsx! {
+                    details { open: true,
+                        summary { "{name}" }
+                        for child in children {
+                            TreeView { node: child }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ImageSlot(image: ImagePreview) -> Element {
+    rsx! {
+        p { "Media type {image.media_type}" }
+        p { "Encoded characters {image.encoded_chars}" }
+        if let Some(size) = image.decoded_bytes {
+            p { "Decoded bytes {size}" }
+        }
+        if !image.withheld.is_empty() {
+            p { "Preview {image.withheld}" }
+        }
+        if let Some(url) = image.preview_url.as_deref() {
+            img { id: "workbench-preview", alt: "Image preview", src: "{url}" }
+        }
+    }
+}
+
+fn begin_send(mut ui: Signal<WorkbenchUi>, mut job: Signal<WorkJob>, restored: bool) {
+    if ui.peek().sending || !calls_allowed() {
+        return;
+    }
+    let raw = session::control_value("workbench-params");
+    let chosen = session::control_value("workbench-operation");
+    let Some(operation) = Operation::parse(&chosen) else {
+        let mut next = ui();
+        next.alert = "Choose a lab command.".to_owned();
+        ui.set(next);
         return;
     };
     let params = match workbench::parse_params(&raw) {
         Ok(params) => params,
         Err(fault) => {
-            page.set_text("workbench-alert", fault.message());
+            let mut next = ui();
+            next.operation = operation.name().to_owned();
+            next.alert = fault.message().to_owned();
+            ui.set(next);
             return;
         }
     };
     if !restored {
-        show_params(page, &params);
+        write_params(&params);
     }
-    let Ok(secret) = take_secret(page, &[raw.as_str()]) else {
+    if take_secret(&[raw.as_str()]).is_err() {
         return;
-    };
+    }
     let Ok(body) = workbench::envelope(&message_id(), operation, &params) else {
-        page.set_text(
-            "workbench-alert",
-            workbench::EditorFault::NotObject.message(),
-        );
+        let mut next = ui();
+        next.alert = workbench::EditorFault::NotObject.message().to_owned();
+        ui.set(next);
         return;
     };
-    let generation = bump(page);
-    page.set_data("workbench", "aria-busy", "true");
-    page.set_text("workbench-alert", "");
-    page.set_text(
-        "workbench-status",
-        &format!("Sending {}.", operation.name()),
-    );
-    let result = transport.send(&body, secret.as_deref()).await;
-    if page.data("workbench-status", "data-gen") != generation.to_string() {
+    let mut next = ui();
+    next.tick = next.tick.wrapping_add(1);
+    next.sending = true;
+    next.operation = operation.name().to_owned();
+    next.alert.clear();
+    next.status = format!("Sending {}.", operation.name());
+    let tick = next.tick;
+    ui.set(next);
+    job.set(WorkJob::Send {
+        restored,
+        tick,
+        operation,
+        params,
+        body,
+    });
+}
+
+fn retry(ui: Signal<WorkbenchUi>, job: Signal<WorkJob>, index: usize) {
+    let Some(item) = ui.peek().history.get(index).cloned() else {
         return;
+    };
+    session::write_control("workbench-operation", item.operation.name());
+    write_params(&item.params);
+    begin_send(ui, job, true);
+}
+
+fn on_operation(mut ui: Signal<WorkbenchUi>) {
+    let Some(operation) = Operation::parse(&session::control_value("workbench-operation")) else {
+        return;
+    };
+    write_params(&operation.template());
+    let mut next = ui.peek().clone();
+    next.operation = operation.name().to_owned();
+    sync_targets(&mut next);
+    if ui.peek().clone() != next {
+        ui.set(next);
     }
-    let report = match result {
+}
+
+fn on_target() {
+    let Some(operation) = Operation::parse(&session::control_value("workbench-operation")) else {
+        return;
+    };
+    let Some(field) = operation.target_field() else {
+        return;
+    };
+    let id = session::control_value("workbench-target");
+    if !id.is_empty() {
+        write_param(field, &id);
+    }
+}
+
+async fn run_job(job: WorkJob, secret: Option<String>) -> WorkOutcome {
+    let WorkJob::Send {
+        restored,
+        tick,
+        operation,
+        params,
+        body,
+    } = job
+    else {
+        return WorkOutcome::Idle;
+    };
+    let Some(transport) = session::transport() else {
+        return WorkOutcome::Done {
+            tick,
+            restored,
+            operation,
+            params,
+            report: Box::new(outcome::transport_report(operation)),
+        };
+    };
+    let report = match transport.send(&body, secret.as_deref()).await {
         Err(()) => outcome::transport_report(operation),
         Ok(reply) => outcome::interpret(operation, &reply, secret.as_deref()),
     };
-    remember(page, operation, &params, &report, secret.as_deref());
-    render_report(page, &report);
-    page.set_data("workbench", "aria-busy", "false");
+    WorkOutcome::Done {
+        tick,
+        restored,
+        operation,
+        params,
+        report: Box::new(report),
+    }
 }
 
-fn restore(page: &Page, index: usize) {
-    let Some(item) = HISTORY.with(|history| history.borrow().get(index).cloned()) else {
-        return;
-    };
-    page.set_control("workbench-operation", item.operation.name());
-    show_params(page, &item.params);
-}
-
-fn remember(
-    page: &Page,
+fn apply_report(
+    mut ui: Signal<WorkbenchUi>,
+    tick: u32,
+    _restored: bool,
     operation: Operation,
-    params: &serde_json::Value,
-    report: &Report,
-    secret: Option<&str>,
+    params: serde_json::Value,
+    report: Report,
 ) {
-    let item = outcome::history_item(operation, params, report, secret);
-    HISTORY.with(|history| {
-        let mut history = history.borrow_mut();
-        history.push(item);
-        let extra = history.len().saturating_sub(HISTORY_LIMIT);
-        if extra > 0 {
-            history.drain(0..extra);
-        }
-    });
-    render_history(page);
-}
-
-fn apply_template(page: &Page) {
-    let Some(operation) = Operation::parse(&page.control_value("workbench-operation")) else {
+    let mut next = ui();
+    if next.tick != tick {
         return;
-    };
-    show_params(page, &operation.template());
-}
-
-fn retarget(page: &Page) {
-    apply_template(page);
-    if let Some(primitive) = scoped() {
-        sync_target(page, primitive);
     }
-}
-
-fn choose_target(page: &Page) {
-    let Some(operation) = Operation::parse(&page.control_value("workbench-operation")) else {
-        return;
-    };
-    let Some(field) = operation.target_field() else {
-        return;
-    };
-    let id = page.control_value("workbench-target");
-    if !id.is_empty() {
-        write_param(page, field, &id);
-    }
-}
-
-pub(super) fn note_loaded(page: &Page, primitive: Primitive) {
-    if scoped() == Some(primitive) {
-        sync_target(page, primitive);
-    }
-}
-
-fn scoped() -> Option<Primitive> {
-    SCOPED.with(Cell::get)
-}
-
-fn sync_target(page: &Page, primitive: Primitive) {
-    let Some(operation) = Operation::parse(&page.control_value("workbench-operation")) else {
-        page.set_data("workbench-target-field", "hidden", "hidden");
-        return;
-    };
-    let Some(field) = operation.target_field() else {
-        page.set_data("workbench-target-field", "hidden", "hidden");
-        return;
-    };
-    page.remove_attr("workbench-target-field", "hidden");
-    page.set_text(
-        "workbench-target-label",
-        operation.target_label().unwrap_or("Choice"),
+    next.sending = false;
+    next.kind = report.kind.slug().to_owned();
+    next.status = report.kind.label().to_owned();
+    next.alert = result_alert(&report);
+    next.facts = facts_from(&report);
+    next.tree = report.tree.clone();
+    next.image = report.image.clone();
+    let item = outcome::history_item(
+        operation,
+        &params,
+        &report,
+        session::native_secret().as_deref(),
     );
+    next.history.push(item);
+    let extra = next.history.len().saturating_sub(HISTORY_LIMIT);
+    if extra > 0 {
+        next.history.drain(0..extra);
+    }
+    ui.set(next);
+}
+
+fn selected_line(operation: &str) -> String {
+    Operation::parse(operation).map_or_else(String::new, |operation| {
+        format!("{} ({})", operation.label(), operation.name())
+    })
+}
+
+fn result_alert(report: &Report) -> String {
+    if report.kind == outcome::Kind::Success {
+        return String::new();
+    }
+    if report.message.is_empty() {
+        return report.kind.label().to_owned();
+    }
+    report.message.clone()
+}
+
+fn sync_targets(ui: &mut WorkbenchUi) {
+    let Some(operation) = Operation::parse(&session::control_value("workbench-operation")) else {
+        ui.target_hidden = true;
+        return;
+    };
+    let Some(field) = operation.target_field() else {
+        ui.target_hidden = true;
+        return;
+    };
+    let Some(primitive) = ui.scoped else {
+        ui.target_hidden = true;
+        return;
+    };
+    ui.target_hidden = false;
+    ui.target_label = operation.target_label().unwrap_or("Choice").to_owned();
     let mut items = super::inventory::loaded(primitive);
-    let chosen = param_string(page, field);
+    let chosen = param_string(field);
     if !chosen.is_empty() && !items.iter().any(|item| item.id == chosen) {
         items.insert(
             0,
@@ -270,31 +526,68 @@ fn sync_target(page: &Page, primitive: Primitive) {
             },
         );
     }
-    let Some(select) = page.element("workbench-target") else {
-        return;
-    };
-    page::clear_children(&select);
-    if items.is_empty() {
-        let option = present::node(page, "option", None);
-        page::attr(&option, "value", "");
-        option.set_text_content(Some("None loaded"));
-        select.append_child(&option).ok();
+    ui.targets = items;
+    if ui.targets.is_empty() {
         return;
     }
-    for item in &items {
-        let option = present::node(page, "option", None);
-        page::attr(&option, "value", &item.id);
-        option.set_text_content(Some(&target_text(item)));
-        select.append_child(&option).ok();
-    }
-    let selected = if items.iter().any(|item| item.id == chosen) {
+    let selected = if ui.targets.iter().any(|item| item.id == chosen) {
         chosen
     } else {
-        items[0].id.clone()
+        ui.targets[0].id.clone()
     };
-    page.set_control("workbench-target", &selected);
-    if param_string(page, field).is_empty() {
-        write_param(page, field, &selected);
+    session::write_control("workbench-target", &selected);
+    if param_string(field).is_empty() {
+        write_param(field, &selected);
+    }
+}
+
+fn facts_from(report: &Report) -> Vec<Fact> {
+    let mut facts = vec![
+        fact("outcome", "Outcome", report.kind.label()),
+        fact("operation", "Operation", &report.operation),
+        fact("protocol-task", "Protocol task", &report.protocol_task_id),
+        fact(
+            "protocol-context",
+            "Protocol context",
+            &report.protocol_context_id,
+        ),
+        fact("protocol-state", "Protocol state", &report.protocol_state),
+    ];
+    optional(&mut facts, "lab-run", "Lab run", &report.lab_run_id);
+    optional(
+        &mut facts,
+        "lab-run-state",
+        "Lab run state",
+        &report.lab_run_state,
+    );
+    optional(&mut facts, "status", "Status", &report.status);
+    optional(&mut facts, "code", "Code", &report.code);
+    optional(&mut facts, "message", "Message", &report.message);
+    for line in &report.reasons {
+        facts.push(fact("reason", "Reason", &line.reason));
+        facts.push(fact("domain", "Domain", &line.domain));
+    }
+    for line in &report.fields {
+        facts.push(fact("field", "Field", &line.field));
+        facts.push(fact("detail", "Detail", &line.description));
+    }
+    for line in &report.correlations {
+        facts.push(fact("correlation", line.label, &line.value));
+    }
+    facts
+}
+
+fn fact(name: &str, label: &str, value: &str) -> Fact {
+    Fact {
+        name: name.to_owned(),
+        label: label.to_owned(),
+        value: value.to_owned(),
+    }
+}
+
+fn optional(facts: &mut Vec<Fact>, name: &str, label: &str, value: &str) {
+    if !value.is_empty() {
+        facts.push(fact(name, label, value));
     }
 }
 
@@ -306,8 +599,8 @@ fn target_text(item: &Item) -> String {
     }
 }
 
-fn param_string(page: &Page, field: &str) -> String {
-    let Ok(value) = workbench::parse_params(&page.control_value("workbench-params")) else {
+fn param_string(field: &str) -> String {
+    let Ok(value) = workbench::parse_params(&session::control_value("workbench-params")) else {
         return String::new();
     };
     value
@@ -317,255 +610,18 @@ fn param_string(page: &Page, field: &str) -> String {
         .to_owned()
 }
 
-fn write_param(page: &Page, field: &str, id: &str) {
-    let Ok(mut value) = workbench::parse_params(&page.control_value("workbench-params")) else {
+fn write_param(field: &str, id: &str) {
+    let Ok(mut value) = workbench::parse_params(&session::control_value("workbench-params")) else {
         return;
     };
     let Some(object) = value.as_object_mut() else {
         return;
     };
     object.insert(field.to_owned(), serde_json::Value::String(id.to_owned()));
-    show_params(page, &value);
+    write_params(&value);
 }
 
-fn show_params(page: &Page, params: &serde_json::Value) {
+fn write_params(params: &serde_json::Value) {
     let text = serde_json::to_string_pretty(params).unwrap_or_else(|_| "{}".to_owned());
-    page.set_control("workbench-params", &text);
-}
-
-fn render_report(page: &Page, report: &Report) {
-    page.set_data("workbench", "data-kind", report.kind.slug());
-    page.set_data("workbench-status", "data-state", report.kind.slug());
-    page.set_text("workbench-status", report.kind.label());
-    render_facts(page, report);
-    render_tree(page, &report.tree);
-    render_image(page, report.image.as_ref());
-}
-
-fn render_facts(page: &Page, report: &Report) {
-    let Some(facts) = page.element("workbench-facts") else {
-        return;
-    };
-    page::clear_children(&facts);
-    fact(page, &facts, "outcome", "Outcome", report.kind.label());
-    fact(page, &facts, "operation", "Operation", &report.operation);
-    fact(
-        page,
-        &facts,
-        "protocol-task",
-        "Protocol task",
-        &report.protocol_task_id,
-    );
-    fact(
-        page,
-        &facts,
-        "protocol-context",
-        "Protocol context",
-        &report.protocol_context_id,
-    );
-    fact(
-        page,
-        &facts,
-        "protocol-state",
-        "Protocol state",
-        &report.protocol_state,
-    );
-    optional_fact(page, &facts, "lab-run", "Lab run", &report.lab_run_id);
-    optional_fact(
-        page,
-        &facts,
-        "lab-run-state",
-        "Lab run state",
-        &report.lab_run_state,
-    );
-    optional_fact(page, &facts, "status", "Status", &report.status);
-    optional_fact(page, &facts, "code", "Code", &report.code);
-    optional_fact(page, &facts, "message", "Message", &report.message);
-    for line in &report.reasons {
-        fact(page, &facts, "reason", "Reason", &line.reason);
-        fact(page, &facts, "domain", "Domain", &line.domain);
-    }
-    for line in &report.fields {
-        fact(page, &facts, "field", "Field", &line.field);
-        fact(page, &facts, "detail", "Detail", &line.description);
-    }
-    for line in &report.correlations {
-        fact(page, &facts, "correlation", line.label, &line.value);
-    }
-}
-
-fn optional_fact(page: &Page, parent: &Element, name: &str, label: &str, value: &str) {
-    if !value.is_empty() {
-        fact(page, parent, name, label, value);
-    }
-}
-
-fn fact(page: &Page, parent: &Element, name: &str, label: &str, value: &str) {
-    let row = present::node(page, "div", None);
-    let term = present::node(page, "dt", None);
-    term.set_text_content(Some(label));
-    let data = present::node(page, "dd", None);
-    page::attr(&data, "data-fact", name);
-    data.set_text_content(Some(value));
-    row.append_child(&term).ok();
-    row.append_child(&data).ok();
-    parent.append_child(&row).ok();
-}
-
-fn render_tree(page: &Page, node: &Node) {
-    let Some(tree) = page.element("workbench-tree") else {
-        return;
-    };
-    page::clear_children(&tree);
-    render_node(page, &tree, node);
-}
-
-fn render_node(page: &Page, parent: &Element, node: &Node) {
-    match node {
-        Node::Text(text) => {
-            let span = present::node(page, "span", None);
-            span.set_text_content(Some(text));
-            parent.append_child(&span).ok();
-        }
-        Node::Group {
-            name,
-            children,
-            collapsed,
-        } => {
-            let details = present::node(page, "details", None);
-            if !collapsed {
-                page::attr(&details, "open", "");
-            }
-            let summary = present::node(page, "summary", None);
-            summary.set_text_content(Some(name));
-            details.append_child(&summary).ok();
-            for child in children {
-                render_node(page, &details, child);
-            }
-            parent.append_child(&details).ok();
-        }
-    }
-}
-
-fn render_image(page: &Page, image: Option<&ImagePreview>) {
-    let Some(slot) = page.element("workbench-image") else {
-        return;
-    };
-    page::clear_children(&slot);
-    let Some(image) = image else {
-        return;
-    };
-    image_line(page, &slot, "Media type", &image.media_type);
-    image_line(
-        page,
-        &slot,
-        "Encoded characters",
-        &image.encoded_chars.to_string(),
-    );
-    if let Some(size) = image.decoded_bytes {
-        image_line(page, &slot, "Decoded bytes", &size.to_string());
-    }
-    if !image.withheld.is_empty() {
-        image_line(page, &slot, "Preview", &image.withheld);
-    }
-    let Some(url) = image.preview_url.as_deref() else {
-        return;
-    };
-    let img = present::node(page, "img", Some("workbench-preview"));
-    page::attr(&img, "alt", "Image preview");
-    page::attr(&img, "src", url);
-    slot.append_child(&img).ok();
-}
-
-fn image_line(page: &Page, parent: &Element, label: &str, value: &str) {
-    let line = present::node(page, "p", None);
-    line.set_text_content(Some(&format!("{label} {value}")));
-    parent.append_child(&line).ok();
-}
-
-fn render_history(page: &Page) {
-    let Some(list) = page.element("workbench-history") else {
-        return;
-    };
-    page::clear_children(&list);
-    let items = HISTORY.with(|history| history.borrow().clone());
-    for (index, item) in items.iter().enumerate() {
-        let row = present::node(page, "li", None);
-        let summary = present::node(page, "p", None);
-        summary.set_text_content(Some(&item.summary));
-        let button = present::node(page, "button", None);
-        page::attr(&button, "type", "button");
-        page::attr(&button, "data-retry", &index.to_string());
-        button.set_text_content(Some("Retry"));
-        row.append_child(&summary).ok();
-        row.append_child(&button).ok();
-        list.append_child(&row).ok();
-    }
-}
-
-fn operation_select(page: &Page, body: &Element) {
-    let label = present::node(page, "label", None);
-    page::attr(&label, "for", "workbench-operation");
-    label.set_text_content(Some("Operation"));
-    let select = present::node(page, "select", Some("workbench-operation"));
-    body.append_child(&label).ok();
-    body.append_child(&select).ok();
-}
-
-fn target_select(page: &Page, body: &Element) {
-    let field = present::node(page, "div", Some("workbench-target-field"));
-    page::attr(&field, "hidden", "hidden");
-    let label = present::node(page, "label", Some("workbench-target-label"));
-    page::attr(&label, "for", "workbench-target");
-    label.set_text_content(Some("Choice"));
-    let select = present::node(page, "select", Some("workbench-target"));
-    field.append_child(&label).ok();
-    field.append_child(&select).ok();
-    body.append_child(&field).ok();
-}
-
-fn bump(page: &Page) -> u32 {
-    let current = page
-        .data("workbench-status", "data-gen")
-        .parse::<u32>()
-        .unwrap_or(0);
-    let next = current.wrapping_add(1);
-    page.set_data("workbench-status", "data-gen", &next.to_string());
-    next
-}
-
-fn retry_index(event: &Event) -> Option<usize> {
-    ancestor_attr(event, "data-retry")?.parse().ok()
-}
-
-fn ancestor_attr(event: &Event, name: &str) -> Option<String> {
-    let mut node = event.target()?.dyn_into::<web_sys::Node>().ok()?;
-    loop {
-        if let Some(element) = node.dyn_ref::<Element>()
-            && let Some(value) = element.get_attribute(name)
-        {
-            return Some(value);
-        }
-        node = node.parent_node()?;
-    }
-}
-
-fn on_change(page: &Page, id: &str, action: fn(&Page)) {
-    let Some(element) = page.element(id) else {
-        return;
-    };
-    let page = page.clone();
-    let action = Rc::new(action);
-    let closure = Closure::wrap(Box::new(move |_event: Event| {
-        action(&page);
-    }) as Box<dyn FnMut(Event)>);
-    let _ = element.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
-    closure.forget();
-}
-
-fn quiet(page: &Page, id: &str) {
-    if let Some(element) = page.element(id) {
-        page::attr(&element, "autocomplete", "off");
-        page::attr(&element, "spellcheck", "false");
-    }
+    session::write_control("workbench-params", &text);
 }

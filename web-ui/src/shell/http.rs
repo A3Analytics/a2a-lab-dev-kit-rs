@@ -41,6 +41,9 @@ impl Transport {
         token: Option<&str>,
     ) -> Result<Reply, ()> {
         let window = web_sys::window().ok_or(())?;
+        if !window.navigator().on_line() {
+            return Err(());
+        }
         let url = format!("{}{path}", self.origin.trim_end_matches('/'));
         let request = build_request(&url, method, body, token)?;
         let value = JsFuture::from(window.fetch_with_request(&request))

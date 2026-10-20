@@ -36,7 +36,7 @@ Adoption is that dependency feature plus `A2aServer::with_web_ui`. Downstream ap
 
 ## Build and check the browser package
 
-The shell is Rust compiled to `wasm32-unknown-unknown`. `rust-toolchain.toml` pins Rust `1.98.1` and that target. The `web-ui` build script packages the shell when this crate compiles with the feature. `wasm-bindgen-cli-support` is pinned to `0.2.129`.
+The shell is a Dioxus 0.7 application written in Rust and compiled to `wasm32-unknown-unknown`. One Dioxus runtime mounts on `#app`. `rust-toolchain.toml` pins Rust `1.98.1` and that target. The `web-ui` build script packages the shell when this crate compiles with the feature. `wasm-bindgen-cli-support` is pinned to `0.2.129`.
 
 Run these commands from the repository root after `mise install`:
 
@@ -108,14 +108,14 @@ The page is a same-origin A2A HTTP+JSON client. It calls the listener that serve
 
 It loads `GET /.well-known/agent-card.json`, then uses the HTTP+JSON routes on [A2A](<../../reference/a2a/doc-4 - A2A.md>).
 
-The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Agent, Logs, Metrics, Tasks, Images, and Chat. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Agent is the default. Older hashes still open the matching page: `#overview` opens Agent, and `#inventory`, `#inventory/logs`, and `#workbench` open Logs.
+The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Agent, Logs, Metrics, Tasks, Images, and Chat. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Agent is the default. Older hashes still open the matching page: `#overview` opens Agent, `#inventory`, `#inventory/logs`, and `#workbench` open Logs, `#inventory/metrics` opens Metrics, `#inventory/tasks` opens Tasks, and `#inventory/images` opens Images.
 
 Each primitive page lists that primitive and runs its commands:
 
 - Logs runs `list_log_sources` and `query_logs`. The page is a list: a filter sidebar toggles sources, searches messages, limits the UTC date range, and narrows severity, and the other column shows those records as cards, each with its source. The source catalog and the command runner stay off that page.
-- Metrics runs `list_metrics` and `query_metric`. The page is a list: the sidebar lists each metric so one click switches the series, a start and end limit the UTC time range, and the other column draws those samples as a line graph that fills the column. Hovering a point shows that sample's time and value, and the graph resizes with the page. A visually hidden list keeps the same readings for assistive technology. The catalog and the command runner stay off that page.
-- Tasks runs `list_tasks`, `start_task`, and `get_task_status`. The page is a list: the sidebar is a single-select of definitions, and the other column shows that definition plus a generated input form. Supported schema fields become labeled controls. An unsupported construct becomes a labeled JSON fallback. A missing schema needs no input. Start sends `start_task` with `wait` set to false and then polls `get_task_status` until the run is completed, failed, or canceled. Run cards stay in page memory for that load. The catalog and the command runner stay off that page. The page does not cancel runs and does not call protocol `GET /tasks`.
-- Images runs `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`.
+- Metrics runs `list_metrics` and `query_metric`. The page is a list: the sidebar lists each metric so one click switches the series, a start and end limit the UTC time range, and the other column draws those samples as an SVG line chart inside a card. The card shows the metric title, a one-line description, and a control that downloads those samples as CSV. The value axis includes the metric unit. The time axis uses compact UTC clock labels. Hovering a point shows that sample's time, value, and unit, and the chart resizes with the page. A visually hidden list keeps the same readings for assistive technology. The catalog and the command runner stay off that page. The package does not include a canvas chart runtime.
+- Tasks runs `list_tasks`, `start_task`, and `get_task_status`. The page is a list: the sidebar is a single-select of definitions, and the other column shows that task's name and description, a generated input form, and a closed Details disclosure for identifiers and schemas. Supported schema fields become labeled controls. An unsupported construct becomes a labeled JSON fallback. A missing schema needs no input. Start sends `start_task` with `wait` set to false and then polls `get_task_status` until the run is completed, failed, or canceled. Run cards stay in page memory for that load. The catalog and the command runner stay off that page. The page does not cancel runs and does not call protocol `GET /tasks`.
+- Images runs `list_image_sources`, `list_images`, `search_images`, and `get_image`. The page is a list: the sidebar toggles one source or all sources, searches, and limits the UTC time range, and the other column shows matching frames as cards with thumbnails. Choosing a card opens that image alone. Escape or the backdrop closes it. The catalog and the command runner stay off that page.
 
 Choosing a row action stays on that page and fills the matching command. A log source, metric, task, or image source is chosen from a dropdown of the items listed on that page. The filled command stays until Send or until another primitive page replaces it with that page's first command. Command history is page memory, at most 20 entries, and a reload drops it. A continued list keeps the cursor returned by the latest chunk.
 
@@ -137,7 +137,7 @@ Chat is disabled when the agent card does not advertise `agent-message`. The sta
 
 ## Privacy and security
 
-The page does not write chat history, command history, or credentials to `localStorage`, `sessionStorage`, or cookies. A conversation exists only in the current page. Reload drops it.
+The page writes two preferences to `localStorage`: `sidebar_state`, whether the desktop rail is open, and `theme`, the appearance choice. It does not write a sidebar cookie. It does not write chat history, command history, or credentials to `localStorage`, `sessionStorage`, or cookies. A conversation exists only in the current page. Reload drops it.
 
 When the card requires HTTP bearer authentication, the token is a password field on Agent. `autocomplete` is off. The field lives for that page load. Reload clears it. The token is sent only in the `Authorization` header. The page refuses a command or chat message whose visible text contains the token.
 
@@ -151,7 +151,7 @@ The page can call an agent with no security requirements, or an agent whose requ
 - one requirement that mixes bearer with any of those schemes
 - a security requirement the card does not describe
 
-The Security section lists each unsupported scheme. The page will not send credentials or call that agent. Chat stays disabled, and the status says chat is unavailable for this agent.
+The Security section lists each unsupported scheme. The page will not send credentials or call that agent. That refusal stays visible on Agent without opening Advanced, and the same text stays visible on Logs, Metrics, Tasks, Images, and Chat. Chat stays disabled, and the status says chat is unavailable for this agent.
 
 A rejected bearer token shows Unauthorized on the protocol panel. A token that lacks the required scope shows Forbidden. A chat send that is unauthorized or forbidden reports that failure and leaves the draft available for retry.
 
@@ -161,7 +161,9 @@ Agent-provided strings are written as text. The page does not insert agent conte
 
 Image preview is separate from the server limit. `ImageTransportConfig` defaults to 64 MiB of decoded bytes. The browser previews `image/png`, `image/jpeg`, `image/gif`, and `image/webp` only when the decoded payload is at most 262144 bytes. A larger payload, or any other media type, including SVG, stays a text summary. A preview that is allowed uses a `data:` URL.
 
-The shell needs a browser that runs WebAssembly, JavaScript modules, and `fetch` on the same origin. Repository checks open the page in headless Chromium. The page includes a skip link, a navigation landmark labeled Lab sections, labeled fields, and live regions for connection, each primitive, the command runner, and chat status. Alerts use an assertive live region. The layout follows the light or dark color scheme. This is a lab browser for the packaged agent, not a production administration console.
+The shell needs a browser that runs WebAssembly, JavaScript modules, and `fetch` on the same origin. Repository checks open the page in headless Chromium. The page includes a skip link, a navigation landmark labeled Lab sections, labeled fields, and live regions for connection, each primitive, the command runner, and chat status. Alerts use an assertive live region. A header control cycles the appearance through light, then system, then dark. The choice is stored as `theme` and restored on reload. System follows the browser light or dark appearance. Light and dark stay on the saved choice when that appearance changes. This is a lab browser for the packaged agent, not a production administration console.
+
+Build the packaged assets from this repository with `mise run web-ui-build` after `mise install`. The wasm32 target and `wasm-bindgen-cli-support` 0.2.129 are required. Downstream applications enable the `web-ui` feature; they do not compile the Dioxus sources themselves.
 
 ## Non-goals
 

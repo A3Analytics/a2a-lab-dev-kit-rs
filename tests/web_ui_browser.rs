@@ -27,6 +27,8 @@ mod chat;
 
 #[path = "harness/inventory.rs"]
 mod inventory_browser;
+#[path = "harness/logs.rs"]
+mod logs_browser;
 #[path = "harness/tasks.rs"]
 mod tasks_browser;
 #[path = "harness/workbench.rs"]
@@ -71,6 +73,15 @@ async fn browser_navigation_keeps_one_view_and_its_state() {
     let base = lab(false).await;
     let address = base.clone();
     tokio::task::spawn_blocking(move || navigation_flow(&address))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn browser_routes_scroll_in_main_without_the_bootstrap_line() {
+    let base = lab(false).await;
+    let address = base.clone();
+    tokio::task::spawn_blocking(move || route_scroll_flow(&address))
         .await
         .unwrap();
 }
@@ -171,6 +182,9 @@ fn exchange(page: &mut Browser) {
 fn recover(page: &mut Browser) {
     page.fail_network(true);
     page.click("retry");
+    page.wait_until(
+        "document.getElementById('connection')?.dataset.state === 'loading' || document.getElementById('connection')?.dataset.state === 'offline'",
+    );
     page.wait_until("document.getElementById('connection')?.dataset.state === 'offline'");
     page.show("#overview");
     let offline = page.snapshot();
@@ -348,11 +362,161 @@ fn error_flow(errors: &str, grpc: &str) {
     );
 }
 
+fn route_scroll_flow(base: &str) {
+    let mut page = Browser::open(&format!("{base}/ui/"));
+    page.wait_until("document.getElementById('shell')");
+    page.viewport(1843, 768);
+    assert_bootstrap(&mut page);
+    for hash in ["#agent", "#logs", "#metrics", "#tasks", "#images"] {
+        page.show(hash);
+        assert_route_scroll(&mut page, hash);
+    }
+    page.show("#chat");
+    assert_chat_scroll(&mut page);
+}
+
+fn assert_bootstrap(page: &mut Browser) {
+    let report = page.eval(BOOTSTRAP);
+    assert_eq!(report["children"], json!(["shell"]), "{report}");
+    assert_eq!(report["leftover"], Value::Bool(false), "{report}");
+    assert!(
+        report["logo"].as_str().is_some_and(|logo| !logo.is_empty()),
+        "{report}"
+    );
+}
+
+fn assert_route_scroll(page: &mut Browser, hash: &str) {
+    let report = page.eval(ROUTE_SCROLL);
+    assert_eq!(report["views"], json!(1), "{hash} {report}");
+    assert!(
+        report["shellY"].as_f64().unwrap_or(1.0).abs() < 1.0,
+        "{hash} {report}"
+    );
+    assert!(
+        report["padding"].as_f64().unwrap_or(0.0) > 0.0,
+        "{hash} {report}"
+    );
+    assert_eq!(report["overflow"], json!("auto"), "{hash} {report}");
+    assert_eq!(report["bodyOverflow"], json!("hidden"), "{hash} {report}");
+    assert_eq!(report["docTop"], json!(0), "{hash} {report}");
+    assert_eq!(report["docMoved"], Value::Bool(false), "{hash} {report}");
+    assert_eq!(report["inside"], Value::Bool(true), "{hash} {report}");
+    assert!(
+        report["docHeight"].as_f64().unwrap_or(f64::MAX)
+            <= report["innerHeight"].as_f64().unwrap_or(0.0) + 1.0,
+        "{hash} {report}"
+    );
+}
+
+fn assert_chat_scroll(page: &mut Browser) {
+    let report = page.eval(CHAT_SCROLL);
+    assert_eq!(report["views"], json!(1), "{report}");
+    assert!(
+        report["shellY"].as_f64().unwrap_or(1.0).abs() < 1.0,
+        "{report}"
+    );
+    assert_eq!(report["padding"], json!(0), "{report}");
+    assert_eq!(report["mainOverflow"], json!("hidden"), "{report}");
+    assert_eq!(report["logOverflow"], json!("auto"), "{report}");
+    assert_eq!(report["chatOverflow"], json!("hidden"), "{report}");
+    assert_eq!(report["bodyOverflow"], json!("hidden"), "{report}");
+    assert_eq!(report["logScrolled"], Value::Bool(true), "{report}");
+    assert_eq!(report["docTop"], json!(0), "{report}");
+    assert_eq!(report["mainTop"], json!(0), "{report}");
+    assert_eq!(report["docMoved"], Value::Bool(false), "{report}");
+    assert_eq!(report["mainMoved"], Value::Bool(false), "{report}");
+    assert!(
+        report["docHeight"].as_f64().unwrap_or(f64::MAX)
+            <= report["innerHeight"].as_f64().unwrap_or(0.0) + 1.0,
+        "{report}"
+    );
+}
+
+const BOOTSTRAP: &str = r"( () => {
+  const app = document.getElementById('app');
+  const logo = app?.getAttribute('data-logo') ?? '';
+  const leftover = [...(app?.childNodes ?? [])].some(node => (node.textContent || '').includes('Loading the lab interface.'));
+  return { children: [...(app?.children ?? [])].map(node => node.id), leftover, logo };
+})()";
+
+const ROUTE_SCROLL: &str = r"( () => {
+  const shell = document.getElementById('shell');
+  const main = document.getElementById('main');
+  const doc = document.scrollingElement;
+  main.scrollTop = 0;
+  const mainStyle = getComputedStyle(main);
+  const visible = [...main.querySelectorAll('button, a, input, textarea, select, summary')].filter(el => {
+    if (el.closest('[hidden]')) return false;
+    const closed = el.closest('details:not([open])');
+    if (closed && el.tagName !== 'SUMMARY') return false;
+    const box = el.getBoundingClientRect();
+    return box.width > 0 && box.height > 0;
+  });
+  const target = visible.at(-1);
+  const beforeDoc = doc.scrollTop;
+  const before = target?.getBoundingClientRect();
+  const mainBox = main.getBoundingClientRect();
+  const needed = !!before && before.bottom > mainBox.bottom + 1;
+  if (needed) main.scrollTop += before.bottom - mainBox.bottom;
+  const box = target?.getBoundingClientRect();
+  const after = main.getBoundingClientRect();
+  const inside = !!box && box.top >= after.top - 1 && box.bottom <= after.bottom + 1;
+  return {
+    shellY: shell.getBoundingClientRect().y,
+    padding: parseFloat(mainStyle.paddingTop),
+    overflow: mainStyle.overflowY,
+    bodyOverflow: getComputedStyle(document.body).overflowY,
+    docTop: doc.scrollTop,
+    docMoved: doc.scrollTop !== beforeDoc,
+    inside,
+    needed,
+    views: document.querySelectorAll('#main > .view:not([hidden])').length,
+    target: target?.id ?? '',
+    top: box?.top ?? null,
+    bottom: box?.bottom ?? null,
+    mainTop: after.top,
+    mainBottom: after.bottom,
+    mainScroll: main.scrollTop,
+    docHeight: doc.scrollHeight,
+    innerHeight: window.innerHeight
+  };
+})()";
+
+const CHAT_SCROLL: &str = r"( () => {
+  const main = document.getElementById('main');
+  const log = document.getElementById('chat-log');
+  const chat = document.getElementById('chat');
+  const doc = document.scrollingElement;
+  const saved = log.textContent;
+  log.textContent = Array.from({ length: 80 }, (_, index) => 'line ' + index).join('\n');
+  const beforeDoc = doc.scrollTop;
+  const beforeMain = main.scrollTop;
+  log.scrollTop = log.scrollHeight;
+  const report = {
+    shellY: document.getElementById('shell').getBoundingClientRect().y,
+    padding: parseFloat(getComputedStyle(main).paddingTop),
+    mainOverflow: getComputedStyle(main).overflowY,
+    logOverflow: getComputedStyle(log).overflowY,
+    chatOverflow: getComputedStyle(chat).overflowY,
+    bodyOverflow: getComputedStyle(document.body).overflowY,
+    logScrolled: log.scrollTop > 0,
+    docTop: doc.scrollTop,
+    mainTop: main.scrollTop,
+    docMoved: doc.scrollTop !== beforeDoc,
+    mainMoved: main.scrollTop !== beforeMain,
+    views: document.querySelectorAll('#main > .view:not([hidden])').length,
+    docHeight: doc.scrollHeight,
+    innerHeight: window.innerHeight
+  };
+  log.textContent = saved;
+  return report;
+})()";
+
 fn navigation_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     assert_eq!(
-        page.eval("document.querySelectorAll('#main > .view').length"),
+        page.eval("document.querySelectorAll('#main > .view:not([hidden])').length"),
         json!(1)
     );
     assert_eq!(
@@ -360,8 +524,8 @@ fn navigation_flow(base: &str) {
         json!("main")
     );
     assert_eq!(
-        page.eval("document.getElementById('view-chat')"),
-        Value::Null
+        page.eval("document.getElementById('view-chat')?.hasAttribute('hidden')"),
+        Value::Bool(true)
     );
     page.show("#chat");
     page.set_value("chat-draft", "keep-draft");
@@ -375,10 +539,7 @@ fn navigation_flow(base: &str) {
         page.eval("document.getElementById('chat-draft')?.value"),
         json!("keep-draft")
     );
-    assert_eq!(
-        page.eval("document.activeElement?.id"),
-        json!("chat-heading")
-    );
+    assert_eq!(page.eval("document.activeElement?.id"), json!("view-title"));
     page.show("#workbench");
     assert_eq!(
         page.eval("document.getElementById('workbench-params')?.value"),
@@ -394,8 +555,8 @@ fn navigation_flow(base: &str) {
         json!("page")
     );
     assert_eq!(
-        page.eval("document.getElementById('inventory-logs')"),
-        Value::Null
+        page.eval("document.getElementById('view-logs')?.hasAttribute('hidden')"),
+        Value::Bool(true)
     );
     page.show("#inventory/logs");
     assert_eq!(
@@ -414,18 +575,18 @@ fn navigation_flow(base: &str) {
         page.eval("document.getElementById('primary-nav')?.hasAttribute('hidden')"),
         Value::Bool(true)
     );
-    page.click("nav-toggle");
+    page.click("sidebar-toggle");
     page.wait_until(
-        "document.getElementById('nav-toggle')?.getAttribute('aria-expanded') === 'true'",
+        "document.getElementById('sidebar-toggle')?.getAttribute('aria-expanded') === 'true'",
     );
     page.eval(
         "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))",
     );
     page.wait_until("document.getElementById('primary-nav')?.hasAttribute('hidden')");
-    page.click("nav-toggle");
+    page.click("sidebar-toggle");
     page.click("nav-logs");
     page.wait_until(
-        "document.getElementById('view-logs')?.parentElement?.id === 'main' && document.getElementById('nav-toggle')?.getAttribute('aria-expanded') === 'false'",
+        "document.getElementById('view-logs')?.parentElement?.id === 'main' && document.getElementById('sidebar-toggle')?.getAttribute('aria-expanded') === 'false'",
     );
     page.viewport(1280, 800);
     assert_eq!(
@@ -433,14 +594,18 @@ fn navigation_flow(base: &str) {
         Value::Bool(false)
     );
     assert_eq!(
-        page.eval("document.getElementById('nav-toggle')?.hasAttribute('hidden')"),
-        Value::Bool(true)
+        page.eval("document.getElementById('nav-toggle')"),
+        Value::Null
+    );
+    assert_eq!(
+        page.eval("document.getElementById('sidebar-toggle')?.hasAttribute('hidden')"),
+        Value::Bool(false)
     );
     assert_shell_scripts(&mut page);
 }
 
 fn assert_shell_scripts(page: &mut Browser) {
-    assert_eq!(page.eval("document.scripts.length"), json!(3));
+    assert_eq!(page.eval("document.scripts.length"), json!(1));
     assert_eq!(
         page.eval("[...document.scripts].filter(script => !script.src).length"),
         json!(0)
@@ -510,9 +675,7 @@ fn chart_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     page.show("metrics");
-    page.wait_until(
-        "window.Chart && window.Chart.getChart(document.getElementById('metric-chart'))",
-    );
+    page.wait_until("document.querySelectorAll('#metric-chart .dx-line-point').length >= 2");
     assert_initial_series(&mut page);
     assert_point_tooltip(&mut page);
     assert_metric_switch(&mut page);
@@ -529,7 +692,7 @@ fn assert_initial_series(page: &mut Browser) {
     assert_eq!(initial["values"], json!([0, 1]));
     assert_eq!(initial["label"], "2 samples in open");
     assert_eq!(initial["hidden"], Value::Bool(false));
-    assert_eq!(initial["svg"], Value::Bool(false));
+    assert_eq!(initial["svg"], Value::Bool(true));
     let readings = initial["readings"].as_str().unwrap_or_default();
     assert!(
         readings.contains("2024-01-01T00:01:00Z 1 open"),
@@ -542,40 +705,51 @@ fn assert_initial_series(page: &mut Browser) {
 fn assert_point_tooltip(page: &mut Browser) {
     let point = page.eval(
         "(() => {
-            const canvas = document.getElementById('metric-chart');
-            const chart = window.Chart.getChart(canvas);
-            const point = chart.getDatasetMeta(0).data[1];
-            const rect = canvas.getBoundingClientRect();
-            return { x: rect.left + point.x, y: rect.top + point.y };
+            const point = document.querySelectorAll('#metric-chart .dx-line-point')[1];
+            const rect = point.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         })()",
     );
     page.move_mouse(
         point["x"].as_f64().unwrap_or(0.0),
         point["y"].as_f64().unwrap_or(0.0),
     );
-    let tip = page.eval(
+    page.eval(
         "(() => {
-            const tooltip = window.Chart.getChart(document.getElementById('metric-chart')).tooltip;
-            return {
-                opacity: tooltip.opacity,
-                title: (tooltip.title || []).join(' '),
-                body: (tooltip.body || []).map(part => (part.lines || []).join(' ')).join(' ')
-            };
+            const point = document.querySelectorAll('#metric-chart .dx-line-point')[1];
+            if (!point) return false;
+            point.dispatchEvent(new PointerEvent('pointerenter', { bubbles: false }));
+            point.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+            return true;
         })()",
     );
-    let title = tip["title"].as_str().unwrap_or_default();
-    let body = tip["body"].as_str().unwrap_or_default();
-    let opacity = tip["opacity"].as_f64().unwrap_or(0.0);
-    assert!(opacity > 0.0, "{tip}");
-    assert!(title.contains("2024-01-01T00:01:00Z"), "{tip}");
-    assert!(body.contains('1'), "{tip}");
-    assert!(body.contains("open"), "{tip}");
+    page.wait_until(
+        "(() => {
+            const label = document.querySelector('#metric-chart .dx-line-point-label');
+            return label && label.textContent.includes('2024-01-01 00:01 UTC');
+        })()",
+    );
+    let tip = page.eval(
+        "(() => {
+            const label = document.querySelector('#metric-chart .dx-line-point-label');
+            return { text: label ? label.textContent : '' };
+        })()",
+    );
+    let text = tip["text"].as_str().unwrap_or_default();
+    assert!(text.contains("2024-01-01 00:01 UTC"), "{tip}");
+    assert!(text.contains('1'), "{tip}");
+    assert!(text.contains("open"), "{tip}");
 }
 
 fn assert_metric_switch(page: &mut Browser) {
     page.click("metric-pick-1");
     page.wait_until(
-        "window.Chart.getChart(document.getElementById('metric-chart')).data.datasets[0].data.includes(12)",
+        "(() => {
+            const values = [...document.querySelectorAll('#metric-chart .dx-line-point')].map(
+                (point) => Number(point.getAttribute('data-value'))
+            );
+            return values.includes(12);
+        })()",
     );
     let switched = page.eval(CHART_STATE);
     assert_eq!(switched["values"], json!([5, 12]));
@@ -584,9 +758,11 @@ fn assert_metric_switch(page: &mut Browser) {
 
 fn assert_chart_resizes(page: &mut Browser) {
     page.viewport(1280, 900);
-    let wide = page.eval("document.getElementById('metric-chart').getBoundingClientRect().width");
+    let wide = page
+        .eval("document.querySelector('#metric-chart svg')?.getBoundingClientRect().width || 0");
     page.viewport(520, 900);
-    let narrow = page.eval("document.getElementById('metric-chart').getBoundingClientRect().width");
+    let narrow = page
+        .eval("document.querySelector('#metric-chart svg')?.getBoundingClientRect().width || 0");
     let wide = wide.as_f64().unwrap_or(0.0);
     let narrow = narrow.as_f64().unwrap_or(0.0);
     assert!(wide > narrow + 40.0, "{wide} vs {narrow}");
@@ -604,7 +780,12 @@ fn assert_time_range(page: &mut Browser) {
         })()",
     );
     page.wait_until(
-        "window.Chart.getChart(document.getElementById('metric-chart')).data.datasets[0].data.length === 1",
+        "(() => {
+            const values = [...document.querySelectorAll('#metric-chart .dx-line-point')].map(
+                (point) => Number(point.getAttribute('data-value'))
+            );
+            return values.length === 1 && values[0] === 12;
+        })()",
     );
     let filtered = page.eval(CHART_STATE);
     assert_eq!(filtered["values"], json!([12]));
@@ -618,17 +799,19 @@ fn assert_time_range(page: &mut Browser) {
 }
 
 const CHART_STATE: &str = "(() => {
-    const canvas = document.getElementById('metric-chart');
-    const chart = window.Chart.getChart(canvas);
+    const host = document.getElementById('metric-chart');
+    const values = [...document.querySelectorAll('#metric-chart .dx-line-point')].map(
+        (point) => Number(point.getAttribute('data-value'))
+    );
     const list = document.getElementById('metric-view-entries');
     return {
-        values: chart.data.datasets[0].data,
-        label: canvas.getAttribute('aria-label'),
-        readings: list.textContent,
-        ariaHidden: list.getAttribute('aria-hidden'),
+        values,
+        label: host?.getAttribute('aria-label'),
+        readings: list?.textContent ?? '',
+        ariaHidden: list?.getAttribute('aria-hidden'),
         hidden: document.getElementById('metric-plot').hasAttribute('hidden'),
-        svg: !!document.querySelector('#metric-plot svg'),
-        width: canvas.getBoundingClientRect().width
+        svg: !!document.querySelector('#metric-chart svg'),
+        width: host?.getBoundingClientRect().width ?? 0
     };
 })()";
 
@@ -745,6 +928,7 @@ enum MockRoute {
     Workbench,
     Tasks,
     TaskRuns,
+    Logs,
 }
 
 #[derive(Clone)]
@@ -789,7 +973,7 @@ async fn serve_mock(
         .route("/ui", axum::routing::get(index_route))
         .route("/ui/", axum::routing::get(index_route))
         .route("/ui/index.html", axum::routing::get(index_route))
-        .route("/ui/assets/{name}", axum::routing::get(asset_route))
+        .route("/ui/assets/{*path}", axum::routing::get(asset_route))
         .route("/message:send", axum::routing::post(send_route))
         .route("/tasks", axum::routing::get(tasks_route))
         .with_state(state);
@@ -814,10 +998,20 @@ async fn index_route(State(state): State<MockState>) -> Response {
 }
 
 async fn asset_route(State(state): State<MockState>, Path(name): Path<String>) -> Response {
-    if !name
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '.')
-    {
+    if name.is_empty() || name.contains("..") {
+        return bytes(
+            StatusCode::NOT_FOUND,
+            "text/plain; charset=utf-8",
+            Vec::new(),
+        );
+    }
+    if !name.chars().all(|character| {
+        character.is_ascii_alphanumeric()
+            || character == '-'
+            || character == '_'
+            || character == '.'
+            || character == '/'
+    }) {
         return bytes(
             StatusCode::NOT_FOUND,
             "text/plain; charset=utf-8",
@@ -848,6 +1042,7 @@ async fn send_route(State(state): State<MockState>, body: Bytes) -> Response {
         MockRoute::TaskRuns => {
             return tasks_browser::scripted_run_send(&body, &state.run_starts, &state.run_polls);
         }
+        MockRoute::Logs => return logs_browser::scripted_send(&body).await,
         MockRoute::Default => {}
     }
     let hit = state.sends.fetch_add(1, Ordering::Relaxed);

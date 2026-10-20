@@ -81,15 +81,16 @@ fn has_extension(value: &str, extension: &str) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
 }
 
-async fn assert_chart_scripts<'a>(base: &str, html: &'a str) -> &'a str {
-    let chart_path = script_src(html, "/ui/assets/chart-");
-    let bridge_path = script_src(html, "/ui/assets/chart-bridge-");
+fn assert_boot_script(html: &str) -> &str {
     let boot_path = script_src(html, "/ui/assets/boot-");
-    assert!(!chart_path.contains("bridge"), "chart asset was the bridge");
-    assert!(html.find(chart_path).unwrap() < html.find(bridge_path).unwrap());
-    assert!(html.find(bridge_path).unwrap() < html.find(boot_path).unwrap());
-    assert_script(base, chart_path, "Chart.js v4.5.1").await;
-    assert_script(base, bridge_path, "renderMetricChart").await;
+    assert!(
+        !html.contains("/ui/assets/chart-"),
+        "packaged HTML must not reference Chart.js"
+    );
+    assert!(
+        !html.contains("chart-bridge"),
+        "packaged HTML must not reference the chart bridge"
+    );
     boot_path
 }
 
@@ -109,29 +110,127 @@ fn script_src<'a>(html: &'a str, prefix: &str) -> &'a str {
     panic!("missing script {prefix}");
 }
 
-async fn assert_script(base: &str, path: &str, marker: &str) {
-    let response = get(&format!("{base}{path}"), None).await;
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_eq!(
-        header(&response, "content-type"),
-        "text/javascript; charset=utf-8"
-    );
-    assert_eq!(
-        header(&response, "cache-control"),
-        "public, max-age=31536000, immutable"
-    );
-    assert_eq!(header(&response, "x-content-type-options"), "nosniff");
+fn font_asset_paths(css: &str) -> Vec<&str> {
+    let mut paths = Vec::new();
+    let mut rest = css;
+    while let Some(start) = rest.find("url(\"/ui/assets/") {
+        let after = &rest[start + 5..];
+        let end = after
+            .find('"')
+            .unwrap_or_else(|| panic!("unterminated font url"));
+        paths.push(&after[..end]);
+        rest = &after[end + 1..];
+    }
     assert!(
-        header(&response, "content-security-policy")
-            .contains("script-src 'self' 'wasm-unsafe-eval'")
+        !paths.is_empty(),
+        "stylesheet does not reference packaged fonts"
     );
-    assert!(!header(&response, "content-security-policy").contains("unsafe-inline"));
-    let body = response.text().await.unwrap();
-    assert!(body.contains(marker), "script missing {marker}");
-    assert!(!body.contains("eval("));
-    assert!(!body.contains("new Function"));
-    assert!(!body.contains(AGENT_MARKER));
-    assert!(!body.contains(BEARER_SECRET));
+    paths
+}
+
+fn assert_style_contract(css_body: &str) {
+    assert!(!css_body.contains("fonts.googleapis.com"));
+    assert!(!css_body.contains("fonts.gstatic.com"));
+    assert!(!css_body.contains("http://"));
+    assert!(!css_body.contains("https://"));
+    let mut search_from = 0;
+    for marker in [
+        "fragment:tokens",
+        "fragment:shell",
+        "fragment:controls",
+        "fragment:loading",
+        "fragment:logs",
+        "fragment:metrics",
+        "fragment:tasks",
+        "fragment:chat",
+        "fragment:agent",
+        "fragment:inventory",
+        "fragment:workbench",
+    ] {
+        let found = css_body[search_from..]
+            .find(marker)
+            .unwrap_or_else(|| panic!("missing {marker}"));
+        search_from += found + marker.len();
+    }
+    for index in 1..=12 {
+        let token = format!("--chart-{index}:");
+        assert!(
+            css_body.matches(&token).count() >= 2,
+            "missing light and dark {token}"
+        );
+    }
+    for token in [
+        "[data-theme=\"dark\"]",
+        "prefers-color-scheme: dark",
+        ":not([data-theme=\"light\"])",
+        "--a3-nav-glyph-mute-bg",
+        "--a3-nav-glyph-active-fg",
+        "--elevation-2xs",
+        "--elevation-2xl",
+        "--density-control-height",
+        "[data-density=\"compact\"]",
+        "--motion-normal:",
+        "font-family: Inter",
+        "font-family: Oxanium",
+        "--font-oxanium:",
+    ] {
+        assert!(css_body.contains(token), "missing {token}");
+    }
+    let reduced = css_body
+        .split("prefers-reduced-motion: reduce")
+        .nth(1)
+        .expect("missing reduced-motion block");
+    for token in [
+        "--motion-instant: 0ms",
+        "--motion-fast: 0ms",
+        "--motion-normal: 0ms",
+        "--motion-slow: 0ms",
+        "--motion-slower: 0ms",
+        "--motion-feedback-duration: 0ms",
+        "--motion-small-enter-duration: 0ms",
+        "--motion-small-exit-duration: 0ms",
+        "--motion-medium-enter-duration: 0ms",
+        "--motion-medium-exit-duration: 0ms",
+        "--motion-alert-enter-duration: 0ms",
+        "--motion-large-enter-duration: 0ms",
+        "--motion-large-exit-duration: 0ms",
+    ] {
+        assert!(reduced.contains(token), "missing {token}");
+    }
+}
+
+fn assert_font_licenses() {
+    let fonts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web-ui/static/fonts");
+    let inter = std::fs::read_to_string(fonts.join("inter/LICENSE.txt")).unwrap();
+    assert!(inter.contains("Copyright (c) 2016 The Inter Project Authors"));
+    assert!(inter.contains("SIL OPEN FONT LICENSE"));
+    let oxanium = std::fs::read_to_string(fonts.join("oxanium/OFL.txt")).unwrap();
+    assert!(oxanium.contains("Copyright 2019 The Oxanium Project Authors"));
+    assert!(oxanium.contains("SIL OPEN FONT LICENSE"));
+}
+
+fn is_woff2_path(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("woff2"))
+}
+
+async fn assert_packaged_styles(base: &str, css_body: &str) {
+    assert_style_contract(css_body);
+    assert_font_licenses();
+    let font_paths = font_asset_paths(css_body);
+    assert!(font_paths.iter().any(|path| path.contains("inter-")));
+    assert!(font_paths.iter().any(|path| path.contains("oxanium-")));
+    for path in font_paths {
+        assert!(path.starts_with("/ui/assets/"), "{path}");
+        assert!(is_woff2_path(path), "{path}");
+        let font = get(&format!("{base}{path}"), None).await;
+        assert_eq!(font.status(), reqwest::StatusCode::OK);
+        assert_eq!(header(&font, "content-type"), "font/woff2");
+        assert!(header(&font, "content-security-policy").contains("font-src 'self'"));
+        let bytes = font.bytes().await.unwrap();
+        assert!(bytes.starts_with(b"wOF2"), "{path}");
+    }
 }
 
 fn quoted_attr<'a>(html: &'a str, marker: &str) -> &'a str {
@@ -184,6 +283,9 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert!(policy.contains("default-src 'none'"));
     assert!(policy.contains("script-src 'self' 'wasm-unsafe-eval'"));
     assert!(policy.contains("style-src 'self'"));
+    assert!(policy.contains("font-src 'self'"));
+    assert!(!policy.contains("fonts.googleapis.com"));
+    assert!(!policy.contains("fonts.gstatic.com"));
     assert!(policy.contains("img-src 'self' data:"));
     assert!(policy.contains("connect-src 'self'"));
     assert!(!policy.contains("unsafe-inline"));
@@ -202,7 +304,7 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert!(header(&logo, "cache-control").contains("immutable"));
     assert!(logo.text().await.unwrap().contains("<svg"));
     let css_path = quoted_attr(&html, "href=\"");
-    let boot_path = assert_chart_scripts(&base, &html).await;
+    let boot_path = assert_boot_script(&html);
     assert!(css_path.starts_with("/ui/assets/app-"));
     assert!(has_extension(css_path, "css"));
     assert!(boot_path.starts_with("/ui/assets/boot-"));
@@ -217,17 +319,15 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert_eq!(header(&css, "content-security-policy"), policy);
     let css_body = css.text().await.unwrap();
     assert!(!css_body.contains(AGENT_MARKER));
+    assert_packaged_styles(&base, &css_body).await;
     let boot = get(&format!("{base}{boot_path}"), None).await;
     assert_eq!(boot.status(), reqwest::StatusCode::OK);
     assert_eq!(
         header(&boot, "content-type"),
         "text/javascript; charset=utf-8"
     );
-    assert_eq!(
-        header(&boot, "cache-control"),
-        "public, max-age=31536000, immutable"
-    );
     let boot_js = boot.text().await.unwrap();
+    assert!(boot_js.contains("import init"));
     assert!(!boot_js.contains(AGENT_MARKER));
     let module = boot_js
         .split('"')

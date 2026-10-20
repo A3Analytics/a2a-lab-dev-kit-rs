@@ -178,8 +178,8 @@ fn assert_lifecycle_and_layout(page: &mut Browser, base: &str) {
     let after_refresh = list_task_sends(page, base);
     page.show("#logs");
     assert_eq!(
-        page.eval("document.getElementById('task-pick-0')"),
-        Value::Null
+        page.eval("document.getElementById('view-tasks')?.hasAttribute('hidden')"),
+        Value::Bool(true)
     );
     page.show("#tasks");
     page.wait_until(

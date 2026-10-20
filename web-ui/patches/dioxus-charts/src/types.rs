@@ -3,7 +3,7 @@ use std::fmt;
 pub(crate) type Series = Vec<Vec<f32>>;
 pub(crate) type Labels = Vec<String>;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub(crate) struct Point {
     pub x: f32,
     pub y: f32,
@@ -22,7 +22,7 @@ impl fmt::Display for Point {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub(crate) struct Rect {
     pub min: Point,
     pub max: Point,

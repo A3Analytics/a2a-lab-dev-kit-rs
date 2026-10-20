@@ -1,293 +1,815 @@
 //! Log reader. Source toggles choose which sources to load.
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen_futures::spawn_local;
-use web_sys::Event;
-
 use std::cell::RefCell;
 
-use crate::inventory::{self, Fault, Primitive};
-use crate::logs::{self, Record};
-use crate::shell::http::Transport;
-use crate::shell::log_chrome::{facet, meta, source_facet};
-use crate::shell::page::{self, Page};
-use crate::shell::present;
-use crate::shell::session::{calls_allowed, message_id, take_secret};
+use dioxus::prelude::*;
+use wasm_bindgen::JsCast;
 
-pub fn mount(page: &Page, parent: &web_sys::Element) {
-    present::section(page, parent, "log-view", "Logs", |body| {
-        let status = present::node(page, "p", Some("log-view-status"));
-        page::attr(&status, "role", "status");
-        page::attr(&status, "aria-live", "polite");
-        body.append_child(&status).ok();
-        let alert = present::node(page, "div", Some("log-view-alert"));
-        page::attr(&alert, "role", "alert");
-        page::attr(&alert, "aria-live", "assertive");
-        body.append_child(&alert).ok();
-        let browser = present::node(page, "div", Some("log-browser"));
-        page::attr(&browser, "class", "log-browser");
-        let filters = present::node(page, "div", Some("log-filters"));
-        page::attr(&filters, "role", "group");
-        page::attr(&filters, "aria-label", "Log filters");
-        let source_group = present::node(page, "div", Some("log-view-sources"));
-        page::attr(&source_group, "class", "log-filter-group");
-        let source_label = present::node(page, "p", None);
-        source_label.set_text_content(Some("Source"));
-        source_group.append_child(&source_label).ok();
-        filters.append_child(&source_group).ok();
-        let search_group = present::node(page, "div", None);
-        page::attr(&search_group, "class", "log-filter-group");
-        let search_label = present::node(page, "label", None);
-        page::attr(&search_label, "for", "log-filter-search");
-        search_label.set_text_content(Some("Search"));
-        let search = present::node(page, "input", Some("log-filter-search"));
-        page::attr(&search, "type", "search");
-        page::attr(&search, "placeholder", "Message");
-        search_group.append_child(&search_label).ok();
-        search_group.append_child(&search).ok();
-        filters.append_child(&search_group).ok();
-        let range_group = present::node(page, "div", None);
-        page::attr(&range_group, "class", "log-filter-group");
-        let range_label = present::node(page, "p", None);
-        range_label.set_text_content(Some("Date range"));
-        let start_label = present::node(page, "label", None);
-        page::attr(&start_label, "for", "log-range-start");
-        start_label.set_text_content(Some("Start"));
-        let start = present::node(page, "input", Some("log-range-start"));
-        page::attr(&start, "type", "date");
-        let end_label = present::node(page, "label", None);
-        page::attr(&end_label, "for", "log-range-end");
-        end_label.set_text_content(Some("End"));
-        let end = present::node(page, "input", Some("log-range-end"));
-        page::attr(&end, "type", "date");
-        range_group.append_child(&range_label).ok();
-        range_group.append_child(&start_label).ok();
-        range_group.append_child(&start).ok();
-        range_group.append_child(&end_label).ok();
-        range_group.append_child(&end).ok();
-        filters.append_child(&range_group).ok();
-        let severity_group = present::node(page, "div", None);
-        page::attr(&severity_group, "class", "log-filter-group");
-        let severity_label = present::node(page, "p", None);
-        severity_label.set_text_content(Some("Severity"));
-        severity_group.append_child(&severity_label).ok();
-        facet(page, &severity_group, "log-filter-all", "", "All");
-        for (id, level, label) in [
-            ("log-filter-trace", "trace", "Trace"),
-            ("log-filter-debug", "debug", "Debug"),
-            ("log-filter-info", "info", "Info"),
-            ("log-filter-warn", "warn", "Warn"),
-            ("log-filter-error", "error", "Error"),
-        ] {
-            facet(page, &severity_group, id, level, label);
+use crate::inventory::{Fault, Item, Primitive};
+use crate::logs::{self, QueryRange, Record};
+use crate::shell::session::{self, calls_allowed, message_id, take_secret};
+
+const MESSAGE_FOLD: usize = 72;
+
+#[derive(Clone, PartialEq)]
+pub struct LogUi {
+    pub sources: Vec<Item>,
+    pub catalog: Vec<String>,
+    pub selected: Vec<String>,
+    pub records: Vec<Record>,
+    pub query: String,
+    pub levels: Vec<String>,
+    pub range: QueryRange,
+    pub alert: String,
+    pub tick: u32,
+    pub sending: bool,
+    pub known: bool,
+    pub faulted: bool,
+}
+
+impl LogUi {
+    pub fn new() -> Self {
+        Self {
+            sources: Vec::new(),
+            catalog: Vec::new(),
+            selected: Vec::new(),
+            records: Vec::new(),
+            query: String::new(),
+            levels: Vec::new(),
+            range: QueryRange::Window,
+            alert: String::new(),
+            tick: 0,
+            sending: false,
+            known: false,
+            faulted: false,
         }
-        filters.append_child(&severity_group).ok();
-        let results = present::node(page, "div", Some("log-results"));
-        page::attr(&results, "class", "log-results");
-        let count = present::node(page, "p", Some("log-filter-count"));
-        page::attr(&count, "class", "log-count");
-        results.append_child(&count).ok();
-        let scroll = present::node(page, "div", None);
-        page::attr(&scroll, "class", "log-scroll");
-        let chips = present::node(page, "div", Some("log-filter-chips"));
-        page::attr(&chips, "class", "log-chips");
-        page::attr(&chips, "hidden", "hidden");
-        scroll.append_child(&chips).ok();
-        let empty = present::node(page, "p", Some("log-filter-empty"));
-        empty.set_text_content(Some("No logs match these filters."));
-        page::attr(&empty, "hidden", "hidden");
-        scroll.append_child(&empty).ok();
-        let entries = present::node(page, "ul", Some("log-view-entries"));
-        page::attr(&entries, "class", "log-cards");
-        scroll.append_child(&entries).ok();
-        results.append_child(&scroll).ok();
-        browser.append_child(&filters).ok();
-        browser.append_child(&results).ok();
-        body.append_child(&browser).ok();
-    });
-    fill_sources(page, &[]);
-    page.set_data("log-view-status", "data-gen", "0");
-    page.set_text("log-view-status", "Choose a log source.");
+    }
 }
 
-pub fn install(page: &Page, transport: &Transport) {
-    TRANSPORT.with(|slot| *slot.borrow_mut() = Some(transport.clone()));
-    on_range(page);
-    on_filters(page);
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Loading,
+    NoSources,
+    Error,
+    Empty,
+    NoMatch,
+    Ready,
 }
 
-pub fn sources_changed(page: &Page) {
+impl Mode {
+    fn slug(self) -> &'static str {
+        match self {
+            Self::Loading => "loading",
+            Self::NoSources => "sources",
+            Self::Error => "error",
+            Self::Empty => "empty",
+            Self::NoMatch => "nomatch",
+            Self::Ready => "ready",
+        }
+    }
+
+    fn text(self) -> &'static str {
+        match self {
+            Self::Loading => "Loading logs.",
+            Self::NoSources => "No log sources.",
+            Self::Error => "Logs could not be read.",
+            Self::Empty => "No logs for this source.",
+            Self::NoMatch => "No logs match these filters.",
+            Self::Ready => "",
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+enum LogJob {
+    Idle,
+    Load {
+        tick: u32,
+        sources: Vec<String>,
+        range: QueryRange,
+    },
+}
+
+#[derive(Clone, PartialEq)]
+enum LogOutcome {
+    Idle,
+    Ready { tick: u32, records: Vec<Record> },
+    Failed { tick: u32, message: String },
+}
+
+#[derive(Clone, Copy)]
+struct Loader {
+    ui: Signal<LogUi>,
+    job: Signal<LogJob>,
+}
+
+thread_local! {
+    static UI: RefCell<Option<Signal<LogUi>>> = const { RefCell::new(None) };
+    static LOADER: RefCell<Option<Loader>> = const { RefCell::new(None) };
+}
+
+pub fn bind(ui: Signal<LogUi>) {
+    UI.with(|slot| *slot.borrow_mut() = Some(ui));
+}
+
+pub fn sources_changed() {
     let items = super::inventory::loaded(Primitive::Logs);
     let ids = items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
-    let catalog_changed = CATALOG.with(|slot| {
-        let mut catalog = slot.borrow_mut();
-        if *catalog == ids {
-            return false;
-        }
-        *catalog = ids;
-        true
-    });
-    SELECTED.with(|slot| {
-        slot.borrow_mut()
-            .retain(|id| items.iter().any(|item| item.id == *id));
-    });
-    fill_sources(page, &items);
-    if items.is_empty() {
-        clear_entries(page);
-        page.set_text("log-view-status", "No log sources.");
-        page.set_text("log-view-alert", "");
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    let catalog_changed = next.catalog != ids;
+    next.sources = items;
+    next.catalog = ids;
+    next.known = true;
+    next.selected
+        .retain(|id| next.catalog.iter().any(|source| source == id));
+    if next.catalog.is_empty() {
+        next.records.clear();
+        next.query.clear();
+        next.levels.clear();
+        next.sending = false;
+        next.faulted = false;
+        next.alert.clear();
+        session::write_control("log-filter-search", "");
+        ui.set(next);
         return;
     }
+    ui.set(next);
     if catalog_changed {
-        reload(page);
+        start_load();
     }
 }
 
-fn fill_sources(page: &Page, items: &[inventory::Item]) {
-    let Some(group) = page.element("log-view-sources") else {
-        return;
-    };
-    let label = group.first_child();
-    page::clear_children(&group);
-    if let Some(label) = label {
-        group.append_child(&label).ok();
-    }
-    let selected = selected_ids();
-    source_facet(
-        page,
-        &group,
-        "log-source-all",
-        "",
-        if items.is_empty() {
-            "None loaded"
-        } else {
-            "All"
-        },
-        items.is_empty() || selected.is_empty(),
-    );
-    for (index, item) in items.iter().enumerate() {
-        source_facet(
-            page,
-            &group,
-            &format!("log-source-{index}"),
-            &item.id,
-            &source_label(item),
-            selected.iter().any(|id| id == &item.id),
-        );
-    }
+fn bound() -> Option<Signal<LogUi>> {
+    UI.with(|slot| *slot.borrow())
 }
 
-fn source_text(source_id: &str) -> String {
-    super::inventory::loaded(Primitive::Logs)
-        .into_iter()
-        .find(|item| item.id == source_id)
-        .map(|item| {
-            if item.name.is_empty() {
-                item.id
-            } else {
-                item.name
+fn loader() -> Option<Loader> {
+    LOADER.with(|slot| *slot.borrow())
+}
+
+#[component]
+pub fn LogView(ui: Signal<LogUi>) -> Element {
+    let job = use_signal(|| LogJob::Idle);
+    use_hook(|| {
+        LOADER.with(|slot| *slot.borrow_mut() = Some(Loader { ui, job }));
+    });
+    let reply = use_resource(move || {
+        let job = job();
+        let secret = session::native_secret();
+        async move { run_job(job, secret).await }
+    });
+    let mut applied = use_signal(|| 0u32);
+    let _ = reply.read();
+    if let Some(outcome) = reply()
+        && !matches!(outcome, LogOutcome::Idle)
+    {
+        apply_outcome(ui, &mut applied, outcome);
+    }
+    let state = ui();
+    let shown = visible_records(&state);
+    let mode = presentation(&state, shown.len());
+    rsx! {
+        section {
+            id: "log-view",
+            aria_label: "Logs",
+            aria_busy: if state.sending { "true" } else { "false" },
+            div { id: "log-view-alert", role: "alert", aria_live: "assertive", "{state.alert}" }
+            div { id: "log-browser", class: "log-browser",
+                FilterRail { ui, state: state.clone() }
+                Results { state: state.clone(), shown, mode }
             }
-        })
-        .unwrap_or_else(|| source_id.to_owned())
-}
-
-fn source_label(item: &inventory::Item) -> String {
-    let identity = if item.name.is_empty() || item.name == item.id {
-        item.id.clone()
-    } else {
-        format!("{} ({})", item.name, item.id)
-    };
-    if item.description.is_empty() {
-        identity
-    } else {
-        format!("{identity} — {}", item.description)
+        }
     }
 }
 
-async fn load(page: &Page, transport: &Transport) {
-    if !calls_allowed(page) {
+#[component]
+fn FilterRail(ui: Signal<LogUi>, state: LogUi) -> Element {
+    rsx! {
+        div { id: "log-filters", role: "group", aria_label: "Log filters",
+            div { class: "log-filter-group",
+                p { "Actions" }
+                div { class: "log-actions",
+                    button {
+                        id: "log-refresh",
+                        class: "log-primary",
+                        r#type: "button",
+                        disabled: state.sending,
+                        onclick: move |_| start_load(),
+                        "Refresh"
+                    }
+                    button {
+                        id: "log-clear",
+                        class: "log-outline",
+                        r#type: "button",
+                        onclick: move |_| clear_filters(),
+                        "Clear filters"
+                    }
+                }
+            }
+            SourceFacets { state: state.clone() }
+            div { class: "log-filter-group",
+                label { r#for: "log-filter-search", "Search" }
+                input {
+                    id: "log-filter-search",
+                    r#type: "search",
+                    placeholder: "Message",
+                    oninput: move |_| commit_search(ui),
+                    onchange: move |_| commit_search(ui),
+                    onkeydown: move |event| {
+                        if event.key() == Key::Enter {
+                            event.prevent_default();
+                            commit_search(ui);
+                        }
+                    },
+                }
+            }
+            DateFacets { ui }
+            LevelFacets { state: state.clone() }
+        }
+    }
+}
+
+#[component]
+fn SourceFacets(state: LogUi) -> Element {
+    rsx! {
+        div { id: "log-view-sources", class: "log-filter-group",
+            p { "Source" }
+            Facet {
+                id: "log-source-all",
+                attr: "data-source",
+                value: "",
+                label: if state.sources.is_empty() { "None loaded" } else { "All" },
+                pressed: state.sources.is_empty() || state.selected.is_empty(),
+                onclick: move |_| toggle_source(""),
+            }
+            for (index, item) in state.sources.iter().enumerate() {
+                Facet {
+                    key: "{item.id}",
+                    id: format!("log-source-{index}"),
+                    attr: "data-source",
+                    value: item.id.clone(),
+                    label: source_label(item),
+                    pressed: state.selected.iter().any(|id| id == &item.id),
+                    onclick: {
+                        let id = item.id.clone();
+                        move |_| toggle_source(&id)
+                    },
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn DateFacets(ui: Signal<LogUi>) -> Element {
+    rsx! {
+        div { class: "log-filter-group",
+            p { "Date range" }
+            label { r#for: "log-range-start", "Start" }
+            input {
+                id: "log-range-start",
+                r#type: "date",
+                oninput: move |_| commit_range(ui),
+                onchange: move |_| commit_range(ui),
+                onkeydown: move |event| range_tab(event, "log-range-end", false),
+            }
+            label { r#for: "log-range-end", "End" }
+            input {
+                id: "log-range-end",
+                r#type: "date",
+                oninput: move |_| commit_range(ui),
+                onchange: move |_| commit_range(ui),
+                onkeydown: move |event| range_tab(event, "log-filter-all", true),
+            }
+        }
+    }
+}
+
+#[component]
+fn LevelFacets(state: LogUi) -> Element {
+    rsx! {
+        div { class: "log-filter-group",
+            p { "Severity" }
+            Facet { id: "log-filter-all", attr: "data-level", value: "", label: "All", pressed: state.levels.is_empty(), onclick: move |_| toggle_level("") }
+            Facet { id: "log-filter-trace", attr: "data-level", value: "trace", label: "Trace", pressed: has_level(&state, "trace"), onclick: move |_| toggle_level("trace") }
+            Facet { id: "log-filter-debug", attr: "data-level", value: "debug", label: "Debug", pressed: has_level(&state, "debug"), onclick: move |_| toggle_level("debug") }
+            Facet { id: "log-filter-info", attr: "data-level", value: "info", label: "Info", pressed: has_level(&state, "info"), onclick: move |_| toggle_level("info") }
+            Facet { id: "log-filter-warn", attr: "data-level", value: "warn", label: "Warn", pressed: has_level(&state, "warn"), onclick: move |_| toggle_level("warn") }
+            Facet { id: "log-filter-error", attr: "data-level", value: "error", label: "Error", pressed: has_level(&state, "error"), onclick: move |_| toggle_level("error") }
+        }
+    }
+}
+
+#[component]
+fn Results(state: LogUi, shown: Vec<Record>, mode: Mode) -> Element {
+    let chips = chip_rows(&state);
+    rsx! {
+        div { id: "log-results", class: "log-results",
+            p { id: "log-filter-count", class: "log-count", "{count_text(shown.len(), state.records.len())}" }
+            div { class: "log-scroll",
+                div { id: "log-filter-chips", class: "log-chips", hidden: chips.is_empty(),
+                    span { class: "log-chips-label", "Filters" }
+                    for chip in chips.iter() {
+                        Chip { key: "{chip.clear}", chip: chip.clone() }
+                    }
+                }
+                ResultState { state: state.clone(), mode }
+                ul { id: "log-view-entries", class: "log-cards", hidden: mode != Mode::Ready,
+                    for record in shown.iter() {
+                        LogCard {
+                            key: "{record.source_id}:{record.timestamp}:{record.message}",
+                            record: record.clone(),
+                            source: source_text(&state, &record.source_id),
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn ResultState(state: LogUi, mode: Mode) -> Element {
+    rsx! {
+        div {
+            id: "log-result-state",
+            "data-state": mode.slug(),
+            "data-gen": state.tick.to_string(),
+            hidden: mode == Mode::Ready,
+            p {
+                id: "log-view-status",
+                role: "status",
+                aria_live: "polite",
+                "data-state": mode.slug(),
+                "{mode.text()}"
+            }
+            if mode == Mode::NoMatch {
+                button {
+                    id: "log-result-clear",
+                    class: "log-outline",
+                    r#type: "button",
+                    onclick: move |_| clear_filters(),
+                    "Clear filters"
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn Facet(
+    id: String,
+    attr: &'static str,
+    value: String,
+    label: String,
+    pressed: bool,
+    onclick: EventHandler<MouseEvent>,
+) -> Element {
+    rsx! {
+        button {
+            id: "{id}",
+            r#type: "button",
+            class: "log-facet",
+            "data-source": if attr == "data-source" { Some(value.clone()) } else { None },
+            "data-level": if attr == "data-level" { Some(value.clone()) } else { None },
+            aria_pressed: if pressed { "true" } else { "false" },
+            onclick: move |event| onclick.call(event),
+            span { class: "log-facet-mark", aria_hidden: "true" }
+            span { "{label}" }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct ChipData {
+    label: String,
+    value: String,
+    clear: String,
+}
+
+#[component]
+fn Chip(chip: ChipData) -> Element {
+    let clear = chip.clear.clone();
+    rsx! {
+        span { class: "log-meta",
+            span { class: "log-meta-label", "{chip.label}:" }
+            span { "{chip.value}" }
+            button {
+                r#type: "button",
+                "data-clear": "{chip.clear}",
+                aria_label: "Remove {chip.label} {chip.value}",
+                onclick: move |_| clear_chip(&clear),
+                "×"
+            }
+        }
+    }
+}
+
+#[component]
+fn LogCard(record: Record, source: String) -> Element {
+    rsx! {
+        li {
+            div { class: "log-card",
+                p { class: "log-card-id", "{record.source_id}" }
+                LogMessage { message: record.message.clone() }
+                div { class: "log-card-tags",
+                    span { class: "log-meta",
+                        span { class: "log-meta-label", "Time:" }
+                        time { datetime: "{record.timestamp}", "{record.timestamp}" }
+                    }
+                    span { class: "log-meta",
+                        span { class: "log-meta-label", "Source:" }
+                        span { "{source}" }
+                    }
+                    span { class: "log-meta",
+                        span { class: "log-meta-label", "Severity:" }
+                        span { "{record.level}" }
+                    }
+                    if !record.attributes.is_empty() {
+                        span { class: "log-meta",
+                            span { class: "log-meta-label", "Attributes:" }
+                            span { "{record.attributes}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn LogMessage(message: String) -> Element {
+    let mut open = use_signal(|| false);
+    let long = message.chars().count() > MESSAGE_FOLD;
+    let expanded = long && open();
+    rsx! {
+        p {
+            class: if expanded { "log-card-title is-open" } else { "log-card-title" },
+            "{message}"
+        }
+        if long {
+            button {
+                r#type: "button",
+                class: "log-expand",
+                aria_expanded: if expanded { "true" } else { "false" },
+                onclick: move |_| open.set(!open()),
+                if expanded { "Collapse" } else { "Expand" }
+            }
+        }
+    }
+}
+
+fn presentation(state: &LogUi, shown: usize) -> Mode {
+    if !state.known || state.sending {
+        return Mode::Loading;
+    }
+    if state.faulted {
+        return Mode::Error;
+    }
+    if state.sources.is_empty() {
+        return Mode::NoSources;
+    }
+    if shown > 0 {
+        return Mode::Ready;
+    }
+    if state.records.is_empty() && !filters_active(state) {
+        return Mode::Empty;
+    }
+    Mode::NoMatch
+}
+
+fn apply_outcome(mut ui: Signal<LogUi>, applied: &mut Signal<u32>, outcome: LogOutcome) {
+    match outcome {
+        LogOutcome::Idle => {}
+        LogOutcome::Ready { tick, records } => {
+            if tick <= applied() {
+                return;
+            }
+            applied.set(tick);
+            let mut next = ui();
+            if next.tick != tick {
+                return;
+            }
+            next.sending = false;
+            next.faulted = false;
+            next.records = records;
+            next.alert.clear();
+            ui.set(next);
+        }
+        LogOutcome::Failed { tick, message } => {
+            if tick <= applied() {
+                return;
+            }
+            applied.set(tick);
+            let mut next = ui();
+            if next.tick != tick {
+                return;
+            }
+            next.sending = false;
+            next.faulted = true;
+            next.alert = message;
+            ui.set(next);
+        }
+    }
+}
+
+fn start_load() {
+    let Some(loader) = loader() else {
+        return;
+    };
+    begin_load(loader.ui, loader.job);
+}
+
+fn begin_load(mut ui: Signal<LogUi>, mut job: Signal<LogJob>) {
+    if !calls_allowed() {
         return;
     }
-    let sources = active_sources();
+    let sources = active_sources(&ui.peek());
     if sources.is_empty() {
-        page.set_text("log-view-alert", "Choose a log source.");
+        let mut next = ui();
+        next.sending = false;
+        next.faulted = false;
+        ui.set(next);
         return;
     }
-    let range = selected_range();
-    let (start, end) = match &range {
-        logs::QueryRange::Window => ("", ""),
-        logs::QueryRange::Bounded { start, end } => (start.as_str(), end.as_str()),
+    let range = ui.peek().range.clone();
+    let mut visible = match &range {
+        QueryRange::Window => Vec::new(),
+        QueryRange::Bounded { start, end } => vec![start.clone(), end.clone()],
     };
-    let mut visible = vec![start.to_owned(), end.to_owned()];
     visible.extend(sources.iter().cloned());
     let visible = visible.iter().map(String::as_str).collect::<Vec<_>>();
-    let Ok(secret) = take_secret(page, &visible) else {
+    if take_secret(&visible).is_err() {
         return;
+    }
+    let mut next = ui();
+    next.tick = next.tick.wrapping_add(1);
+    next.sending = true;
+    next.faulted = false;
+    next.alert.clear();
+    let tick = next.tick;
+    ui.set(next);
+    job.set(LogJob::Load {
+        tick,
+        sources,
+        range,
+    });
+}
+
+async fn run_job(job: LogJob, secret: Option<String>) -> LogOutcome {
+    let LogJob::Load {
+        tick,
+        sources,
+        range,
+    } = job
+    else {
+        return LogOutcome::Idle;
     };
-    let generation = bump(page);
-    page.set_text("log-view-status", "Loading logs.");
-    page.set_text("log-view-alert", "");
-    page.set_data("log-view", "aria-busy", "true");
+    let Some(transport) = session::transport() else {
+        return LogOutcome::Failed {
+            tick,
+            message: "The browser could not reach this origin.".to_owned(),
+        };
+    };
     let mut records = Vec::new();
     for source in &sources {
         let command = logs::command(source, None, &range);
         let Ok(body) = crate::codec::command_message(&message_id(), &command, "") else {
-            show_alert(page, "The log query could not be built.");
-            return;
+            return LogOutcome::Failed {
+                tick,
+                message: "The log query could not be built.".to_owned(),
+            };
         };
-        let result = transport.send(&body, secret.as_deref()).await;
-        if page.data("log-view-status", "data-gen") != generation.to_string() {
-            return;
-        }
-        match result {
+        match transport.send(&body, secret.as_deref()).await {
             Err(()) => {
-                show_alert(page, "The browser could not reach this origin.");
-                return;
+                return LogOutcome::Failed {
+                    tick,
+                    message: "The browser could not reach this origin.".to_owned(),
+                };
             }
             Ok(reply) => match logs::interpret(&reply, secret.as_deref()) {
                 Ok(read) => records.extend(read.records),
                 Err(fault) => {
-                    show_alert(page, &fault_message(&fault));
-                    return;
+                    return LogOutcome::Failed {
+                        tick,
+                        message: fault_message(&fault),
+                    };
                 }
             },
         }
     }
-    page.set_data("log-view", "aria-busy", "false");
     records.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
-    show_records(page, records);
+    LogOutcome::Ready { tick, records }
 }
 
-fn show_records(page: &Page, records: Vec<Record>) {
-    let empty = records.is_empty();
-    remember(&records);
-    paint(page);
-    if empty {
-        page.set_text("log-view-status", "No logs for this source.");
+fn toggle_source(source: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    if source.is_empty() {
+        if next.selected.is_empty() {
+            return;
+        }
+        next.selected.clear();
+    } else if let Some(index) = next.selected.iter().position(|id| id == source) {
+        next.selected.remove(index);
     } else {
-        page.set_text("log-view-status", "");
+        next.selected.push(source.to_owned());
     }
-    page.set_text("log-view-alert", "");
+    ui.set(next);
+    start_load();
 }
 
-fn paint(page: &Page) {
-    let records = remembered();
-    let shown: Vec<Record> = records
+fn toggle_level(level: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui();
+    if level.is_empty() {
+        next.levels.clear();
+    } else if let Some(index) = next.levels.iter().position(|item| item == level) {
+        next.levels.remove(index);
+    } else {
+        next.levels.push(level.to_owned());
+    }
+    ui.set(next);
+}
+
+fn commit_search(mut ui: Signal<LogUi>) {
+    let query = session::control_value("log-filter-search")
+        .trim()
+        .to_owned();
+    let mut next = ui();
+    if next.query == query {
+        return;
+    }
+    next.query = query;
+    ui.set(next);
+}
+
+fn commit_range(mut ui: Signal<LogUi>) {
+    let start = session::control_value("log-range-start");
+    let end = session::control_value("log-range-end");
+    match logs::date_range(&start, &end) {
+        Ok(range) => {
+            let mut next = ui();
+            if next.range == range {
+                next.alert.clear();
+                ui.set(next);
+                return;
+            }
+            next.range = range;
+            next.alert.clear();
+            ui.set(next);
+            start_load();
+        }
+        Err(message) => {
+            let mut next = ui();
+            next.alert = message.to_owned();
+            ui.set(next);
+        }
+    }
+}
+
+fn clear_filters() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui();
+    next.query.clear();
+    next.levels.clear();
+    next.selected.clear();
+    next.range = QueryRange::Window;
+    next.alert.clear();
+    next.faulted = false;
+    ui.set(next);
+    session::write_control("log-filter-search", "");
+    session::write_control("log-range-start", "");
+    session::write_control("log-range-end", "");
+    start_load();
+}
+
+fn clear_chip(clear: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    match clear {
+        "search" => {
+            let mut next = ui();
+            next.query.clear();
+            session::write_control("log-filter-search", "");
+            ui.set(next);
+        }
+        "range" => {
+            let mut next = ui();
+            next.range = QueryRange::Window;
+            session::write_control("log-range-start", "");
+            session::write_control("log-range-end", "");
+            ui.set(next);
+            start_load();
+        }
+        clear if clear.starts_with("source:") => {
+            let id = clear.trim_start_matches("source:");
+            let mut next = ui();
+            next.selected.retain(|source| source != id);
+            ui.set(next);
+            start_load();
+        }
+        level => {
+            let mut next = ui();
+            next.levels.retain(|item| item != level);
+            ui.set(next);
+        }
+    }
+}
+
+fn range_tab(event: KeyboardEvent, next: &str, back: bool) {
+    if event.key() != Key::Tab {
+        return;
+    }
+    if event.modifiers().shift() {
+        if back {
+            event.prevent_default();
+            focus_control("log-range-start");
+        }
+        return;
+    }
+    event.prevent_default();
+    focus_control(next);
+}
+
+fn focus_control(id: &str) {
+    if let Some(element) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(id))
+        && let Ok(html) = element.dyn_into::<web_sys::HtmlElement>()
+    {
+        let _ = html.focus();
+    }
+}
+
+fn visible_records(state: &LogUi) -> Vec<Record> {
+    state
+        .records
         .iter()
-        .filter(|record| matches_filter(record))
+        .filter(|record| matches_filter(state, record))
         .cloned()
-        .collect();
-    sync_facets(page);
-    sync_sources(page);
-    render_chips(page);
-    render(page, &shown);
-    page.set_text("log-filter-count", &count_text(shown.len(), records.len()));
-    if records.is_empty() || !shown.is_empty() {
-        page.set_data("log-filter-empty", "hidden", "hidden");
-    } else {
-        page.remove_attr("log-filter-empty", "hidden");
+        .collect()
+}
+
+fn matches_filter(state: &LogUi, record: &Record) -> bool {
+    if !state.levels.is_empty() && !state.levels.iter().any(|level| level == &record.level) {
+        return false;
     }
+    let query = state.query.trim().to_lowercase();
+    query.is_empty()
+        || record.message.to_lowercase().contains(&query)
+        || record.attributes.to_lowercase().contains(&query)
+}
+
+fn chip_rows(state: &LogUi) -> Vec<ChipData> {
+    let mut chips = Vec::new();
+    for id in &state.selected {
+        let label = state
+            .sources
+            .iter()
+            .find(|item| item.id == *id)
+            .map(source_label)
+            .unwrap_or_else(|| id.clone());
+        chips.push(ChipData {
+            label: "Source".to_owned(),
+            value: label,
+            clear: format!("source:{id}"),
+        });
+    }
+    if !state.query.is_empty() {
+        chips.push(ChipData {
+            label: "Search".to_owned(),
+            value: state.query.clone(),
+            clear: "search".to_owned(),
+        });
+    }
+    if let QueryRange::Bounded { .. } = &state.range {
+        let start = session::control_value("log-range-start");
+        let end = session::control_value("log-range-end");
+        chips.push(ChipData {
+            label: "Date".to_owned(),
+            value: format!("{start} – {end}"),
+            clear: "range".to_owned(),
+        });
+    }
+    for level in &state.levels {
+        chips.push(ChipData {
+            label: "Severity".to_owned(),
+            value: level.clone(),
+            clear: level.clone(),
+        });
+    }
+    chips
 }
 
 fn count_text(shown: usize, total: usize) -> String {
@@ -301,402 +823,56 @@ fn count_text(shown: usize, total: usize) -> String {
     }
 }
 
-fn matches_filter(record: &Record) -> bool {
-    let (query, levels) = FILTER.with(|slot| {
-        let filter = slot.borrow();
-        (filter.query.clone(), filter.levels.clone())
-    });
-    if !levels.is_empty() && !levels.iter().any(|level| level == &record.level) {
-        return false;
-    }
-    let query = query.trim().to_lowercase();
-    query.is_empty()
-        || record.message.to_lowercase().contains(&query)
-        || record.attributes.to_lowercase().contains(&query)
+fn filters_active(state: &LogUi) -> bool {
+    !state.query.trim().is_empty()
+        || !state.levels.is_empty()
+        || !state.selected.is_empty()
+        || matches!(state.range, QueryRange::Bounded { .. })
 }
 
-fn render(page: &Page, records: &[Record]) {
-    let Some(list) = page.element("log-view-entries") else {
-        return;
-    };
-    page::clear_children(&list);
-    for record in records {
-        let item = present::node(page, "li", None);
-        let card = present::node(page, "div", None);
-        page::attr(&card, "class", "log-card");
-        let identity = present::node(page, "div", None);
-        page::attr(&identity, "class", "log-card-identity");
-        let time = present::node(page, "time", None);
-        page::attr(&time, "class", "log-card-time");
-        page::attr(&time, "datetime", &record.timestamp);
-        time.set_text_content(Some(&record.timestamp));
-        let title = present::node(page, "p", None);
-        page::attr(&title, "class", "log-card-title");
-        title.set_text_content(Some(&record.message));
-        identity.append_child(&time).ok();
-        identity.append_child(&title).ok();
-        let tags = present::node(page, "div", None);
-        page::attr(&tags, "class", "log-card-tags");
-        meta(page, &tags, "Source", &source_text(&record.source_id), None);
-        meta(page, &tags, "Severity", &record.level, None);
-        if !record.attributes.is_empty() {
-            meta(page, &tags, "Attributes", &record.attributes, None);
-        }
-        card.append_child(&identity).ok();
-        card.append_child(&tags).ok();
-        item.append_child(&card).ok();
-        list.append_child(&item).ok();
-    }
-}
-
-fn render_chips(page: &Page) {
-    let Some(chips) = page.element("log-filter-chips") else {
-        return;
-    };
-    page::clear_children(&chips);
-    let (query, levels) = FILTER.with(|slot| {
-        let filter = slot.borrow();
-        (filter.query.clone(), filter.levels.clone())
-    });
-    let sources = selected_sources();
-    let range = match selected_range() {
-        logs::QueryRange::Window => None,
-        logs::QueryRange::Bounded { .. } => Some((
-            page.control_value("log-range-start"),
-            page.control_value("log-range-end"),
-        )),
-    };
-    if query.is_empty() && levels.is_empty() && sources.is_empty() && range.is_none() {
-        page.set_data("log-filter-chips", "hidden", "hidden");
-        return;
-    }
-    page.remove_attr("log-filter-chips", "hidden");
-    let heading = present::node(page, "span", None);
-    page::attr(&heading, "class", "log-chips-label");
-    heading.set_text_content(Some("Filters"));
-    chips.append_child(&heading).ok();
-    for (id, source) in sources {
-        meta(
-            page,
-            &chips,
-            "Source",
-            &source,
-            Some(&format!("source:{id}")),
-        );
-    }
-    if !query.is_empty() {
-        meta(page, &chips, "Search", &query, Some("search"));
-    }
-    if let Some((start, end)) = range {
-        meta(
-            page,
-            &chips,
-            "Date",
-            &format!("{start} – {end}"),
-            Some("range"),
-        );
-    }
-    for level in levels {
-        meta(page, &chips, "Severity", &level, Some(&level));
-    }
-}
-
-fn clear_entries(page: &Page) {
-    remember(&[]);
-    reset_filters(page);
-    paint(page);
-}
-
-fn on_filters(page: &Page) {
-    if let Some(search) = page.element("log-filter-search") {
-        let committed = page.clone();
-        let change = Closure::wrap(Box::new(move |_event: Event| {
-            commit_search(&committed);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = search.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
-        change.forget();
-        let committed = page.clone();
-        let key = Closure::wrap(Box::new(move |event: Event| {
-            let Some(key_event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
-                return;
-            };
-            if key_event.key() != "Enter" {
-                return;
-            }
-            key_event.prevent_default();
-            commit_search(&committed);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = search.add_event_listener_with_callback("keydown", key.as_ref().unchecked_ref());
-        key.forget();
-    }
-    if let Some(filters) = page.element("log-filters") {
-        let page = page.clone();
-        let closure = Closure::wrap(Box::new(move |event: Event| {
-            let Some(button) = event
-                .target()
-                .and_then(|target| target.dyn_ref::<web_sys::Element>().cloned())
-                .and_then(|element| element.closest("button").ok().flatten())
-            else {
-                return;
-            };
-            if let Some(source) = button.get_attribute("data-source") {
-                toggle_source(&page, &source);
-                return;
-            }
-            let Some(level) = button.get_attribute("data-level") else {
-                return;
-            };
-            FILTER.with(|slot| {
-                let mut filter = slot.borrow_mut();
-                if level.is_empty() {
-                    filter.levels.clear();
-                } else if let Some(index) = filter.levels.iter().position(|item| item == &level) {
-                    filter.levels.remove(index);
-                } else {
-                    filter.levels.push(level);
-                }
-            });
-            paint(&page);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = filters.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
-        closure.forget();
-    }
-    let Some(chips) = page.element("log-filter-chips") else {
-        return;
-    };
-    let page = page.clone();
-    let closure = Closure::wrap(Box::new(move |event: Event| {
-        let Some(clear) = event
-            .target()
-            .and_then(|target| target.dyn_ref::<web_sys::Element>().cloned())
-            .and_then(|element| element.closest("button").ok().flatten())
-            .and_then(|button| button.get_attribute("data-clear"))
-        else {
-            return;
-        };
-        match clear.as_str() {
-            "search" => {
-                FILTER.with(|slot| slot.borrow_mut().query.clear());
-                page.set_control("log-filter-search", "");
-                paint(&page);
-            }
-            clear if clear.starts_with("source:") => {
-                let id = clear.trim_start_matches("source:").to_owned();
-                SELECTED.with(|slot| slot.borrow_mut().retain(|source| source != &id));
-                sync_sources(&page);
-                reload(&page);
-            }
-            "range" => {
-                RANGE.with(|slot| *slot.borrow_mut() = logs::QueryRange::Window);
-                page.set_control("log-range-start", "");
-                page.set_control("log-range-end", "");
-                reload(&page);
-            }
-            level => {
-                let level = level.to_owned();
-                FILTER.with(|slot| slot.borrow_mut().levels.retain(|item| item != &level));
-                paint(&page);
-            }
-        }
-    }) as Box<dyn FnMut(Event)>);
-    let _ = chips.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
-    closure.forget();
-}
-
-fn on_range(page: &Page) {
-    for (id, next) in [
-        ("log-range-start", "log-range-end"),
-        ("log-range-end", "log-filter-all"),
-    ] {
-        let Some(input) = page.element(id) else {
-            continue;
-        };
-        let page_for_change = page.clone();
-        let change = Closure::wrap(Box::new(move |_event: Event| {
-            commit_range(&page_for_change);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = input.add_event_listener_with_callback("change", change.as_ref().unchecked_ref());
-        change.forget();
-        let page_for_tab = page.clone();
-        let back = id == "log-range-end";
-        let tab = Closure::wrap(Box::new(move |event: Event| {
-            let Some(key) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
-                return;
-            };
-            if key.key() != "Tab" {
-                return;
-            }
-            if key.shift_key() {
-                if back {
-                    key.prevent_default();
-                    page_for_tab.focus("log-range-start");
-                }
-                return;
-            }
-            key.prevent_default();
-            page_for_tab.focus(next);
-        }) as Box<dyn FnMut(Event)>);
-        let _ = input.add_event_listener_with_callback("keydown", tab.as_ref().unchecked_ref());
-        tab.forget();
-    }
-}
-
-fn commit_range(page: &Page) {
-    let start = page.control_value("log-range-start");
-    let end = page.control_value("log-range-end");
-    match logs::date_range(&start, &end) {
-        Ok(range) => {
-            page.set_text("log-view-alert", "");
-            let changed = RANGE.with(|slot| {
-                let mut current = slot.borrow_mut();
-                if *current == range {
-                    return false;
-                }
-                *current = range;
-                true
-            });
-            if changed {
-                reload(page);
-            }
-        }
-        Err(message) => page.set_text("log-view-alert", message),
-    }
-}
-
-fn reload(page: &Page) {
-    let Some(transport) = transport() else {
-        return;
-    };
-    let page = page.clone();
-    spawn_local(async move {
-        load(&page, &transport).await;
-    });
-}
-
-fn selected_range() -> logs::QueryRange {
-    RANGE.with(|slot| slot.borrow().clone())
-}
-
-fn selected_sources() -> Vec<(String, String)> {
-    selected_ids()
-        .into_iter()
-        .map(|id| {
-            let label = super::inventory::loaded(Primitive::Logs)
-                .into_iter()
-                .find(|item| item.id == id)
-                .map(|item| source_label(&item))
-                .unwrap_or_else(|| id.clone());
-            (id, label)
-        })
-        .collect()
-}
-
-fn selected_ids() -> Vec<String> {
-    SELECTED.with(|slot| slot.borrow().clone())
-}
-
-fn active_sources() -> Vec<String> {
-    let items = super::inventory::loaded(Primitive::Logs);
-    let selected = selected_ids();
-    if selected.is_empty() {
-        items.into_iter().map(|item| item.id).collect()
+fn active_sources(state: &LogUi) -> Vec<String> {
+    if state.selected.is_empty() {
+        state.sources.iter().map(|item| item.id.clone()).collect()
     } else {
-        selected
-            .into_iter()
-            .filter(|id| items.iter().any(|item| item.id == *id))
+        state
+            .selected
+            .iter()
+            .filter(|id| state.sources.iter().any(|item| item.id == **id))
+            .cloned()
             .collect()
     }
 }
 
-fn toggle_source(page: &Page, source: &str) {
-    let changed = SELECTED.with(|slot| {
-        let mut selected = slot.borrow_mut();
-        if source.is_empty() {
-            if selected.is_empty() {
-                return false;
-            }
-            selected.clear();
-        } else if let Some(index) = selected.iter().position(|id| id == source) {
-            selected.remove(index);
-        } else {
-            selected.push(source.to_owned());
-        }
-        true
-    });
-    if changed {
-        sync_sources(page);
-        reload(page);
-    }
-}
-
-fn sync_sources(page: &Page) {
-    let selected = selected_ids();
-    let items = super::inventory::loaded(Primitive::Logs);
-    page.set_data(
-        "log-source-all",
-        "aria-pressed",
-        if items.is_empty() || selected.is_empty() {
-            "true"
-        } else {
-            "false"
-        },
-    );
-    for (index, item) in items.iter().enumerate() {
-        page.set_data(
-            &format!("log-source-{index}"),
-            "aria-pressed",
-            if selected.iter().any(|id| id == &item.id) {
-                "true"
+fn source_text(state: &LogUi, source_id: &str) -> String {
+    state
+        .sources
+        .iter()
+        .find(|item| item.id == source_id)
+        .map(|item| {
+            if item.name.is_empty() {
+                item.id.clone()
             } else {
-                "false"
-            },
-        );
+                item.name.clone()
+            }
+        })
+        .unwrap_or_else(|| source_id.to_owned())
+}
+
+fn source_label(item: &Item) -> String {
+    let identity = if item.name.is_empty() || item.name == item.id {
+        item.id.clone()
+    } else {
+        format!("{} ({})", item.name, item.id)
+    };
+    if item.description.is_empty() {
+        identity
+    } else {
+        format!("{identity} — {}", item.description)
     }
 }
 
-fn commit_search(page: &Page) {
-    let query = page.control_value("log-filter-search").trim().to_owned();
-    let changed = FILTER.with(|slot| {
-        let mut filter = slot.borrow_mut();
-        if filter.query == query {
-            return false;
-        }
-        filter.query = query;
-        true
-    });
-    if changed {
-        paint(page);
-    }
-}
-
-fn sync_facets(page: &Page) {
-    let levels = FILTER.with(|slot| slot.borrow().levels.clone());
-    let all = if levels.is_empty() { "true" } else { "false" };
-    page.set_data("log-filter-all", "aria-pressed", all);
-    for (id, level) in [
-        ("log-filter-trace", "trace"),
-        ("log-filter-debug", "debug"),
-        ("log-filter-info", "info"),
-        ("log-filter-warn", "warn"),
-        ("log-filter-error", "error"),
-    ] {
-        let pressed = if levels.iter().any(|item| item == level) {
-            "true"
-        } else {
-            "false"
-        };
-        page.set_data(id, "aria-pressed", pressed);
-    }
-}
-
-fn reset_filters(page: &Page) {
-    FILTER.with(|slot| {
-        let mut filter = slot.borrow_mut();
-        filter.query.clear();
-        filter.levels.clear();
-    });
-    page.set_control("log-filter-search", "");
-    sync_facets(page);
+fn has_level(state: &LogUi, level: &str) -> bool {
+    state.levels.iter().any(|item| item == level)
 }
 
 fn fault_message(fault: &Fault) -> String {
@@ -706,55 +882,4 @@ fn fault_message(fault: &Fault) -> String {
         Fault::Malformed => "The log result could not be read.".to_owned(),
         Fault::Transport => "The browser could not reach this origin.".to_owned(),
     }
-}
-
-fn show_alert(page: &Page, message: &str) {
-    page.set_data("log-view", "aria-busy", "false");
-    page.set_text("log-view-status", "Logs could not be read.");
-    page.set_text("log-view-alert", message);
-}
-
-fn bump(page: &Page) -> u32 {
-    let current = page
-        .data("log-view-status", "data-gen")
-        .parse::<u32>()
-        .unwrap_or(0);
-    let next = current.wrapping_add(1);
-    page.set_data("log-view-status", "data-gen", &next.to_string());
-    next
-}
-
-fn transport() -> Option<Transport> {
-    TRANSPORT.with(|slot| slot.borrow().clone())
-}
-
-std::thread_local! {
-    static TRANSPORT: RefCell<Option<Transport>> = const { RefCell::new(None) };
-    static RECORDS: RefCell<Vec<Record>> = const { RefCell::new(Vec::new()) };
-    static FILTER: RefCell<LogFilter> = const { RefCell::new(LogFilter::new()) };
-    static RANGE: RefCell<logs::QueryRange> = const { RefCell::new(logs::QueryRange::Window) };
-    static SELECTED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    static CATALOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-}
-
-struct LogFilter {
-    query: String,
-    levels: Vec<String>,
-}
-
-impl LogFilter {
-    const fn new() -> Self {
-        Self {
-            query: String::new(),
-            levels: Vec::new(),
-        }
-    }
-}
-
-fn remember(records: &[Record]) {
-    RECORDS.with(|slot| *slot.borrow_mut() = records.to_vec());
-}
-
-fn remembered() -> Vec<Record> {
-    RECORDS.with(|slot| slot.borrow().clone())
 }

@@ -16,7 +16,7 @@ pub struct LineChartPoint {
 
 /// The `LineChart` properties struct for the configuration of the line chart.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Clone, PartialEq, Props)]
+#[derive(Clone, Props)]
 pub struct LineChartProps {
     series: Series,
     #[props(optional)]
@@ -62,7 +62,7 @@ pub struct LineChartProps {
     #[props(default = "3%".to_string(), into)]
     dot_size: String,
     #[props(optional)]
-    label_interpolation: Option<fn(f32) -> String>,
+    label_interpolation: Option<Callback<f32, String>>,
     #[props(optional)]
     on_point_pointer_enter: Option<EventHandler<LineChartPoint>>,
     #[props(optional)]
@@ -101,6 +101,43 @@ pub struct LineChartProps {
     class_grid_labels: String,
 }
 
+impl PartialEq for LineChartProps {
+    fn eq(&self, other: &Self) -> bool {
+        self.series == other.series
+            && self.labels == other.labels
+            && self.series_labels == other.series_labels
+            && self.width == other.width
+            && self.height == other.height
+            && self.viewbox_width == other.viewbox_width
+            && self.viewbox_height == other.viewbox_height
+            && self.padding_top == other.padding_top
+            && self.padding_bottom == other.padding_bottom
+            && self.padding_left == other.padding_left
+            && self.padding_right == other.padding_right
+            && self.show_grid == other.show_grid
+            && self.show_dotted_grid == other.show_dotted_grid
+            && self.show_grid_ticks == other.show_grid_ticks
+            && self.show_labels == other.show_labels
+            && self.show_dots == other.show_dots
+            && self.show_lines == other.show_lines
+            && self.show_line_labels == other.show_line_labels
+            && self.line_width == other.line_width
+            && self.dot_size == other.dot_size
+            && self.lowest == other.lowest
+            && self.highest == other.highest
+            && self.max_ticks == other.max_ticks
+            && self.class_chart_line == other.class_chart_line
+            && self.class_line == other.class_line
+            && self.class_line_path == other.class_line_path
+            && self.class_line_dot == other.class_line_dot
+            && self.class_line_label == other.class_line_label
+            && self.class_grid == other.class_grid
+            && self.class_grid_line == other.class_grid_line
+            && self.class_grid_label == other.class_grid_label
+            && self.class_grid_labels == other.class_grid_labels
+    }
+}
+
 /// This is the `LineChart` function used to render the line chart `Element`.
 /// In Dioxus, components are just functions, so this is the main `PieChart`
 /// component to be used inside `rsx!` macros in your code.
@@ -118,7 +155,7 @@ pub struct LineChartProps {
 ///             padding_left: 65,
 ///             padding_right: 80,
 ///             padding_bottom: 30,
-///             label_interpolation: (|v| format!("${v:.0}B")) as fn(f32) -> String,
+///             label_interpolation: |v| format!("${v:.0}B"),
 ///             series: vec![
 ///                 vec![29.0, 30.5, 32.6, 35.0, 37.5],
 ///                 vec![20.0, 25.1, 26.0, 25.2, 26.6],
@@ -165,8 +202,8 @@ pub struct LineChartProps {
 /// ---
 /// - `line_width`: &[str] (default: `"1%"`): The width of the series lines.
 /// - `dot_size`: &[str] (default: `"3%"`): The size of the line dots.
-/// - `label_interpolation`: fn([f32]) -> [String] (optional): Function for formatting the
-/// generated labels.
+/// - `label_interpolation`: [Callback]<[f32], [String]> (optional): Formats generated value-axis
+/// labels.
 /// - `on_point_pointer_enter`: [EventHandler]<[LineChartPoint]> (optional): Called when a pointer
 /// enters a point.
 /// - `on_point_pointer_leave`: [EventHandler]<[LineChartPoint]> (optional): Called when a pointer
@@ -226,20 +263,35 @@ pub fn LineChart(props: LineChartProps) -> Element {
         .with_max_ticks(max_ticks)
         .with_grid_ticks(props.show_grid_ticks)
         .with_series(&props.series)
-        .with_label_interpolation(props.label_interpolation)
         .with_highest(props.highest)
         .with_lowest(props.lowest);
 
     let grid = Grid::new(axis_x, axis_y);
     let lines = grid.lines();
-    let generated_labels = grid.y.generated_labels();
+    let generated_labels = if let Some(format) = props.label_interpolation {
+        grid.y
+            .generated_values()
+            .into_iter()
+            .map(|value| format.call(value))
+            .collect()
+    } else {
+        grid.y.generated_labels()
+    };
 
     let grid_labels = if props.show_labels {
         if let Some(labels) = props.labels.as_ref() {
+            let mut paired = grid
+                .text_data(Some(labels.len()), Some(generated_labels.len()))
+                .into_iter()
+                .zip(labels.iter().chain(generated_labels.iter()))
+                .collect::<Vec<(TextData, &String)>>();
+            for (text, _) in paired.iter_mut().take(labels.len()) {
+                text.anchor = "middle";
+            }
             Some(
-                grid.text_data(Some(labels.len()), Some(generated_labels.len()))
+                paired
                     .into_iter()
-                    .zip(labels.iter().chain(generated_labels.iter()))
+                    .filter(|(_, label)| !label.is_empty())
                     .collect::<Vec<(TextData, &String)>>(),
             )
         } else {
@@ -248,6 +300,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
                     .text_data(generated_labels.len())
                     .into_iter()
                     .zip(generated_labels.iter())
+                    .filter(|(_, label)| !label.is_empty())
                     .collect::<Vec<(TextData, &String)>>(),
             )
         }
@@ -255,7 +308,6 @@ pub fn LineChart(props: LineChartProps) -> Element {
         None
     };
 
-    let mut color_var = 255.0;
     let dotted_stroke = if props.show_dotted_grid {
         &"2px"
     } else {
@@ -282,8 +334,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
             let mut marks = Vec::<LinePointMark>::with_capacity(a.len());
             let mut text_point: Option<Point> = None;
 
-            color_var -= 75.0 * (1.0 / (i + 1) as f32);
-
+            let stroke = series_stroke(i);
             for (index, v) in a.iter().enumerate() {
                 let point = grid.world_to_view(index as f32, *v, false);
 
@@ -315,7 +366,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
 
             let commands = commands.join(" ");
             let paint = PointPaint {
-                color: color_var,
+                color: stroke,
                 dot_size: props.dot_size.clone(),
                 class_line_dot: props.class_line_dot.clone(),
             };
@@ -327,26 +378,35 @@ pub fn LineChart(props: LineChartProps) -> Element {
                 point_label,
             };
 
+            let series_key = format!("{}-{}", i, a.len());
             rsx! {
                 g {
+                    key: "{series_key}",
                     class: "{props.class_line}-{i}",
                     path {
                         d: "{commands}",
                         class: "{props.class_line_path}",
-                        stroke: "rgb({color_var}, 40, 40)",
+                        stroke: "{stroke}",
                         stroke_width: "{props.line_width}",
                         stroke_linecap: "round",
                         fill: "transparent",
                     },
                     for mark in marks {
-                        {line_point_group(mark, paint.clone(), hovered, focused, interaction)}
+                        LinePoint {
+                            key: "{mark.identity.series_index}-{mark.identity.point_index}-{mark.identity.value}",
+                            mark,
+                            paint: paint.clone(),
+                            hovered,
+                            focused,
+                            interaction,
+                        }
                     }
                     for point in text_point {
                         text {
                             dx: format_args!("{}", point.x + 10.0),
                             dy: "{point.y}",
                             text_anchor: "start",
-                            color: "rgb({color_var}, 40, 40)",
+                            fill: "{stroke}",
                             class: "{props.class_line_label}",
                             "{label}"
                         }
@@ -355,9 +415,24 @@ pub fn LineChart(props: LineChartProps) -> Element {
             }
         });
 
+    let series_key = props
+        .series
+        .iter()
+        .map(|series| {
+            format!(
+                "{}:{:?}:{:?}",
+                series.len(),
+                series.first().map(|value| value.to_bits()),
+                series.last().map(|value| value.to_bits())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|");
     rsx! {
         div {
+            key: "{series_key}",
             svg {
+                key: "{series_key}",
                 xmlns: "http://www.w3.org/2000/svg",
                 width: "{props.width}",
                 height: "{props.height}",
@@ -374,7 +449,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
                                 x2: "{line.max.x}",
                                 y2: "{line.max.y}",
                                 class: "{props.class_grid_line}",
-                                stroke: "rgba(20, 20, 20, 0.8)",
+                                stroke: "var(--border)",
                                 stroke_dasharray: "{dotted_stroke}",
                             }
                         }
@@ -391,6 +466,8 @@ pub fn LineChart(props: LineChartProps) -> Element {
                                 text_anchor: "{text.anchor}",
                                 class: "{props.class_grid_label}",
                                 alignment_baseline: "{text.baseline}",
+                                fill: "var(--foreground)",
+                                font_size: "11",
                                 "{label}"
                             }
                         }
@@ -403,21 +480,39 @@ pub fn LineChart(props: LineChartProps) -> Element {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct LinePointMark {
     identity: LineChartPoint,
     anchor: Point,
     dot: Option<Rect>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct PointPaint {
-    color: f32,
+    color: &'static str,
     dot_size: String,
     class_line_dot: String,
 }
 
-#[derive(Clone, Copy)]
+fn series_stroke(index: usize) -> &'static str {
+    const STROKES: [&str; 12] = [
+        "var(--chart-4)",
+        "var(--chart-1)",
+        "var(--chart-3)",
+        "var(--chart-2)",
+        "var(--chart-5)",
+        "var(--chart-6)",
+        "var(--chart-7)",
+        "var(--chart-8)",
+        "var(--chart-9)",
+        "var(--chart-10)",
+        "var(--chart-11)",
+        "var(--chart-12)",
+    ];
+    STROKES[index % STROKES.len()]
+}
+
+#[derive(Clone, Copy, PartialEq)]
 struct PointInteraction {
     on_enter: Option<EventHandler<LineChartPoint>>,
     on_leave: Option<EventHandler<LineChartPoint>>,
@@ -434,6 +529,26 @@ fn shown_point_label<'a>(
 ) -> Option<&'a str> {
     let label = label.filter(|text| !text.is_empty())?;
     (hovered == Some(identity) || focused == Some(identity)).then_some(label)
+}
+
+#[derive(Clone, Props, PartialEq)]
+struct LinePointProps {
+    mark: LinePointMark,
+    paint: PointPaint,
+    hovered: Signal<Option<LineChartPoint>>,
+    focused: Signal<Option<LineChartPoint>>,
+    interaction: PointInteraction,
+}
+
+#[component]
+fn LinePoint(props: LinePointProps) -> Element {
+    line_point_group(
+        props.mark,
+        props.paint,
+        props.hovered,
+        props.focused,
+        props.interaction,
+    )
 }
 
 fn line_point_group(
@@ -477,7 +592,21 @@ fn line_point_group(
                     handler.call(identity);
                 }
             },
+            onmouseenter: move |_| {
+                hover_enter.set(Some(identity));
+                if let Some(handler) = on_enter {
+                    handler.call(identity);
+                }
+            },
             onpointerleave: move |_| {
+                if hover_leave() == Some(identity) {
+                    hover_leave.set(None);
+                }
+                if let Some(handler) = on_leave {
+                    handler.call(identity);
+                }
+            },
+            onmouseleave: move |_| {
                 if hover_leave() == Some(identity) {
                     hover_leave.set(None);
                 }
@@ -499,6 +628,12 @@ fn line_point_group(
                     handler.call(identity);
                 }
             },
+            circle {
+                cx: "{anchor.x}",
+                cy: "{anchor.y}",
+                r: "14",
+                fill: "transparent",
+            }
             if let Some(dot) = mark.dot {
                 line {
                     x1: "{dot.min.x}",
@@ -506,7 +641,7 @@ fn line_point_group(
                     x2: "{dot.max.x}",
                     y2: "{dot.max.y}",
                     class: "{class_line_dot}",
-                    stroke: "rgb({color}, 40, 40)",
+                    stroke: "{color}",
                     stroke_width: "{dot_size}",
                     stroke_linecap: "round",
                 }
@@ -517,6 +652,8 @@ fn line_point_group(
                     dy: "{anchor.y}",
                     text_anchor: "start",
                     class: "dx-line-point-label",
+                    fill: "var(--foreground)",
+                    font_size: "11",
                     "{label}"
                 }
             }

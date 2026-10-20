@@ -222,20 +222,12 @@ fn required(object: &Map<String, Value>, key: &str) -> Result<String, Fault> {
     }
 }
 
-pub fn chart_payload(samples: &[Sample]) -> String {
-    let items = samples
+#[cfg(any(target_arch = "wasm32", test))]
+pub fn chart_values(samples: &[Sample]) -> Vec<f32> {
+    samples
         .iter()
-        .filter_map(|sample| {
-            let value = sample.value.parse::<f64>().ok()?;
-            value.is_finite().then(|| {
-                serde_json::json!({
-                    "t": sample.timestamp,
-                    "v": value,
-                })
-            })
-        })
-        .collect::<Vec<_>>();
-    Value::Array(items).to_string()
+        .filter_map(|sample| sample.value.parse::<f32>().ok())
+        .collect()
 }
 
 fn number(value: Option<&Value>) -> Result<String, Fault> {
@@ -311,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn chart_payload_keeps_finite_samples_in_order() {
+    fn chart_values_skip_non_numeric_samples() {
         let samples = vec![
             Sample {
                 timestamp: "2024-01-01T00:00:00Z".to_owned(),
@@ -326,13 +318,7 @@ mod tests {
                 value: "21.5".to_owned(),
             },
         ];
-        assert_eq!(
-            serde_json::from_str::<Value>(&chart_payload(&samples)).unwrap(),
-            json!([
-                {"t": "2024-01-01T00:00:00Z", "v": 5.0},
-                {"t": "2024-01-01T00:02:00Z", "v": 21.5}
-            ])
-        );
+        assert_eq!(chart_values(&samples), vec![5.0, 21.5]);
     }
 
     fn page_reply(data: Value) -> Reply {

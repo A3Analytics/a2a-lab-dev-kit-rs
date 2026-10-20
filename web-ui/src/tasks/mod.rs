@@ -13,9 +13,7 @@ mod run;
 mod tests;
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_imports))]
-pub use run::{
-    Run, Tracked, apply, begin_poll, interpret, next_seq, poll_live, start_command, status_command,
-};
+pub use run::{Run, Tracked, apply, interpret, next_seq, start_command, status_command};
 
 const UNSUPPORTED: [&str; 12] = [
     "$ref",

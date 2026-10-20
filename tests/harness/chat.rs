@@ -370,14 +370,19 @@ fn send_bodies(page: &Browser, base: &str) -> Vec<String> {
 }
 
 fn task_lines(page: &mut Browser) -> Vec<String> {
-    js_string(
-        page,
-        "document.getElementById('chat-log')?.textContent ?? ''",
-    )
-    .lines()
-    .filter(|line| line.starts_with("Task "))
-    .map(|line| line.trim_start_matches("Task ").to_owned())
-    .collect()
+    let value = page.eval(
+        "[...document.querySelectorAll('#chat-log [data-task]')].map((el) => el.getAttribute('data-task') || '')",
+    );
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .filter(|item| !item.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn assert_not_stored(page: &mut Browser, origin: &str, phrases: &[&str]) {

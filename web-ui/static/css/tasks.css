@@ -1,0 +1,131 @@
+/* fragment:tasks */
+
+.task-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+#task-detail-name {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+#task-detail-description {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+#task-details {
+  margin-top: 1rem;
+}
+
+#task-details > summary {
+  cursor: pointer;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+#task-details[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.task-detail {
+  margin: 0;
+}
+
+.task-detail dd {
+  white-space: pre-wrap;
+}
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.task-field {
+  min-width: 0;
+}
+
+.task-field-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.task-field-check input[type="checkbox"] {
+  width: auto;
+  height: auto;
+}
+
+.task-field-group {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.75rem;
+}
+
+.task-field-group > legend {
+  padding: 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.task-array-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.task-field-help,
+.task-field-error,
+#task-form-empty {
+  margin: 0.25rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.task-field-error {
+  color: var(--destructive);
+}
+
+#task-browser {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-height: 0;
+}
+
+#task-filters {
+  width: 15rem;
+  flex: 0 0 15rem;
+}
+
+#task-results {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+@media (max-width: 47.99rem) {
+  #task-browser {
+    flex-direction: column;
+  }
+
+  #task-filters {
+    width: auto;
+    flex-basis: auto;
+  }
+}

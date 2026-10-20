@@ -384,3 +384,25 @@ fn widgets_expose_accessible_ids_and_invalid_state() {
     let attrs = attrs(form.field("n").unwrap());
     assert!(attrs.contains(&("aria-invalid", "true".to_owned())));
 }
+
+#[test]
+fn unset_constraints_are_omitted_from_attributes() {
+    let form = form(
+        Some(
+            r#"{"type":"object","properties":{"note":{"type":"string"},"count":{"type":"integer","minimum":1,"default":4},"ready":{"type":"boolean","default":true},"mode":{"type":"string","enum":["fast","slow"],"default":"fast"}}}"#,
+        ),
+        None,
+    );
+    let note = attrs(form.field("note").unwrap());
+    for name in ["min", "max", "minlength", "maxlength", "pattern"] {
+        assert!(note.iter().all(|(attr, _)| *attr != name), "{name}");
+    }
+    let count = attrs(form.field("count").unwrap());
+    assert!(count.contains(&("min", "1".to_owned())));
+    assert!(count.iter().all(|(attr, _)| *attr != "max"));
+    assert!(count.iter().all(|(attr, _)| *attr != "pattern"));
+    assert_eq!(form.field("count").unwrap().raw, "4");
+    assert_eq!(form.field("ready").unwrap().raw, "true");
+    assert_eq!(form.field("mode").unwrap().raw, "fast");
+    assert!(form.field("note").unwrap().raw.is_empty());
+}

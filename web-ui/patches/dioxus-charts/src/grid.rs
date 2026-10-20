@@ -188,18 +188,23 @@ impl Axis {
         texts
     }
 
+    pub fn generated_values(&self) -> Vec<f32> {
+        (0..=self.steps)
+            .map(|i| self.world_start + i as f32 * self.step_len)
+            .collect()
+    }
+
     pub fn generated_labels(&self) -> Labels {
-        let mut labels = Labels::new();
-
-        for i in 0..=self.steps {
-            if let Some(func) = self.label_interpolation {
-                labels.push(func(self.world_start + i as f32 * self.step_len));
-            } else {
-                labels.push(format!("{}", self.world_start + i as f32 * self.step_len));
-            }
-        }
-
-        labels
+        self.generated_values()
+            .into_iter()
+            .map(|value| {
+                if let Some(func) = self.label_interpolation {
+                    func(value)
+                } else {
+                    format!("{value}")
+                }
+            })
+            .collect()
     }
 }
 
@@ -334,6 +339,7 @@ impl<'a> AxisBuilder<'a> {
                     .unwrap()
             };
 
+            let (highest, lowest) = finite_span(highest, lowest);
             debug!("highest: {}", highest);
             debug!("lowest: {}", lowest);
             let value_range = highest - lowest;
@@ -385,7 +391,7 @@ impl<'a> AxisBuilder<'a> {
 
             let range = max - min;
             debug!("range: {} min: {}, max: {}", range, min, max);
-            let steps = unsafe { (range / step).round().to_int_unchecked::<i32>() + 1 };
+            let steps = finite_steps(range, step);
             debug!("steps: {}", steps);
 
             Axis {
@@ -420,6 +426,44 @@ impl<'a> AxisBuilder<'a> {
         } else {
             Axis::default()
         }
+    }
+}
+
+fn finite_span(highest: f32, lowest: f32) -> (f32, f32) {
+    if !highest.is_finite() || !lowest.is_finite() || highest < lowest {
+        return (1.0, 0.0);
+    }
+    if highest > lowest {
+        return (highest, lowest);
+    }
+    let pad = highest.abs().max(1.0);
+    (highest + pad, lowest - pad)
+}
+
+fn finite_steps(range: f32, step: f32) -> i32 {
+    let ratio = if step.is_finite() && step != 0.0 {
+        (range / step).round()
+    } else {
+        f32::NAN
+    };
+    if ratio.is_finite() {
+        ratio.clamp(1.0, 10_000.0) as i32 + 1
+    } else {
+        2
+    }
+}
+
+#[cfg(test)]
+mod flat_axis {
+    use super::*;
+
+    #[test]
+    fn a_single_value_builds_a_finite_axis() {
+        let series = vec![vec![5.0_f32]];
+        let axis = Axis::builder().with_series(&series).build();
+        assert!(axis.step_len.is_finite() && axis.step_len > 0.0);
+        assert!(axis.steps > 1);
+        assert!(axis.world_to_view(5.0, axis.world_start).is_finite());
     }
 }
 

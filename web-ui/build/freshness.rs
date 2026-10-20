@@ -79,9 +79,19 @@ fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
-}
+pub const STYLE_FRAGMENTS: &[&str] = &[
+    "tokens.css",
+    "shell.css",
+    "controls.css",
+    "loading.css",
+    "logs.css",
+    "metrics.css",
+    "tasks.css",
+    "chat.css",
+    "agent.css",
+    "inventory.css",
+    "workbench.css",
+];
 
 fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -95,7 +105,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageStatus, fingerprint_tree, package_status};
+    use super::{PackageStatus, STYLE_FRAGMENTS, fingerprint_tree, package_status, source_files};
 
     #[test]
     fn missing_or_changed_packages_are_not_fresh() {
@@ -143,5 +153,42 @@ mod tests {
         std::fs::write(root.join("src/lib.rs"), "fn changed() {}\n").unwrap();
         assert_ne!(first, fingerprint_tree(&root));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fingerprint_tracks_style_fragments_and_fonts() {
+        let root = std::env::temp_dir().join(format!("web-ui-style-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("static/css")).unwrap();
+        std::fs::create_dir_all(root.join("static/fonts/inter")).unwrap();
+        let fragment = root.join("static/css/tokens.css");
+        let font = root.join("static/fonts/inter/Inter-Regular.woff2");
+        std::fs::write(&fragment, "a").unwrap();
+        std::fs::write(&font, "wOF2a").unwrap();
+        let first = fingerprint_tree(&root);
+        std::fs::write(&fragment, "b").unwrap();
+        assert_ne!(first, fingerprint_tree(&root));
+        std::fs::write(&fragment, "a").unwrap();
+        assert_eq!(first, fingerprint_tree(&root));
+        std::fs::write(&font, "wOF2b").unwrap();
+        assert_ne!(first, fingerprint_tree(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn packaged_style_fragments_and_fonts_are_sources() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web-ui");
+        let files = source_files(&root);
+        for name in STYLE_FRAGMENTS {
+            let path = root.join("static/css").join(name);
+            assert!(files.contains(&path), "missing style fragment {name}");
+        }
+        let fonts = files
+            .iter()
+            .filter(|path| {
+                path.extension().and_then(|extension| extension.to_str()) == Some("woff2")
+            })
+            .count();
+        assert!(fonts >= 6, "expected packaged woff2 fonts, found {fonts}");
     }
 }

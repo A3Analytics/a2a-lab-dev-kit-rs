@@ -467,12 +467,12 @@ pub(crate) async fn assert_public_assets(base: &str) {
         }
     }
     assert!(
-        bodies.iter().any(|body| body.contains("Chart.js v4.5.1")),
-        "vendored chart bundle was not served"
+        !bodies.iter().any(|body| body.contains("Chart.js")),
+        "legacy chart bundle must not be served"
     );
     assert!(
-        bodies.iter().any(|body| body.contains("renderMetricChart")),
-        "chart bridge was not served"
+        !bodies.iter().any(|body| body.contains("renderMetricChart")),
+        "chart bridge must not be served"
     );
     let glue = bodies
         .iter()

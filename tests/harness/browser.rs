@@ -39,7 +39,12 @@ impl Browser {
     pub fn move_mouse(&mut self, x: f64, y: f64) {
         self.call(
             "Input.dispatchMouseEvent",
-            &json!({ "type": "mouseMoved", "x": x, "y": y }),
+            &json!({
+                "type": "mouseMoved",
+                "x": x,
+                "y": y,
+                "pointerType": "mouse"
+            }),
         );
     }
 
@@ -64,14 +69,25 @@ impl Browser {
     }
 
     pub fn press_enter(&mut self) {
-        self.press_key("Enter", "Enter", 13, Some("\r"));
+        self.press_key("Enter", "Enter", 13, Some("\r"), 0);
+    }
+
+    pub fn press_shift_enter(&mut self) {
+        self.press_key("Enter", "Enter", 13, Some("\n"), 8);
     }
 
     pub fn press_tab(&mut self) {
-        self.press_key("Tab", "Tab", 9, None);
+        self.press_key("Tab", "Tab", 9, None, 0);
     }
 
-    fn press_key(&mut self, key: &str, code: &str, key_code: u16, text: Option<&str>) {
+    fn press_key(
+        &mut self,
+        key: &str,
+        code: &str,
+        key_code: u16,
+        text: Option<&str>,
+        modifiers: u32,
+    ) {
         self.call(
             "Emulation.setFocusEmulationEnabled",
             &json!({ "enabled": true }),
@@ -80,6 +96,7 @@ impl Browser {
             "type": "keyDown",
             "key": key,
             "code": code,
+            "modifiers": modifiers,
             "windowsVirtualKeyCode": key_code,
             "nativeVirtualKeyCode": key_code
         });
@@ -93,6 +110,7 @@ impl Browser {
                 "type": "keyUp",
                 "key": key,
                 "code": code,
+                "modifiers": modifiers,
                 "windowsVirtualKeyCode": key_code,
                 "nativeVirtualKeyCode": key_code
             }),
@@ -237,8 +255,92 @@ impl Browser {
             _ => "view-agent",
         };
         self.wait_until(&format!(
-            "location.hash === {literal} && document.getElementById('{view}')?.parentElement?.id === 'main' && document.querySelectorAll('#main > .view').length === 1"
+            "location.hash === {literal} && document.getElementById('{view}')?.parentElement?.id === 'main' && !document.getElementById('{view}')?.hasAttribute('hidden') && document.querySelectorAll('#main > .view:not([hidden])').length === 1"
         ));
+    }
+
+    pub fn click_box(&mut self, id: &str) {
+        let id_json = serde_json::to_string(id).unwrap_or_default();
+        let point = self.eval(&format!(
+            "(() => {{ const el = document.getElementById({id_json}); if (!el) return null; const box = el.getBoundingClientRect(); return {{ x: box.x + box.width / 2, y: box.y + box.height / 2 }}; }})()"
+        ));
+        let (Some(x), Some(y)) = (point["x"].as_f64(), point["y"].as_f64()) else {
+            panic!("missing control {id}");
+        };
+        for kind in ["mousePressed", "mouseReleased"] {
+            self.call(
+                "Input.dispatchMouseEvent",
+                &json!({
+                    "type": kind,
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "clickCount": 1,
+                    "pointerType": "mouse"
+                }),
+            );
+        }
+    }
+
+    pub fn prelude(&mut self, source: &str) -> String {
+        let result = self.call(
+            "Page.addScriptToEvaluateOnNewDocument",
+            &json!({ "source": source }),
+        );
+        result["identifier"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing prelude identifier"))
+            .to_owned()
+    }
+
+    pub fn clear_prelude(&mut self, identifier: &str) {
+        self.call(
+            "Page.removeScriptToEvaluateOnNewDocument",
+            &json!({ "identifier": identifier }),
+        );
+    }
+
+    pub fn reduced_motion(&mut self, reduce: bool) {
+        let value = if reduce { "reduce" } else { "no-preference" };
+        self.call(
+            "Emulation.setEmulatedMedia",
+            &json!({
+                "features": [{ "name": "prefers-reduced-motion", "value": value }]
+            }),
+        );
+    }
+
+    pub fn color_scheme(&mut self, scheme: &str) {
+        self.call(
+            "Emulation.setEmulatedMedia",
+            &json!({
+                "features": [{ "name": "prefers-color-scheme", "value": scheme }]
+            }),
+        );
+    }
+
+    pub fn set_media(&mut self, scheme: &str, reduced_motion: bool) {
+        let motion = if reduced_motion {
+            "reduce"
+        } else {
+            "no-preference"
+        };
+        self.call(
+            "Emulation.setEmulatedMedia",
+            &json!({
+                "features": [
+                    { "name": "prefers-color-scheme", "value": scheme },
+                    { "name": "prefers-reduced-motion", "value": motion }
+                ]
+            }),
+        );
+    }
+
+    pub fn computed(&mut self, selector: &str) -> Value {
+        let selector = serde_json::to_string(selector).unwrap_or_default();
+        self.eval(&format!(
+            "(() => {{ const el = document.querySelector({selector}); if (!el) return null; const style = getComputedStyle(el); const box = el.getBoundingClientRect(); return {{ display: style.display, position: style.position, overflow: style.overflowY, width: box.width, height: box.height, top: box.top, left: box.left, backgroundColor: style.backgroundColor, color: style.color, outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, animationName: style.animationName, fontFamily: style.fontFamily, hidden: el.hasAttribute('hidden') }}; }})()"
+        ))
     }
 
     pub fn viewport(&mut self, width: u32, height: u32) {
@@ -259,6 +361,15 @@ impl Browser {
     }
 
     pub fn fail_network(&mut self, fail: bool) {
+        self.call(
+            "Network.emulateNetworkConditions",
+            &json!({
+                "offline": fail,
+                "latency": 0,
+                "downloadThroughput": if fail { 0 } else { -1 },
+                "uploadThroughput": if fail { 0 } else { -1 }
+            }),
+        );
         if fail && !self.socket.fail_fetches {
             self.call(
                 "Fetch.enable",

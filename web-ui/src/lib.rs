@@ -2,6 +2,7 @@
 
 mod card;
 mod codec;
+mod images;
 mod inventory;
 mod logs;
 mod metrics;

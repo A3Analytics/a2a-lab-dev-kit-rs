@@ -1,0 +1,39 @@
+/* fragment:agent */
+
+#view-agent {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.empty-state {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+#alert {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#protocol-advanced {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--card);
+  padding: 0.85rem 1.25rem 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+#protocol-advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#protocol-advanced > section {
+  margin-top: 0.75rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}

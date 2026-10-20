@@ -745,11 +745,11 @@ fn access(page: &mut Browser, status: &str) {
         assert_names(page);
         assert_status(page, status);
         if width < 768 {
-            assert_reachable(page, "shell", &["nav-toggle", "Skip to content"]);
+            assert_reachable(page, "shell", &["sidebar-toggle", "Skip to content"]);
             assert_unreachable(page, "shell", &["nav-logs", "workbench-send", "chat-send"]);
-            page.click("nav-toggle");
+            page.click("sidebar-toggle");
             page.wait_until(
-                "document.getElementById('nav-toggle')?.getAttribute('aria-expanded') === 'true'",
+                "document.getElementById('sidebar-toggle')?.getAttribute('aria-expanded') === 'true'",
             );
             assert_reachable(
                 page,
@@ -767,7 +767,7 @@ fn access(page: &mut Browser, status: &str) {
                 "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))",
             );
             page.wait_until(
-                "document.getElementById('nav-toggle')?.getAttribute('aria-expanded') === 'false'",
+                "document.getElementById('sidebar-toggle')?.getAttribute('aria-expanded') === 'false'",
             );
         } else {
             assert_reachable(
@@ -952,7 +952,11 @@ fn assert_status(page: &mut Browser, workbench: &str) {
         ]
         .into_iter()
         .filter(|id| *id != section)
-        .map(|id| format!("document.getElementById('{id}')"))
+        .map(|id| {
+            format!(
+                "(document.getElementById('{id}') && !document.getElementById('{id}').closest('.view')?.hasAttribute('hidden'))"
+            )
+        })
         .collect::<Vec<_>>()
         .join(" || ");
         if page.eval(&format!("!!({others})")) == Value::Bool(true) {
@@ -985,8 +989,8 @@ fn expect_labelled(page: &mut Browser, id: &str) {
 }
 
 fn assert_only_view(page: &mut Browser, id: &str) {
-    let count = page.eval("document.querySelectorAll('#main > .view').length");
-    let current = page.eval("document.querySelector('#main > .view')?.id");
+    let count = page.eval("document.querySelectorAll('#main > .view:not([hidden])').length");
+    let current = page.eval("document.querySelector('#main > .view:not([hidden])')?.id");
     if count != json!(1) || current.as_str() != Some(id) {
         diverge(id, "only this section is in the page", &current.to_string());
     }
@@ -1045,10 +1049,16 @@ fn assert_storage(page: &mut Browser, forbidden: &[&str]) {
             );
         }
     }
-    if stored != "{}" {
+    let keys = page.eval("Object.keys(localStorage)");
+    let allowed = keys.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .all(|item| matches!(item.as_str(), Some("sidebar_state" | "theme")))
+    });
+    if !allowed {
         diverge(
             "shell reader, case local storage",
-            "an empty document",
+            "only sidebar_state and theme",
             &stored,
         );
     }
