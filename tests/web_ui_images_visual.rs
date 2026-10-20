@@ -19,7 +19,7 @@ const CONNECTED: &str = "document.getElementById('connection')?.dataset.state ==
 const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const READY: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-a' && document.getElementById('image-history-status')?.dataset.state === 'ready'";
 const PREVIEW_SOURCE: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-preview' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.getElementById('image-result-0')?.dataset.image === 'png-ok'";
-const PNG_READY: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'png-ok' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1";
+const PNG_READY: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'png-ok' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1 && document.getElementById('image-preview')?.clientWidth === 200 && document.getElementById('image-preview')?.clientHeight === 200";
 const CAM_EMPTY: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-empty' && document.getElementById('image-history-status')?.dataset.state === 'empty'";
 
 #[tokio::test]
@@ -43,6 +43,7 @@ fn visual_matrix(page: &mut Browser) -> Vec<String> {
         apply_scheme(page, scheme);
         page.viewport(1843, 900);
         page.show("#images");
+        show_every_image(page);
         page.wait_until(READY);
         judge_focus(page, scheme, &mut failures);
         for width in [767, 768, 1843] {
@@ -80,6 +81,13 @@ fn judge_focus(page: &mut Browser, scheme: &str, failures: &mut Vec<String>) {
     page.wait_until(READY);
 }
 
+fn show_every_image(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('image-range-start')?.value && document.getElementById('image-range-end')?.value",
+    );
+    page.eval("['image-range-start','image-range-end'].forEach((id) => { const el = document.getElementById(id); el.value = ''; el.dispatchEvent(new Event('input', {bubbles:true})); })");
+}
+
 fn show_populated(page: &mut Browser) {
     choose_source(page, "cam-preview");
     page.wait_until(PREVIEW_SOURCE);
@@ -95,7 +103,7 @@ fn show_empty(page: &mut Browser) {
 fn choose_source(page: &mut Browser, id: &str) {
     let id = serde_json::to_string(id).unwrap_or_default();
     let clicked = page.eval(&format!(
-        "(() => {{ const el = document.querySelector('#image-sources [data-source=' + {id} + ']'); if (!el) return false; el.click(); return true; }})()"
+        "(() => {{ const target = document.querySelector('#image-sources [data-source=' + {id} + ']'); if (!target) return false; const selected = () => [...document.querySelectorAll('#image-sources [aria-pressed=\"true\"]')].filter((el) => el.dataset.source); const all = document.getElementById('image-source-all'); if (all && all.getAttribute('aria-pressed') === 'true') {{ target.click(); return true; }} const id = target.dataset.source; if (!selected().some((el) => el.dataset.source === id)) target.click(); for (const el of selected()) if (el.dataset.source !== id) el.click(); return true; }})()"
     ));
     assert_eq!(clicked, Value::Bool(true), "missing source");
 }
@@ -219,7 +227,7 @@ fn judge_theme(failures: &mut Vec<String>, case: &str, report: &Value) {
         case,
         "shell",
         flag(report, "inventory") && flag(report, "runner") && flag(report, "capture"),
-        "hidden inventory and command runner, no Capture Current Image",
+        "hidden inventory and command runner with current-image capture",
         &format!(
             "inventory {} runner {} capture {}",
             flag(report, "inventory"),
@@ -431,7 +439,7 @@ const VISUAL: &str = r"( () => {
     dark: document.documentElement.classList.contains('dark'),
     inventory: document.getElementById('inventory-images')?.hasAttribute('hidden') === true,
     runner: document.getElementById('workbench')?.hasAttribute('hidden') === true,
-    capture: !document.getElementById('image-current') && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear') && document.querySelector('#image-filters > .log-filter-group') === document.getElementById('image-sources') && [...(document.getElementById('image-sources')?.querySelectorAll('.log-facet') || [])].every((el) => el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-pressed') === 'false') && (document.getElementById('image-sources')?.querySelectorAll('.log-facet').length || 0) > 0
+    capture: !!document.getElementById('image-current') && !!document.getElementById('image-current-source') && document.getElementById('image-current-actions')?.parentElement?.id === 'image-view' && document.getElementById('image-current-actions')?.nextElementSibling?.id === 'image-browser' && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear') && document.querySelector('#image-filters > .log-filter-group') === document.getElementById('image-sources') && [...(document.getElementById('image-sources')?.querySelectorAll('.log-facet') || [])].every((el) => el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-pressed') === 'false') && (document.getElementById('image-sources')?.querySelectorAll('.log-facet').length || 0) > 0
   };
 })()";
 

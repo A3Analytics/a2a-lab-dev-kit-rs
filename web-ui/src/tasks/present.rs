@@ -47,7 +47,10 @@ fn unwrap_text(value: &Value) -> Option<&str> {
         return None;
     }
     let (key, inner) = object.iter().next()?;
-    if !matches!(key.as_str(), "value" | "body" | "text" | "content" | "html" | "xml") {
+    if !matches!(
+        key.as_str(),
+        "value" | "body" | "text" | "content" | "html" | "xml"
+    ) {
         return None;
     }
     inner.as_str().filter(|text| !text.is_empty())

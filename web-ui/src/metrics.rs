@@ -29,6 +29,12 @@ pub enum QueryRange {
     Bounded { start: String, end: String },
 }
 
+pub fn last_day(now: &str) -> Option<QueryRange> {
+    let end = utc_timestamp(now)?;
+    let start = shift_back_one_day(&end)?;
+    (start < end).then_some(QueryRange::Bounded { start, end })
+}
+
 pub fn query_range(start: &str, end: &str) -> Result<QueryRange, &'static str> {
     let start = start.trim();
     let end = end.trim();
@@ -115,6 +121,27 @@ fn utc_timestamp(value: &str) -> Option<String> {
     Some(format!(
         "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{fraction}Z"
     ))
+}
+
+fn shift_back_one_day(stamp: &str) -> Option<String> {
+    let (date, rest) = stamp.split_once('T')?;
+    let mut parts = date.split('-');
+    let year = parts.next()?.parse().ok()?;
+    let month = parts.next()?.parse().ok()?;
+    let day = parts.next()?.parse().ok()?;
+    let (year, month, day) = previous_date(year, month, day)?;
+    Some(format!("{year:04}-{month:02}-{day:02}T{rest}"))
+}
+
+fn previous_date(year: i32, month: u8, day: u8) -> Option<(i32, u8, u8)> {
+    if day > 1 {
+        return Some((year, month, day - 1));
+    }
+    if month > 1 {
+        let month = month - 1;
+        return Some((year, month, days_in_month(year, month)));
+    }
+    Some((year - 1, 12, 31))
 }
 
 fn days_in_month(year: i32, month: u8) -> u8 {
@@ -272,6 +299,35 @@ mod tests {
             "2024-01-01T00:02:00.000000000Z"
         );
         assert_eq!(query_range("", "").unwrap(), QueryRange::Window);
+        let day = last_day("2026-10-20T18:42:00.000Z").unwrap();
+        assert_eq!(
+            day,
+            QueryRange::Bounded {
+                start: "2026-10-19T18:42:00.000000000Z".to_owned(),
+                end: "2026-10-20T18:42:00.000000000Z".to_owned(),
+            }
+        );
+        assert_eq!(
+            last_day("2024-03-01T00:00:00Z"),
+            Some(QueryRange::Bounded {
+                start: "2024-02-29T00:00:00.000000000Z".to_owned(),
+                end: "2024-03-01T00:00:00.000000000Z".to_owned(),
+            })
+        );
+        assert_eq!(
+            last_day("2023-03-01T00:00:00Z"),
+            Some(QueryRange::Bounded {
+                start: "2023-02-28T00:00:00.000000000Z".to_owned(),
+                end: "2023-03-01T00:00:00.000000000Z".to_owned(),
+            })
+        );
+        assert_eq!(
+            last_day("2026-01-01T00:00:00Z"),
+            Some(QueryRange::Bounded {
+                start: "2025-12-31T00:00:00.000000000Z".to_owned(),
+                end: "2026-01-01T00:00:00.000000000Z".to_owned(),
+            })
+        );
         assert_eq!(
             query_range("2024-01-01T00:02:00Z", "").unwrap_err(),
             "Enter a start and an end."

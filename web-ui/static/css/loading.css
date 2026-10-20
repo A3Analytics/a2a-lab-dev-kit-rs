@@ -167,10 +167,18 @@
   height: 0.875rem;
 }
 
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
 .skeleton-list {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 2px);
   background: var(--background);

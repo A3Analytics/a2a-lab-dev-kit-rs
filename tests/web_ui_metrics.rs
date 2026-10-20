@@ -30,6 +30,8 @@ fn chart_page(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     page.show("metrics");
+    assert_default_last_day(&mut page);
+    show_every_sample(&mut page);
     page.wait_until(DOOR_READY);
     assert_desktop_rail(&mut page);
     assert_chart_card(&mut page);
@@ -45,6 +47,22 @@ fn chart_page(base: &str) {
     let console = page.console_text();
     assert!(!console.contains("EvalError"), "{console}");
     assert!(!console.contains("Content Security Policy"), "{console}");
+}
+
+fn assert_default_last_day(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('metric-range-start')?.value && document.getElementById('metric-range-end')?.value",
+    );
+    let range = page.eval(
+        "(() => { const start = new Date(document.getElementById('metric-range-start').value + 'Z'); const end = new Date(document.getElementById('metric-range-end').value + 'Z'); return { span: end - start, age: Date.now() - end }; })()",
+    );
+    assert_eq!(range["span"], json!(86_400_000), "{range}");
+    let age = range["age"].as_f64().unwrap_or(f64::MAX);
+    assert!(age >= 0.0 && age < 120_000.0, "{range}");
+}
+
+fn show_every_sample(page: &mut Browser) {
+    page.eval("document.querySelector('#metric-filter-chips [data-clear=\"range\"]')?.click()");
 }
 
 fn assert_desktop_rail(page: &mut Browser) {

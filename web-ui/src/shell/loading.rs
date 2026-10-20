@@ -211,6 +211,20 @@ fn RailSkeleton() -> Element {
 }
 
 #[component]
+pub fn ListPlaceholders(count: usize) -> Element {
+    rsx! {
+        div { class: "skeleton-stack", aria_hidden: "true",
+            for index in 0..count {
+                div { key: "{index}", class: "skeleton skeleton-list",
+                    span { class: "skeleton-block skeleton-title" }
+                    span { class: "skeleton-block skeleton-meta" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
 fn ListSkeleton() -> Element {
     rsx! {
         div {

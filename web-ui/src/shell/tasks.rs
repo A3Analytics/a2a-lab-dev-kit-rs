@@ -63,6 +63,7 @@ thread_local! {
     static JOB: RefCell<Option<Signal<TaskJob>>> = const { RefCell::new(None) };
     static WAVE: RefCell<Option<Signal<u32>>> = const { RefCell::new(None) };
     static BEAT: RefCell<Option<Signal<u32>>> = const { RefCell::new(None) };
+    static QUERY: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
     static SNAPSHOTS: RefCell<Vec<Tracked>> = const { RefCell::new(Vec::new()) };
     static WATCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -112,10 +113,12 @@ pub fn TaskView(ui: Signal<TaskUi>) -> Element {
     let job = use_signal(|| TaskJob::Idle);
     let wave = use_signal(|| 0u32);
     let mut beat = use_signal(|| 0u32);
+    let mut query = use_signal(String::new);
     use_hook(|| {
         JOB.with(|slot| *slot.borrow_mut() = Some(job));
         WAVE.with(|slot| *slot.borrow_mut() = Some(wave));
         BEAT.with(|slot| *slot.borrow_mut() = Some(beat));
+        QUERY.with(|slot| *slot.borrow_mut() = Some(query));
     });
     let reply = use_resource(move || {
         let n = wave();
@@ -157,6 +160,7 @@ pub fn TaskView(ui: Signal<TaskUi>) -> Element {
     }
     let state = ui();
     let items = super::inventory::loaded(Primitive::Tasks);
+    let shown = matching_tasks(&items, &query());
     let snap = super::inventory::snapshot(Primitive::Tasks);
     let selected = items.iter().find(|item| item.id == state.selected);
     let busy = snap.kind == crate::inventory::Kind::Loading;
@@ -176,6 +180,18 @@ pub fn TaskView(ui: Signal<TaskUi>) -> Element {
             div { id: "task-view-alert", role: "alert", aria_live: "assertive", "{state.alert}" }
             div { id: "task-browser", class: "log-browser",
                 div { id: "task-filters", role: "group", aria_label: "Task filters",
+                    div { id: "task-search-group", class: "log-filter-group",
+                        label { r#for: "task-search", "Search" }
+                        input {
+                            id: "task-search",
+                            r#type: "search",
+                            autocomplete: "off",
+                            spellcheck: "false",
+                            aria_controls: "task-sources",
+                            oninput: move |_| query.set(session::control_value("task-search")),
+                            onchange: move |_| query.set(session::control_value("task-search")),
+                        }
+                    }
                     div { class: "log-filter-group",
                         p { "Task" }
                         div {
@@ -194,8 +210,10 @@ pub fn TaskView(ui: Signal<TaskUi>) -> Element {
                                     aria_disabled: "true",
                                     "None loaded"
                                 }
+                            } else if shown.is_empty() {
+                                p { id: "task-search-empty", "No matching tasks." }
                             } else {
-                                for (index, item) in items.iter().enumerate() {
+                                for (index, item) in shown.iter().enumerate() {
                                     TaskPick { index, item: item.clone(), selected: state.selected.clone() }
                                 }
                             }
@@ -543,7 +561,7 @@ fn pick_key(event: KeyboardEvent) {
         _ => return,
     };
     event.prevent_default();
-    let items = super::inventory::loaded(Primitive::Tasks);
+    let items = matching_tasks(&super::inventory::loaded(Primitive::Tasks), &task_query());
     if items.is_empty() {
         return;
     }
@@ -897,6 +915,32 @@ fn focus_control(id: &str) {
     {
         let _ = html.focus();
     }
+}
+
+fn task_query() -> String {
+    QUERY.with(|slot| {
+        slot.borrow()
+            .map(|query| query.peek().clone())
+            .unwrap_or_default()
+    })
+}
+
+fn matching_tasks(items: &[Item], query: &str) -> Vec<Item> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return items.to_vec();
+    }
+    items
+        .iter()
+        .filter(|item| task_matches(item, &needle))
+        .cloned()
+        .collect()
+}
+
+fn task_matches(item: &Item, needle: &str) -> bool {
+    item.name.to_lowercase().contains(needle)
+        || item.id.to_lowercase().contains(needle)
+        || item.description.to_lowercase().contains(needle)
 }
 
 fn source_detail(item: &Item) -> String {

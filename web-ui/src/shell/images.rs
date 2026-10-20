@@ -1,4 +1,4 @@
-//! Image history reader. The sidebar picks one source; the main column lists its frames.
+//! Image history reader. The sidebar toggles sources; the main column lists their frames.
 
 use std::cell::RefCell;
 
@@ -19,21 +19,41 @@ pub struct ImageUi {
     pub inspector: images::Inspector,
     pub gallery: images::Gallery,
     pub modal_open: bool,
+    modal_origin: String,
+    capture_shown: u32,
     pub sources: Vec<Item>,
     pub phase: SourcePhase,
     pub source_alert: String,
+    current_source: String,
+    current_generation: u32,
+    current_expected: Option<CurrentTicket>,
+    current_loading: bool,
+    current_status: String,
+    current_fault: String,
 }
 
 impl ImageUi {
     pub fn new() -> Self {
+        let mut reader = images::Reader::new();
+        if let crate::metrics::QueryRange::Bounded { start, end } = current_last_day() {
+            reader.preset_range(start, end);
+        }
         Self {
-            reader: images::Reader::new(),
+            reader,
             inspector: images::Inspector::new(),
             gallery: images::Gallery::new(),
             modal_open: false,
+            modal_origin: String::new(),
+            capture_shown: 0,
             sources: Vec::new(),
             phase: SourcePhase::Loading,
             source_alert: String::new(),
+            current_source: String::new(),
+            current_generation: 0,
+            current_expected: None,
+            current_loading: false,
+            current_status: String::new(),
+            current_fault: String::new(),
         }
     }
 }
@@ -83,11 +103,37 @@ enum ThumbOutcome {
     Failed { ticket: ThumbTicket },
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct CurrentTicket {
+    generation: u32,
+    source_id: String,
+}
+
+#[derive(Clone, PartialEq)]
+enum CurrentJob {
+    Idle,
+    Run(CurrentTicket),
+}
+
+#[derive(Clone, PartialEq)]
+enum CurrentOutcome {
+    Idle,
+    Ready {
+        ticket: CurrentTicket,
+        frame: Frame,
+    },
+    Failed {
+        ticket: CurrentTicket,
+        message: String,
+    },
+}
+
 #[derive(Clone, Copy)]
 struct Loader {
     history: Signal<ImageJob>,
     inspect: Signal<InspectJob>,
     thumbs: Signal<ThumbJob>,
+    current: Signal<CurrentJob>,
 }
 
 thread_local! {
@@ -119,11 +165,50 @@ pub fn catalog_changed() {
         String::new()
     };
     let ticket = next.reader.note_catalog(phase, &ids);
-    next.inspector.rebind(&next.reader.source_id);
+    if !ids.iter().any(|id| id == &next.current_source) {
+        clear_current(&mut next);
+        next.current_source = next.reader.bound_source().to_owned();
+        if next.current_source.is_empty() {
+            next.current_source = ids.first().cloned().unwrap_or_default();
+        }
+    }
+    next.inspector.rebind(next.reader.bound_source());
     ui.set(next);
     if let Some(ticket) = ticket {
         launch(ticket);
     }
+}
+
+fn current_last_day() -> crate::metrics::QueryRange {
+    let now = js_sys::Date::new_0()
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default();
+    crate::metrics::last_day(&now).unwrap_or(crate::metrics::QueryRange::Window)
+}
+
+fn fill_default_range(ui: Signal<ImageUi>, mut filled: Signal<bool>) {
+    if filled() {
+        return;
+    }
+    let images::Read::Search {
+        range: Some((start, end)),
+        ..
+    } = ui.read().reader.read.clone()
+    else {
+        return;
+    };
+    let start = datetime_local(&start);
+    let end = datetime_local(&end);
+    session::write_control("image-range-start", &start);
+    session::write_control("image-range-end", &end);
+    if session::control_value("image-range-end") == end {
+        filled.set(true);
+    }
+}
+
+fn datetime_local(stamp: &str) -> String {
+    stamp.chars().take(19).collect()
 }
 
 fn bound() -> Option<Signal<ImageUi>> {
@@ -139,6 +224,8 @@ pub fn ImageView(ui: Signal<ImageUi>) -> Element {
     let history = use_signal(|| ImageJob::Idle);
     let inspect = use_signal(|| InspectJob::Idle);
     let thumbs = use_signal(|| ThumbJob::Idle);
+    let current = use_signal(|| CurrentJob::Idle);
+    let mut filled_range = use_signal(|| false);
     use_hook(|| {
         install_modal_escape();
         LOADER.with(|slot| {
@@ -146,8 +233,21 @@ pub fn ImageView(ui: Signal<ImageUi>) -> Element {
                 history,
                 inspect,
                 thumbs,
+                current,
             });
         });
+    });
+    let mut focused_capture = use_signal(|| 0u32);
+    use_effect(move || fill_default_range(ui, filled_range));
+    use_effect(move || {
+        let generation = ui().capture_shown;
+        if generation == focused_capture() {
+            return;
+        }
+        focused_capture.set(generation);
+        if ui.peek().modal_open {
+            focus_control("image-modal");
+        }
     });
     use_effect(move || {
         let state = ui();
@@ -171,9 +271,15 @@ pub fn ImageView(ui: Signal<ImageUi>) -> Element {
         let secret = session::native_secret();
         async move { run_thumb(job, secret).await }
     });
+    let current_reply = use_resource(move || {
+        let job = current();
+        let secret = session::native_secret();
+        async move { run_current(job, secret).await }
+    });
     let _ = history_reply.read();
     let _ = inspect_reply.read();
     let _ = thumb_reply.read();
+    let _ = current_reply.read();
     if let Some(outcome) = history_reply() {
         apply_outcome(ui, outcome);
     }
@@ -183,10 +289,13 @@ pub fn ImageView(ui: Signal<ImageUi>) -> Element {
     if let Some(outcome) = thumb_reply() {
         apply_thumb(ui, outcome);
     }
+    if let Some(outcome) = current_reply() {
+        apply_current(ui, outcome);
+    }
     let state = ui();
     let (history_slug, history_text) =
         images::history_status(&state.reader, state.phase == SourcePhase::Ready);
-    let busy = state.phase == SourcePhase::Loading || state.reader.loading;
+    let busy = state.phase == SourcePhase::Loading || state.reader.loading || state.current_loading;
     rsx! {
         section {
             id: "image-view",
@@ -194,6 +303,7 @@ pub fn ImageView(ui: Signal<ImageUi>) -> Element {
             aria_busy: if busy { "true" } else { "false" },
             "data-gen": state.reader.generation.to_string(),
             h2 { id: "image-view-heading", class: "visually-hidden", tabindex: "-1", "Images" }
+            CurrentActions { state: state.clone() }
             div { id: "image-browser", class: "log-browser",
                 FilterRail { state: state.clone() }
                 Results { ui, state: state.clone(), history_slug, history_text }
@@ -244,7 +354,8 @@ fn FilterRail(state: ImageUi) -> Element {
                             key: "{item.id}",
                             index,
                             item: item.clone(),
-                            pressed: !state.reader.all && item.id == state.reader.source_id,
+                            pressed: !state.reader.all
+                                && state.reader.chosen.iter().any(|id| id == &item.id),
                         }
                     }
                 }
@@ -306,6 +417,51 @@ fn source_slug(phase: SourcePhase) -> &'static str {
         SourcePhase::None => "sources",
         SourcePhase::Error => "error",
         SourcePhase::Ready => "ready",
+    }
+}
+
+#[component]
+fn CurrentActions(state: ImageUi) -> Element {
+    let current_disabled = state.phase != SourcePhase::Ready
+        || state.current_source.is_empty()
+        || state.current_loading;
+    rsx! {
+        div { id: "image-current-actions", class: "image-current-actions",
+            label { r#for: "image-current-source", "Capture from" }
+            select {
+                id: "image-current-source",
+                disabled: state.current_loading || state.sources.is_empty(),
+                onchange: move |_| set_current_source(),
+                for item in &state.sources {
+                    option {
+                        value: "{item.id}",
+                        selected: item.id == state.current_source,
+                        "{item.name} · {item.id}"
+                    }
+                }
+            }
+            button {
+                id: "image-current",
+                class: "log-primary",
+                r#type: "button",
+                disabled: current_disabled,
+                aria_busy: if state.current_loading { "true" } else { "false" },
+                onclick: move |_| request_current(),
+                "Capture current image"
+            }
+            div {
+                id: "image-current-status",
+                role: "status",
+                aria_live: "polite",
+                "{state.current_status}"
+            }
+            div {
+                id: "image-current-alert",
+                role: "alert",
+                aria_live: "assertive",
+                "{state.current_fault}"
+            }
+        }
     }
 }
 
@@ -428,7 +584,11 @@ fn PreviewModal(state: ImageUi) -> Element {
         .as_ref()
         .map(|frame| frame.id.clone())
         .unwrap_or_default();
-    let origin = frame.as_ref().map(|_| "history").unwrap_or("");
+    let origin = frame
+        .as_ref()
+        .map(|_| state.modal_origin.clone())
+        .unwrap_or_default();
+    let size = frame.as_ref().and_then(preview_size);
     let preview = frame.and_then(|frame| {
         let alt = images::preview_alt(&frame);
         frame.preview.preview_url.map(|url| (alt, url))
@@ -448,15 +608,51 @@ fn PreviewModal(state: ImageUi) -> Element {
                 close_modal();
             },
             if let Some((alt, url)) = preview {
-                img {
-                    id: "image-preview",
-                    alt: "{alt}",
-                    src: "{url}",
+                div {
+                    class: "image-preview-frame",
                     onclick: move |event| event.stop_propagation(),
+                    img {
+                        id: "image-preview",
+                        alt: "{alt}",
+                        src: "{url}",
+                        onload: move |_| upscale_preview(),
+                    }
+                    if let Some(size) = size {
+                        p { id: "image-size", class: "image-size", "{size}" }
+                    }
                 }
             }
         }
     }
+}
+
+fn preview_size(frame: &images::Frame) -> Option<String> {
+    if frame.width == 0 || frame.height == 0 || frame.preview.preview_url.is_none() {
+        return None;
+    }
+    Some(format!("{} × {}", frame.width, frame.height))
+}
+
+fn upscale_preview() {
+    let Some(image) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("image-preview"))
+        .and_then(|element| element.dyn_into::<web_sys::HtmlImageElement>().ok())
+    else {
+        return;
+    };
+    let Some((width, height)) =
+        images::preview_display_size(image.natural_width(), image.natural_height())
+    else {
+        return;
+    };
+    let Ok(element) = image.dyn_into::<web_sys::HtmlElement>() else {
+        return;
+    };
+    let style = element.style();
+    let _ = style.set_property("width", &format!("{width}px"));
+    let _ = style.set_property("height", &format!("{height}px"));
+    let _ = style.set_property("image-rendering", "pixelated");
 }
 
 fn card_alt(item: &Descriptor) -> String {
@@ -497,9 +693,9 @@ fn choose_all() {
     };
     let mut next = ui.peek().clone();
     let ticket = next.reader.select_all();
-    next.inspector.rebind("");
+    next.inspector.rebind(next.reader.bound_source());
     if ticket.is_some() {
-        next.gallery.retarget("*");
+        next.gallery.retarget(&next.reader.scope_key());
         next.modal_open = false;
     }
     ui.set(next);
@@ -520,15 +716,59 @@ fn choose_source(id: &str) {
         .collect::<Vec<_>>();
     let mut next = ui.peek().clone();
     let ticket = next.reader.select_source(id, &ids);
-    next.inspector.rebind(&next.reader.source_id);
+    next.inspector.rebind(next.reader.bound_source());
     if ticket.is_some() {
-        next.gallery.retarget(&next.reader.source_id);
+        next.gallery.retarget(&next.reader.scope_key());
         next.modal_open = false;
     }
     ui.set(next);
     if let Some(ticket) = ticket {
         launch(ticket);
     }
+}
+
+fn request_current() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    let source_id = next.current_source.clone();
+    if source_id.is_empty() || next.current_loading {
+        return;
+    }
+    next.current_generation = next.current_generation.wrapping_add(1);
+    let ticket = CurrentTicket {
+        generation: next.current_generation,
+        source_id,
+    };
+    next.current_expected = Some(ticket.clone());
+    next.current_loading = true;
+    next.current_status = "Capturing current image.".to_owned();
+    next.current_fault.clear();
+    ui.set(next);
+    launch_current(ticket);
+}
+
+fn set_current_source() {
+    let source = session::control_value("image-current-source");
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    if !ui.peek().sources.iter().any(|item| item.id == source) {
+        return;
+    }
+    let mut next = ui.peek().clone();
+    clear_current(&mut next);
+    next.current_source = source;
+    ui.set(next);
+}
+
+fn clear_current(state: &mut ImageUi) {
+    state.current_generation = state.current_generation.wrapping_add(1);
+    state.current_expected = None;
+    state.current_loading = false;
+    state.current_status.clear();
+    state.current_fault.clear();
 }
 
 fn open_result(id: &str) {
@@ -555,6 +795,9 @@ fn choose_result(id: &str) {
     let mut next = ui.peek().clone();
     next.reader.select_result(id);
     next.modal_open = !next.reader.selected.is_empty();
+    if next.modal_open {
+        next.modal_origin = "history".to_owned();
+    }
     let selected = next.reader.selected.clone();
     let source = next
         .reader
@@ -681,6 +924,24 @@ fn launch_thumb(ticket: ThumbTicket) {
     loader.thumbs.set(ThumbJob::Run(ticket));
 }
 
+fn launch_current(ticket: CurrentTicket) {
+    let Some(mut loader) = loader() else {
+        return;
+    };
+    if !calls_allowed() || take_secret(&[ticket.source_id.as_str()]).is_err() {
+        let Some(mut ui) = bound() else {
+            return;
+        };
+        let mut next = ui.peek().clone();
+        if next.current_expected.as_ref() == Some(&ticket) {
+            clear_current(&mut next);
+            ui.set(next);
+        }
+        return;
+    }
+    loader.current.set(CurrentJob::Run(ticket));
+}
+
 fn install_modal_escape() {
     let Some(window) = web_sys::window() else {
         return;
@@ -734,8 +995,8 @@ async fn run_job(job: ImageJob, secret: Option<String>) -> ImageOutcome {
     let ImageJob::Run(ticket) = job else {
         return ImageOutcome::Idle;
     };
-    if ticket.source_id.is_empty() && matches!(ticket.read, Read::List) {
-        return list_every(ticket, secret).await;
+    if ticket.source_id.is_empty() && !ticket.sources.is_empty() {
+        return gather(ticket, secret).await;
     }
     let command = images::command(&ticket.source_id, &ticket.read, ticket.cursor.as_deref());
     let reply = match post(command, secret.clone()).await {
@@ -751,12 +1012,12 @@ async fn run_job(job: ImageJob, secret: Option<String>) -> ImageOutcome {
     }
 }
 
-async fn list_every(ticket: Ticket, secret: Option<String>) -> ImageOutcome {
+async fn gather(ticket: Ticket, secret: Option<String>) -> ImageOutcome {
     let mut items = Vec::new();
     for source in ticket.sources.clone() {
         let mut cursor = None;
         loop {
-            let command = images::command(&source, &Read::List, cursor.as_deref());
+            let command = images::command(&source, &ticket.read, cursor.as_deref());
             let reply = match post(command, secret.clone()).await {
                 Ok(reply) => reply,
                 Err(message) => return ImageOutcome::Failed { ticket, message },
@@ -825,6 +1086,28 @@ async fn run_inspect(job: InspectJob, secret: Option<String>) -> InspectOutcome 
     }
 }
 
+async fn run_current(job: CurrentJob, secret: Option<String>) -> CurrentOutcome {
+    let CurrentJob::Run(ticket) = job else {
+        return CurrentOutcome::Idle;
+    };
+    let command = images::current_command(&ticket.source_id);
+    let reply = match post(command, secret.clone()).await {
+        Ok(reply) => reply,
+        Err(message) => return CurrentOutcome::Failed { ticket, message },
+    };
+    match images::interpret_current_frame(&reply, secret.as_deref()) {
+        Ok(frame) if frame.source_id == ticket.source_id => CurrentOutcome::Ready { ticket, frame },
+        Ok(_) => CurrentOutcome::Failed {
+            ticket,
+            message: fault_message(&Fault::Malformed),
+        },
+        Err(fault) => CurrentOutcome::Failed {
+            ticket,
+            message: fault_message(&fault),
+        },
+    }
+}
+
 async fn post(
     command: serde_json::Value,
     secret: Option<String>,
@@ -855,11 +1138,8 @@ fn apply_outcome(mut ui: Signal<ImageUi>, outcome: ImageOutcome) {
             .iter()
             .map(|item| item.id.clone())
             .collect::<Vec<_>>();
-        let thumb = if next.reader.all {
-            next.gallery.note("*", &ids)
-        } else {
-            next.gallery.note(&next.reader.source_id, &ids)
-        };
+        let scope = next.reader.scope_key();
+        let thumb = next.gallery.note(&scope, &ids);
         ui.set(next);
         if let Some(thumb) = thumb {
             launch_thumb(thumb);
@@ -895,6 +1175,39 @@ fn apply_thumb(mut ui: Signal<ImageUi>, outcome: ThumbOutcome) {
     ui.set(next);
     if let Some(follow) = follow {
         launch_thumb(follow);
+    }
+}
+
+fn apply_current(mut ui: Signal<ImageUi>, outcome: CurrentOutcome) {
+    let mut next = ui.peek().clone();
+    let (ticket, shown, failure) = match outcome {
+        CurrentOutcome::Idle => return,
+        CurrentOutcome::Ready { ticket, frame } => (ticket, Some(frame), None),
+        CurrentOutcome::Failed { ticket, message } => (ticket, None, Some(message)),
+    };
+    if next.current_expected.as_ref() != Some(&ticket) {
+        return;
+    }
+    next.current_expected = None;
+    next.current_loading = false;
+    let refresh = if let Some(message) = failure {
+        next.current_status = "Current image could not be captured.".to_owned();
+        next.current_fault = message;
+        None
+    } else if let Some(frame) = shown {
+        next.current_status.clear();
+        next.current_fault.clear();
+        next.inspector.show(frame);
+        next.modal_open = true;
+        next.modal_origin = "current".to_owned();
+        next.capture_shown = next.capture_shown.wrapping_add(1);
+        next.reader.refresh()
+    } else {
+        None
+    };
+    ui.set(next);
+    if let Some(refresh) = refresh {
+        launch(refresh);
     }
 }
 

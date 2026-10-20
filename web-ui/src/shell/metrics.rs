@@ -1,6 +1,6 @@
 //! Metric reader. The sidebar lists metrics; choosing one loads its samples.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use wasm_bindgen::JsCast;
 
@@ -212,8 +212,25 @@ fn selected_unit() -> String {
         .unwrap_or_default()
 }
 
-fn selected_range() -> metrics::QueryRange {
+pub(super) fn selected_range() -> metrics::QueryRange {
+    ensure_last_day();
     RANGE.with(|slot| slot.borrow().clone())
+}
+
+fn ensure_last_day() {
+    if SEEDED.with(Cell::get) {
+        return;
+    }
+    SEEDED.with(|cell| cell.set(true));
+    remember_range(last_day_now());
+}
+
+fn last_day_now() -> metrics::QueryRange {
+    let now = js_sys::Date::new_0()
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default();
+    metrics::last_day(&now).unwrap_or(metrics::QueryRange::Window)
 }
 
 fn fault_message(fault: &Fault) -> String {
@@ -233,6 +250,7 @@ std::thread_local! {
     static SAMPLES: RefCell<Vec<Sample>> = const { RefCell::new(Vec::new()) };
     static SELECTED: RefCell<String> = const { RefCell::new(String::new()) };
     static RANGE: RefCell<metrics::QueryRange> = const { RefCell::new(metrics::QueryRange::Window) };
+    static SEEDED: Cell<bool> = const { Cell::new(false) };
 }
 
 fn remember(samples: &[Sample]) {

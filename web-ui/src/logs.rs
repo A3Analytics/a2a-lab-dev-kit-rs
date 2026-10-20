@@ -32,6 +32,18 @@ pub enum QueryRange {
     Bounded { start: String, end: String },
 }
 
+pub fn last_day(now: &str) -> Option<QueryRange> {
+    let today = calendar_day(now.split('T').next()?)?;
+    let start = previous_day(today)?;
+    date_range(&format_day(start), &format_day(today)).ok()
+}
+
+pub fn input_days(start: &str, end: &str) -> Option<(String, String)> {
+    let start_day = format_day(calendar_day(start.split('T').next()?)?);
+    let end_day = format_day(previous_day(calendar_day(end.split('T').next()?)?)?);
+    Some((start_day, end_day))
+}
+
 pub fn date_range(start: &str, end: &str) -> Result<QueryRange, &'static str> {
     let start = start.trim();
     let end = end.trim();
@@ -86,6 +98,17 @@ fn calendar_day(value: &str) -> Option<(i32, u8, u8)> {
         return None;
     }
     Some((year, month, day))
+}
+
+fn previous_day((year, month, day): (i32, u8, u8)) -> Option<(i32, u8, u8)> {
+    if day > 1 {
+        return Some((year, month, day - 1));
+    }
+    if month > 1 {
+        let month = month - 1;
+        return Some((year, month, days_in_month(year, month)));
+    }
+    year.checked_sub(1).map(|year| (year, 12, 31))
 }
 
 fn next_day((year, month, day): (i32, u8, u8)) -> Option<(i32, u8, u8)> {
@@ -247,6 +270,24 @@ mod tests {
         assert_eq!(query["params"]["range"]["start"], "2024-01-01T00:00:00Z");
         assert_eq!(query["params"]["range"]["end"], "2024-01-02T00:00:00Z");
         assert_eq!(date_range("", "").unwrap(), QueryRange::Window);
+        assert_eq!(
+            last_day("2026-10-20T18:42:00.000Z"),
+            Some(QueryRange::Bounded {
+                start: "2026-10-19T00:00:00Z".to_owned(),
+                end: "2026-10-21T00:00:00Z".to_owned(),
+            })
+        );
+        assert_eq!(
+            input_days("2026-10-19T00:00:00Z", "2026-10-21T00:00:00Z"),
+            Some(("2026-10-19".to_owned(), "2026-10-20".to_owned()))
+        );
+        assert_eq!(
+            last_day("2024-03-01T00:00:00Z"),
+            Some(QueryRange::Bounded {
+                start: "2024-02-29T00:00:00Z".to_owned(),
+                end: "2024-03-02T00:00:00Z".to_owned(),
+            })
+        );
         assert_eq!(
             date_range("2024-01-02", "").unwrap_err(),
             "Enter a start and an end."

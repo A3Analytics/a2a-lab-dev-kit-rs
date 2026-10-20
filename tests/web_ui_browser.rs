@@ -675,6 +675,10 @@ fn chart_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     page.show("metrics");
+    page.wait_until(
+        "document.getElementById('metric-range-start')?.value && document.getElementById('metric-range-end')?.value",
+    );
+    page.eval("document.querySelector('#metric-filter-chips [data-clear=\"range\"]')?.click()");
     page.wait_until("document.querySelectorAll('#metric-chart .dx-line-point').length >= 2");
     assert_initial_series(&mut page);
     assert_point_tooltip(&mut page);

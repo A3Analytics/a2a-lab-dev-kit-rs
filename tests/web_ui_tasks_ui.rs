@@ -87,6 +87,7 @@ fn populated_flow(base: &str, tasks: &MemoryTasks, handle: &tokio::runtime::Hand
     page.wait_until(CONNECTED);
     page.show("#tasks");
     page.wait_until(ALPHA_READY);
+    assert_task_search(&mut page);
     assert_catalog_hidden(&mut page);
     reselect_alpha(&mut page);
     assert_report(&mut page, DEFAULTS, "defaults");
@@ -117,6 +118,20 @@ fn empty_flow(base: &str) {
     assert!(empty.contains("empty"), "{empty}");
     assert!(!empty.contains("Loading"), "{empty}");
     assert_catalog_hidden(&mut page);
+}
+
+fn assert_task_search(page: &mut Browser) {
+    set_input(page, "task-search", "HOME");
+    page.wait_until(
+        "document.getElementById('task-pick-0')?.getAttribute('data-task') === 'beta' && document.querySelectorAll('#task-sources [data-task]').length === 1",
+    );
+    set_input(page, "task-search", "no-such-task");
+    page.wait_until("document.getElementById('task-search-empty')?.textContent.includes('No matching tasks.') && document.querySelectorAll('#task-sources [data-task]').length === 0");
+    set_input(page, "task-search", "   ");
+    page.wait_until(
+        "document.getElementById('task-pick-0')?.getAttribute('data-task') === 'alpha' && document.getElementById('task-pick-1')?.getAttribute('data-task') === 'beta'",
+    );
+    set_input(page, "task-search", "");
 }
 
 fn reselect_alpha(page: &mut Browser) {

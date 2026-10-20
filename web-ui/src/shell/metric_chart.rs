@@ -44,6 +44,26 @@ thread_local! {
     static FETCH: RefCell<Option<Signal<u32>>> = const { RefCell::new(None) };
 }
 
+fn fill_default_range(query: Signal<MetricQuery>, mut filled: Signal<bool>) {
+    if filled() {
+        return;
+    }
+    let QueryRange::Bounded { start, end } = query.read().range.clone() else {
+        return;
+    };
+    let start = datetime_local(&start);
+    let end = datetime_local(&end);
+    session::write_control("metric-range-start", &start);
+    session::write_control("metric-range-end", &end);
+    if session::control_value("metric-range-end") == end {
+        filled.set(true);
+    }
+}
+
+fn datetime_local(stamp: &str) -> String {
+    stamp.chars().take(19).collect()
+}
+
 fn bind(
     picks: Signal<Vec<Item>>,
     selected: Signal<String>,
@@ -116,10 +136,15 @@ pub fn set_query(next: MetricQuery) {
 pub fn MetricView() -> Element {
     let picks = use_signal(Vec::<Item>::new);
     let selected = use_signal(String::new);
-    let query = use_signal(MetricQuery::default);
+    let query = use_signal(|| MetricQuery {
+        metric: String::new(),
+        range: super::metrics::selected_range(),
+    });
     let range_alert = use_signal(String::new);
     let fetch = use_signal(|| 0u32);
+    let mut filled_range = use_signal(|| false);
     use_hook(|| bind(picks, selected, query, fetch));
+    use_effect(move || fill_default_range(query, filled_range));
     let chart = use_resource(move || {
         let _n = fetch();
         let q = query();

@@ -67,6 +67,7 @@ pub struct Ticket {
 pub struct Reader {
     pub generation: u32,
     pub source_id: String,
+    pub chosen: Vec<String>,
     pub all: bool,
     pub read: Read,
     pub items: Vec<Descriptor>,
@@ -85,6 +86,7 @@ impl Reader {
         Self {
             generation: 0,
             source_id: String::new(),
+            chosen: Vec::new(),
             all: false,
             read: Read::List,
             items: Vec::new(),
@@ -111,31 +113,56 @@ impl Reader {
     }
 
     pub fn select_source(&mut self, id: &str, ids: &[String]) -> Option<Ticket> {
-        if !ids.iter().any(|item| item == id) || (!self.all && id == self.source_id) {
+        if !ids.iter().any(|item| item == id) {
             return None;
         }
-        self.all = false;
-        if !self.validation.is_empty() {
-            self.clear_history();
-            self.source_id = id.to_owned();
-            return None;
-        }
-        let read = self.read.clone();
-        Some(self.issue(id.to_owned(), read, None, false))
+        let chosen = if self.all {
+            vec![id.to_owned()]
+        } else if let Some(index) = self.chosen.iter().position(|item| item == id) {
+            if self.chosen.len() == 1 {
+                return None;
+            }
+            let mut chosen = self.chosen.clone();
+            chosen.remove(index);
+            chosen
+        } else {
+            let mut chosen = self.chosen.clone();
+            chosen.push(id.to_owned());
+            chosen
+        };
+        self.apply_choice(false, chosen)
     }
 
     pub fn select_all(&mut self) -> Option<Ticket> {
         if self.all || self.catalog.is_empty() {
             return None;
         }
-        self.all = true;
-        if !self.validation.is_empty() {
-            self.clear_history();
-            self.all = true;
-            return None;
+        self.apply_choice(true, Vec::new())
+    }
+
+    pub fn bound_source(&self) -> &str {
+        if self.all || self.chosen.len() != 1 {
+            ""
+        } else {
+            self.source_id.as_str()
         }
-        let read = self.read.clone();
-        Some(self.issue(String::new(), read, None, false))
+    }
+
+    pub fn scope_key(&self) -> String {
+        if self.all {
+            "*".to_owned()
+        } else if self.chosen.len() > 1 {
+            self.chosen.join("\u{1f}")
+        } else {
+            self.source_id.clone()
+        }
+    }
+
+    pub fn preset_range(&mut self, start: String, end: String) {
+        self.read = Read::Search {
+            text: None,
+            range: Some((start, end)),
+        };
     }
 
     pub fn commit(
@@ -156,31 +183,47 @@ impl Reader {
             return Ok(None);
         }
         if self.all {
-            return Ok(Some(self.issue(String::new(), read, None, false)));
+            return Ok(Some(self.issue(true, Vec::new(), read, None, false)));
         }
-        if self.source_id.is_empty() {
+        if self.chosen.is_empty() {
             self.read = read;
             return Ok(None);
         }
-        let source = self.source_id.clone();
-        Ok(Some(self.issue(source, read, None, false)))
+        let chosen = self.chosen.clone();
+        Ok(Some(self.issue(false, chosen, read, None, false)))
     }
 
     pub fn more(&mut self) -> Option<Ticket> {
-        if self.loading || (!self.all && self.source_id.is_empty()) || !self.validation.is_empty() {
+        if self.loading || (self.chosen.is_empty() && !self.all) || !self.validation.is_empty() {
+            return None;
+        }
+        if !self.all && self.chosen.len() > 1 {
             return None;
         }
         let cursor = self
             .next_cursor
             .clone()
             .filter(|cursor| !cursor.is_empty())?;
-        let source = if self.all {
-            String::new()
-        } else {
-            self.source_id.clone()
-        };
         let read = self.read.clone();
-        Some(self.issue(source, read, Some(cursor), true))
+        if self.all {
+            Some(self.issue(true, Vec::new(), read, Some(cursor), true))
+        } else {
+            let chosen = self.chosen.clone();
+            Some(self.issue(false, chosen, read, Some(cursor), true))
+        }
+    }
+
+    pub fn refresh(&mut self) -> Option<Ticket> {
+        if (self.chosen.is_empty() && !self.all) || !self.validation.is_empty() {
+            return None;
+        }
+        let read = self.read.clone();
+        if self.all {
+            Some(self.issue(true, Vec::new(), read, None, false))
+        } else {
+            let chosen = self.chosen.clone();
+            Some(self.issue(false, chosen, read, None, false))
+        }
     }
 
     pub fn select_result(&mut self, id: &str) {
@@ -245,14 +288,14 @@ impl Reader {
                 return None;
             }
             let read = self.read.clone();
-            return Some(self.issue(String::new(), read, None, false));
+            return Some(self.issue(true, Vec::new(), read, None, false));
         }
-        let next = keep_source(&self.source_id, ids);
+        let next = keep_sources(&self.chosen, ids);
         if next.is_empty() {
             self.clear_history();
             return None;
         }
-        let same = next == self.source_id;
+        let same = next == self.chosen;
         if same && self.fault.is_empty() && (self.loading || self.settled) {
             return None;
         }
@@ -261,11 +304,24 @@ impl Reader {
         }
         if !self.validation.is_empty() {
             self.clear_history();
-            self.source_id = next;
+            self.source_id = single_source(&next);
+            self.chosen = next;
             return None;
         }
         let read = self.read.clone();
-        Some(self.issue(next, read, None, false))
+        Some(self.issue(false, next, read, None, false))
+    }
+
+    fn apply_choice(&mut self, all: bool, chosen: Vec<String>) -> Option<Ticket> {
+        if !self.validation.is_empty() {
+            self.clear_history();
+            self.all = all;
+            self.chosen = chosen;
+            self.source_id = single_source(&self.chosen);
+            return None;
+        }
+        let read = self.read.clone();
+        Some(self.issue(all, chosen, read, None, false))
     }
 
     fn clear_history(&mut self) {
@@ -274,6 +330,7 @@ impl Reader {
         self.loading = false;
         self.all = false;
         self.source_id.clear();
+        self.chosen.clear();
         self.items.clear();
         self.selected.clear();
         self.next_cursor = None;
@@ -283,27 +340,37 @@ impl Reader {
 
     fn issue(
         &mut self,
-        source_id: String,
+        all: bool,
+        chosen: Vec<String>,
         read: Read,
         cursor: Option<String>,
         append: bool,
     ) -> Ticket {
         self.generation = self.generation.wrapping_add(1);
-        self.source_id = source_id;
+        self.all = all;
+        self.chosen = if all { Vec::new() } else { chosen };
+        self.source_id = if all {
+            String::new()
+        } else {
+            single_source(&self.chosen)
+        };
         self.read = read;
         self.loading = true;
         self.fault.clear();
         if !append {
             self.settled = false;
         }
+        let sources = if self.all && matches!(self.read, Read::List) {
+            self.catalog.clone()
+        } else if self.chosen.len() > 1 {
+            self.chosen.clone()
+        } else {
+            Vec::new()
+        };
         let ticket = Ticket {
             generation: self.generation,
             source_id: self.source_id.clone(),
-            sources: if self.source_id.is_empty() {
-                self.catalog.clone()
-            } else {
-                Vec::new()
-            },
+            sources,
             read: self.read.clone(),
             cursor,
             append,
@@ -311,6 +378,26 @@ impl Reader {
         self.expected = Some(ticket.clone());
         ticket
     }
+}
+
+fn single_source(chosen: &[String]) -> String {
+    if chosen.len() == 1 {
+        chosen[0].clone()
+    } else {
+        String::new()
+    }
+}
+
+fn keep_sources(chosen: &[String], sources: &[String]) -> Vec<String> {
+    let kept = chosen
+        .iter()
+        .filter(|id| sources.iter().any(|item| item == *id))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !kept.is_empty() {
+        return kept;
+    }
+    sources.first().cloned().into_iter().collect()
 }
 
 pub fn source_phase(kind: Kind, count: usize) -> SourcePhase {
@@ -361,6 +448,9 @@ pub fn history_status(reader: &Reader, source_ready: bool) -> (&'static str, &'s
     if reader.items.is_empty() {
         if reader.read.is_search() {
             return ("nomatch", "No images match this search.");
+        }
+        if reader.all || reader.chosen.len() > 1 {
+            return ("empty", "No images for the selected sources.");
         }
         return ("empty", "No images for this source.");
     }
@@ -516,6 +606,15 @@ impl Inspector {
         Some(self.issue(source_id, image_id))
     }
 
+    pub fn show(&mut self, frame: Frame) {
+        self.generation = self.generation.wrapping_add(1);
+        self.expected = None;
+        self.image_id = frame.id.clone();
+        self.loading = false;
+        self.fault.clear();
+        self.frame = Some(frame);
+    }
+
     pub fn accept(&mut self, ticket: &InspectTicket, frame: Frame) -> bool {
         if self.expected.as_ref() != Some(ticket) {
             return false;
@@ -577,6 +676,23 @@ pub fn inspect_status(inspector: &Inspector) -> (&'static str, &'static str) {
         return ("selected-ready", "");
     }
     ("idle", "")
+}
+
+pub const PREVIEW_UPSCALE_EDGE: u32 = 200;
+
+pub fn preview_display_size(width: u32, height: u32) -> Option<(u32, u32)> {
+    if width == 0 || height == 0 || width >= PREVIEW_UPSCALE_EDGE || height >= PREVIEW_UPSCALE_EDGE
+    {
+        return None;
+    }
+    let longest = width.max(height);
+    Some((scale_edge(width, longest), scale_edge(height, longest)))
+}
+
+fn scale_edge(edge: u32, longest: u32) -> u32 {
+    let scaled = (u64::from(edge) * u64::from(PREVIEW_UPSCALE_EDGE) + u64::from(longest) / 2)
+        / u64::from(longest);
+    u32::try_from(scaled).unwrap_or(PREVIEW_UPSCALE_EDGE).max(1)
 }
 
 pub fn preview_alt(frame: &Frame) -> String {
@@ -728,7 +844,26 @@ pub fn image_command(image_id: &str) -> Value {
     })
 }
 
+pub fn current_command(source_id: &str) -> Value {
+    serde_json::json!({
+        "operation": "get_current_image",
+        "params": { "source_id": source_id }
+    })
+}
+
 pub fn interpret_frame(reply: &Reply, secret: Option<&str>) -> Result<Frame, Fault> {
+    interpret_named_frame(reply, secret, "get_image")
+}
+
+pub fn interpret_current_frame(reply: &Reply, secret: Option<&str>) -> Result<Frame, Fault> {
+    interpret_named_frame(reply, secret, "get_current_image")
+}
+
+fn interpret_named_frame(
+    reply: &Reply,
+    secret: Option<&str>,
+    operation: &str,
+) -> Result<Frame, Fault> {
     let outcome = match codec::decode(reply, secret) {
         Err(ProtocolError::Unauthorized(message)) => return Err(Fault::Unauthorized(message)),
         Err(ProtocolError::Forbidden(message)) => return Err(Fault::Forbidden(message)),
@@ -736,7 +871,7 @@ pub fn interpret_frame(reply: &Reply, secret: Option<&str>) -> Result<Frame, Fau
         Ok(Outcome::Status(status)) => return Err(status_fault(&status)),
         Ok(outcome) => outcome,
     };
-    let mut frame = frame_from(&outcome)?;
+    let mut frame = frame_from(&outcome, operation)?;
     redact_frame(&mut frame, secret);
     Ok(frame)
 }
@@ -774,19 +909,18 @@ fn status_fault(status: &codec::RpcStatus) -> Fault {
     }
 }
 
-fn frame_from(outcome: &Outcome) -> Result<Frame, Fault> {
+fn frame_from(outcome: &Outcome, operation: &str) -> Result<Frame, Fault> {
     let payloads = exchange_payloads(outcome);
     let [payload] = payloads.as_slice() else {
         return Err(Fault::Malformed);
     };
-    parse_frame(payload)
+    parse_frame(payload, operation)
 }
 
-fn parse_frame(payload: &str) -> Result<Frame, Fault> {
+fn parse_frame(payload: &str, operation: &str) -> Result<Frame, Fault> {
     let value: Value = serde_json::from_str(payload).map_err(|_| Fault::Malformed)?;
     let object = value.as_object().ok_or(Fault::Malformed)?;
-    let expected = "get_image";
-    if object.get("operation").and_then(Value::as_str) != Some(expected) {
+    if object.get("operation").and_then(Value::as_str) != Some(operation) {
         return Err(Fault::Malformed);
     }
     let result = object
@@ -959,6 +1093,9 @@ mod tests {
         assert!(listed["params"].get("range").is_none());
         assert!(listed["params"]["page"].get("cursor").is_none());
         assert_eq!(listed["params"]["page"]["limit"], LIMIT);
+        let current = current_command("cam-a");
+        assert_eq!(current["operation"], "get_current_image");
+        assert_eq!(current["params"]["source_id"], "cam-a");
 
         let caption = plan("  plate  ", "", "").unwrap();
         let searched = command("cam-a", &caption, Some("2"));
@@ -1045,6 +1182,9 @@ mod tests {
         let moved = reader.note_catalog(SourcePhase::Ready, &only).unwrap();
         assert_eq!(moved.source_id, "cam-a");
         assert!(!reader.all);
+        let refreshed = reader.refresh().unwrap();
+        assert_eq!(refreshed.source_id, "cam-a");
+        assert!(!refreshed.append);
 
         let mut wide = Reader::new();
         let catalog = ids("cam-a", "cam-b");
@@ -1092,8 +1232,36 @@ mod tests {
         assert!(!reader.reject(&current, "late"));
         assert!(reader.fault.is_empty());
         assert!(reader.accept(&switched, page(vec![desc("other")], None)));
-        assert_eq!(reader.source_id, "cam-b");
+        assert_eq!(reader.chosen, ids("cam-a", "cam-b"));
+        assert!(reader.source_id.is_empty());
         assert_eq!(reader.items[0].id, "other");
+    }
+
+    #[test]
+    fn source_toggles_add_and_remove_without_replacing_the_rest() {
+        let mut reader = Reader::new();
+        let catalog = vec!["cam-a".to_owned(), "cam-b".to_owned(), "cam-c".to_owned()];
+        let opened = reader.note_catalog(SourcePhase::Ready, &catalog).unwrap();
+        assert_eq!(opened.source_id, "cam-a");
+        assert!(opened.sources.is_empty());
+        let added = reader.select_source("cam-b", &catalog).unwrap();
+        assert_eq!(added.sources, ids("cam-a", "cam-b"));
+        assert!(added.source_id.is_empty());
+        assert!(!reader.all);
+        let third = reader.select_source("cam-c", &catalog).unwrap();
+        assert_eq!(third.sources, vec!["cam-a", "cam-b", "cam-c"]);
+        let dropped = reader.select_source("cam-a", &catalog).unwrap();
+        assert_eq!(dropped.sources, ids("cam-b", "cam-c"));
+        let only = reader.select_source("cam-c", &catalog).unwrap();
+        assert_eq!(only.source_id, "cam-b");
+        assert!(only.sources.is_empty());
+        assert!(reader.select_source("cam-b", &catalog).is_none());
+        let all = reader.select_all().unwrap();
+        assert!(all.source_id.is_empty());
+        assert_eq!(all.sources, catalog);
+        let narrowed = reader.select_source("cam-c", &catalog).unwrap();
+        assert_eq!(narrowed.source_id, "cam-c");
+        assert!(!reader.all);
     }
 
     #[test]
@@ -1174,6 +1342,12 @@ mod tests {
     fn preview_decisions_follow_the_raster_policy() {
         let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
         let markup = r#"<svg id="image-xss" onload="window.__imageXss=1"></svg>"#;
+        let current = interpret_current_frame(
+            &page_reply(image_body("get_current_image", "image/png", png)),
+            None,
+        )
+        .unwrap();
+        assert_eq!(current.source_id, "cam-a");
         for media in ["image/png", "image/jpeg", "image/gif", "image/webp"] {
             let frame = shown(media, "AAAA", "frame-a", "plate");
             let preview = frame.preview;
@@ -1195,6 +1369,14 @@ mod tests {
                 .starts_with("data:image/png;base64,")
         );
         assert_eq!(preview_alt(&typed), "plate well");
+        assert_eq!(preview_display_size(1, 1), Some((200, 200)));
+        assert_eq!(preview_display_size(100, 40), Some((200, 80)));
+        assert_eq!(preview_display_size(40, 100), Some((80, 200)));
+        assert_eq!(preview_display_size(199, 199), Some((200, 200)));
+        assert_eq!(preview_display_size(200, 10), None);
+        assert_eq!(preview_display_size(10, 200), None);
+        assert_eq!(preview_display_size(1920, 1080), None);
+        assert_eq!(preview_display_size(0, 10), None);
         assert!(typed.preview.decoded_bytes.is_some());
 
         let svg = shown("image/svg+xml", png, "frame-svg", markup);
@@ -1241,6 +1423,12 @@ mod tests {
 
         let mut inspector = Inspector::new();
         inspector.rebind("cam-a");
+        let captured = inspector.open_selected("cam-a", "frame-a").unwrap();
+        inspector.show(sample_frame("late-only"));
+        assert_eq!(inspector.frame.as_ref().unwrap().id, "late-only");
+        assert!(!inspector.loading);
+        assert!(!inspector.accept(&captured, sample_frame("frame-a")));
+        assert_eq!(inspector.frame.as_ref().unwrap().id, "late-only");
         let first = inspector.open_selected("cam-a", "frame-a").unwrap();
         let second = inspector.open_selected("cam-a", "frame-b").unwrap();
         assert_eq!(

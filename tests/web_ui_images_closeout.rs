@@ -25,10 +25,16 @@ const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42
 const MARKUP: &str = r#"<svg id="image-xss" onload="window.__imageXss=1"></svg>"#;
 const BAD_BYTES: &[u8] = b"closeout-bad-b64";
 const CAM_A: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-a' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.querySelectorAll('#image-history [data-id]').length === 100 && document.getElementById('image-result-0')?.dataset.image === 'frame-000'";
-const CAPTURE_READY: &str = "!document.getElementById('image-current') && !document.querySelector('#image-filters .log-actions')";
+const CAPTURE_READY: &str = "!!document.getElementById('image-current') && !document.getElementById('image-current').disabled && document.getElementById('image-current-source')?.value === 'cam-a' && document.getElementById('image-current-actions')?.parentElement?.id === 'image-view' && document.getElementById('image-current-actions')?.nextElementSibling?.id === 'image-browser' && !document.querySelector('#image-filters .log-actions')";
 const CAM_EMPTY: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-empty' && document.getElementById('image-history-status')?.dataset.state === 'empty'";
 const PREVIEW_SOURCE: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-preview' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.getElementById('image-result-0')?.dataset.image === 'png-ok'";
-const PNG_READY: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'png-ok' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1 && !document.getElementById('image-facts')";
+const PNG_READY: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'png-ok' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1 && document.getElementById('image-preview')?.clientWidth === 200 && document.getElementById('image-preview')?.clientHeight === 200 && document.getElementById('image-size')?.textContent === '1 × 1' && !document.getElementById('image-facts')";
+const SIZE_CORNER: &str = r"( () => {
+  const img = document.getElementById('image-preview')?.getBoundingClientRect();
+  const size = document.getElementById('image-size')?.getBoundingClientRect();
+  if (!img || !size) return false;
+  return Math.abs(size.left - img.left) < 1 && Math.abs(size.bottom - img.bottom) < 1;
+})()";
 const LIMIT_READY: &str = "document.getElementById('image-modal')?.dataset.image === 'png-limit' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1";
 const OVER_READY: &str = "document.getElementById('image-modal')?.dataset.image === 'png-over' && !document.getElementById('image-preview')";
 const SVG_READY: &str = "document.getElementById('image-modal')?.dataset.image === 'svg-mark' && !document.getElementById('image-preview') && !document.querySelector('#image-modal svg')";
@@ -74,10 +80,12 @@ fn flow(
         "document.getElementById('image-history-status')?.dataset.state === 'loading' && document.getElementById('image-history-status')?.textContent.includes('Loading images.') && document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-a'",
     );
     assert_loading(&mut page);
+    show_every_image(&mut page);
     page.eval("window.__releaseImage('first-list')");
     page.wait_until(CAM_A);
     assert_desktop(&mut page);
     assert_queries(&mut page);
+    assert_current_capture(&mut page);
     assert_keyboard(&mut page);
     page.click("image-more");
     page.wait_until(
@@ -163,6 +171,38 @@ fn assert_queries(page: &mut Browser) {
     clear_criteria(page);
     page.wait_until(CAM_A);
     assert_invalid(page);
+}
+
+fn assert_current_capture(page: &mut Browser) {
+    let captures = sends(page, "get_current_image");
+    let lists = sends(page, "list_images");
+    page.eval("(() => { const el = document.getElementById('image-current-source'); el.value = 'cam-late'; el.dispatchEvent(new Event('change', {bubbles:true})); })()");
+    page.wait_until("document.getElementById('image-current-source')?.value === 'cam-late'");
+    page.eval("window.__holdCurrent = true");
+    page.click("image-current");
+    page.wait_until(
+        "document.getElementById('image-current')?.disabled && document.getElementById('image-current-status')?.textContent.includes('Capturing current image.') && window.__imagePending() > 0",
+    );
+    assert_eq!(attr(page, "image-current-status", "role"), "status");
+    assert_eq!(attr(page, "image-current-status", "aria-live"), "polite");
+    assert_eq!(attr(page, "image-current-alert", "role"), "alert");
+    assert_eq!(attr(page, "image-current-alert", "aria-live"), "assertive");
+    page.eval("window.__releaseImage('paused-current')");
+    page.wait_until(
+        "document.getElementById('image-current-status')?.textContent === '' && !document.getElementById('image-current')?.disabled && document.getElementById('image-modal')?.dataset.origin === 'current' && document.getElementById('image-modal')?.dataset.image === 'late-only' && document.getElementById('image-preview')?.alt === 'late frame' && document.activeElement?.id === 'image-modal' && document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-a' && document.getElementById('image-history-status')?.dataset.state === 'ready'",
+    );
+    let body = last_send(page, "get_current_image");
+    assert!(body.contains("cam-late"), "{body}");
+    assert!(sends(page, "get_current_image") > captures);
+    assert!(sends(page, "list_images") > lists);
+    assert!(last_send(page, "list_images").contains("cam-a"));
+    assert_eq!(text(page, "image-current-status"), "");
+    assert_eq!(text(page, "image-current-alert"), "");
+    assert_eq!(source_value(page), "cam-a");
+    page.click("image-modal");
+    page.wait_until("!document.getElementById('image-modal')");
+    page.eval("(() => { const el = document.getElementById('image-current-source'); el.value = 'cam-preview'; el.dispatchEvent(new Event('change', {bubbles:true})); })()");
+    page.wait_until("document.getElementById('image-current-source')?.value === 'cam-preview'");
 }
 
 fn assert_invalid(page: &mut Browser) {
@@ -298,6 +338,8 @@ fn assert_named_preview(page: &mut Browser) {
 fn assert_preview_facts(page: &mut Browser) {
     assert_eq!(attr(page, "image-modal", "data-image"), "png-ok");
     assert_eq!(attr(page, "image-preview", "alt"), "visible frame");
+    assert_eq!(text(page, "image-size"), "1 × 1");
+    assert_eq!(page.eval(SIZE_CORNER), Value::Bool(true), "size corner");
     let src = attr(page, "image-preview", "src");
     assert!(src.starts_with("data:image/png;base64,"), "{src}");
     assert_eq!(
@@ -399,6 +441,11 @@ fn assert_failures(page: &mut Browser, images: &MemoryImages, handle: &tokio::ru
     page.click("image-result-0");
     page.wait_until(PNG_READY);
     handle.block_on(images.set_unavailable("history offline"));
+    page.click("image-current");
+    page.wait_until(
+        "document.getElementById('image-current-status')?.textContent.includes('Current image could not be captured.') && document.getElementById('image-current-alert')?.textContent.includes('history offline')",
+    );
+    assert!(text(page, "image-history").contains("png-ok"));
     type_input(page, "image-search", "visible");
     page.wait_until(
         "document.getElementById('image-history-status')?.dataset.state === 'error' && document.getElementById('image-history-alert')?.textContent.includes('history offline') && document.getElementById('image-modal')?.dataset.image === 'png-ok'",
@@ -444,8 +491,8 @@ fn assert_no_sources(page: &mut Browser) {
     assert_eq!(text(page, "image-source-alert"), "");
     assert!(!text(page, "image-history-status").contains("could not be read"));
     assert_eq!(
-        page.eval("document.getElementById('image-current')"),
-        Value::Null
+        page.eval("document.getElementById('image-current')?.disabled && document.getElementById('image-current-source')?.disabled"),
+        Value::Bool(true)
     );
     assert_hidden_shell(page);
 }
@@ -456,6 +503,7 @@ fn assert_bearer(base: &str) {
     page.wait_until("document.getElementById('bearer-token')");
     page.set_value("bearer-token", TOKEN);
     page.show("#images");
+    show_every_image(&mut page);
     page.wait_until(
         "document.getElementById('image-result-0')?.textContent.includes('[redacted]') && document.getElementById('image-history-status')?.dataset.state === 'ready'",
     );
@@ -561,7 +609,7 @@ fn facet_ids(page: &mut Browser) -> Vec<String> {
 fn choose_source(page: &mut Browser, id: &str) {
     let id = serde_json::to_string(id).unwrap_or_default();
     let clicked = page.eval(&format!(
-        "(() => {{ const el = document.querySelector('#image-sources [data-source=' + {id} + ']'); if (!el) return false; el.click(); return true; }})()"
+        "(() => {{ const target = document.querySelector('#image-sources [data-source=' + {id} + ']'); if (!target) return false; const selected = () => [...document.querySelectorAll('#image-sources [aria-pressed=\"true\"]')].filter((el) => el.dataset.source); const all = document.getElementById('image-source-all'); if (all && all.getAttribute('aria-pressed') === 'true') {{ target.click(); return true; }} const id = target.dataset.source; if (!selected().some((el) => el.dataset.source === id)) target.click(); for (const el of selected()) if (el.dataset.source !== id) el.click(); return true; }})()"
     ));
     assert_eq!(clicked, Value::Bool(true), "missing source");
 }
@@ -588,6 +636,14 @@ fn press_group(page: &mut Browser, selector: &str, key: &str) {
         "(() => {{ const current = document.querySelector({selector}); if (!current) return false; current.focus(); current.dispatchEvent(new KeyboardEvent('keydown', {{key: {key}, bubbles: true}})); return true; }})()"
     ));
     assert_eq!(moved, Value::Bool(true), "{selector} {key}");
+}
+
+fn show_every_image(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('image-range-start')?.value && document.getElementById('image-range-end')?.value",
+    );
+    type_input(page, "image-range-start", "");
+    type_input(page, "image-range-end", "");
 }
 
 fn clear_criteria(page: &mut Browser) {
@@ -695,8 +751,9 @@ fn prelude(bad: &str) -> String {
         body = await copy.text();
       }} catch (error) {{}}
     }}
-    const first = fresh && listed === 0 && body.includes('"list_images"');
-    if (body.includes('"list_images"')) listed += 1;
+    const history = body.includes('"list_images"') || body.includes('"search_images"');
+    const first = fresh && listed === 0 && history;
+    if (history) listed += 1;
     const late = body.includes('cam-late') || body.includes('frame-late');
     const paused = window.__holdNext === true && body.includes('"list_images"');
     const current = window.__holdCurrent === true && body.includes('"get_current_image"');
@@ -1018,6 +1075,6 @@ const DESKTOP: &str = r"( () => {
     return rect.width > 2 && rect.height > 2;
   }).map((node) => node.textContent.trim()).filter((title) => ['Agent', 'Logs', 'Metrics', 'Tasks', 'Images', 'Chat'].includes(title));
   const row = Math.abs(filters.top - results.top) < 4 && filters.right <= results.left + 2;
-  const pass = Math.abs(filters.width - 240) < 2 && row && titles.length === 1 && titles[0] === 'Images' && body.backgroundColor === paint('--background') && body.color === paint('--foreground') && getComputedStyle(list).overflowY === 'auto' && getComputedStyle(document.getElementById('image-filters')).overflowY === 'auto' && scrolled && !docMoved && !filtersMoved && document.documentElement.scrollWidth <= window.innerWidth + 1 && !document.getElementById('image-inspector') && document.getElementById('inventory-images').hasAttribute('hidden') && document.getElementById('workbench').hasAttribute('hidden') && !document.getElementById('image-current') && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear');
+  const pass = Math.abs(filters.width - 240) < 2 && row && titles.length === 1 && titles[0] === 'Images' && body.backgroundColor === paint('--background') && body.color === paint('--foreground') && getComputedStyle(list).overflowY === 'auto' && getComputedStyle(document.getElementById('image-filters')).overflowY === 'auto' && scrolled && !docMoved && !filtersMoved && document.documentElement.scrollWidth <= window.innerWidth + 1 && !document.getElementById('image-inspector') && document.getElementById('inventory-images').hasAttribute('hidden') && document.getElementById('workbench').hasAttribute('hidden') && !!document.getElementById('image-current') && !!document.getElementById('image-current-source') && document.getElementById('image-current-actions')?.parentElement?.id === 'image-view' && document.getElementById('image-current-actions')?.nextElementSibling?.id === 'image-browser' && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear');
   return { pass, titles, width: filters.width, row, scrolled, docMoved, filtersMoved, overflow: document.documentElement.scrollWidth };
 })()";

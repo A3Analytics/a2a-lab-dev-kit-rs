@@ -135,6 +135,8 @@ fn flow(filled: &str, empty: &str, images: &MemoryImages, handle: &tokio::runtim
     page.wait_until(CONNECTED);
     page.viewport(1280, 800);
     page.show("#images");
+    assert_default_last_day(&mut page);
+    show_every_image(&mut page);
     page.wait_until(CAM_A_PAGE);
     assert_reader(&mut page);
     assert_first_frame(&mut page);
@@ -254,6 +256,11 @@ fn assert_selection_survives_reload(page: &mut Browser) {
 }
 
 fn assert_source_change(page: &mut Browser) {
+    click_source(page, "cam-b");
+    page.wait_until(CAM_A_AND_B);
+    assert!(text(page, "image-history").contains("frame-000"));
+    assert!(text(page, "image-history").contains("other bench"));
+    click_source(page, "cam-a");
     choose_source(page, "cam-b");
     page.wait_until(CAM_B);
     assert!(!text(page, "image-history").contains("frame-000"));
@@ -268,8 +275,8 @@ fn assert_source_change(page: &mut Browser) {
         "document.getElementById('image-source-all')?.getAttribute('aria-pressed') === 'true' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.getElementById('image-history')?.innerText.includes('frame-000') && document.getElementById('image-history')?.innerText.includes('other bench')",
     );
     assert_eq!(
-        page.eval("document.getElementById('image-current')"),
-        Value::Null
+        page.eval("document.getElementById('image-current-source')?.value"),
+        Value::String("cam-a".to_owned())
     );
 }
 
@@ -395,6 +402,26 @@ fn assert_workbench_routes(page: &mut Browser) {
     );
 }
 
+fn assert_default_last_day(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('image-range-start')?.value && document.getElementById('image-range-end')?.value",
+    );
+    let range = page.eval(
+        "(() => { const start = new Date(document.getElementById('image-range-start').value + 'Z'); const end = new Date(document.getElementById('image-range-end').value + 'Z'); return { span: end - start, age: Date.now() - end }; })()",
+    );
+    assert_eq!(range["span"], serde_json::json!(86_400_000), "{range}");
+    let age = range["age"].as_f64().unwrap_or(f64::MAX);
+    assert!(age >= 0.0 && age < 120_000.0, "{range}");
+}
+
+fn show_every_image(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('image-range-start')?.value && document.getElementById('image-range-end')?.value",
+    );
+    type_input(page, "image-range-start", "");
+    type_input(page, "image-range-end", "");
+}
+
 fn clear_criteria(page: &mut Browser) {
     type_input(page, "image-search", "");
     type_input(page, "image-range-start", "");
@@ -409,10 +436,18 @@ fn type_input(page: &mut Browser, id: &str, value: &str) {
     ));
 }
 
-fn choose_source(page: &mut Browser, id: &str) {
+fn click_source(page: &mut Browser, id: &str) {
     let id = serde_json::to_string(id).unwrap_or_default();
     let clicked = page.eval(&format!(
         "(() => {{ const el = document.querySelector('#image-sources [data-source=' + {id} + ']'); if (!el) return false; el.click(); return true; }})()"
+    ));
+    assert_eq!(clicked, Value::Bool(true), "missing source");
+}
+
+fn choose_source(page: &mut Browser, id: &str) {
+    let id = serde_json::to_string(id).unwrap_or_default();
+    let clicked = page.eval(&format!(
+        "(() => {{ const target = document.querySelector('#image-sources [data-source=' + {id} + ']'); if (!target) return false; const selected = () => [...document.querySelectorAll('#image-sources [aria-pressed=\"true\"]')].filter((el) => el.dataset.source); const all = document.getElementById('image-source-all'); if (all && all.getAttribute('aria-pressed') === 'true') {{ target.click(); return true; }} const id = target.dataset.source; if (!selected().some((el) => el.dataset.source === id)) target.click(); for (const el of selected()) if (el.dataset.source !== id) el.click(); return true; }})()"
     ));
     assert_eq!(clicked, Value::Bool(true), "missing source");
 }
@@ -584,6 +619,7 @@ fn inspect_flow(base: &str, images: &MemoryImages, handle: &tokio::runtime::Hand
     page.wait_until(CONNECTED);
     page.viewport(1280, 800);
     page.show("#images");
+    show_every_image(&mut page);
     page.wait_until(INSPECTOR_READY);
     page.click("image-result-0");
     page.wait_until(PNG_READY);
@@ -623,12 +659,16 @@ fn assert_desktop_layout(page: &mut Browser) {
         "preview bounds"
     );
     assert_eq!(
-        page.eval("document.getElementById('image-current')"),
-        Value::Null
+        page.eval("!!document.getElementById('image-current')"),
+        Value::Bool(true)
     );
     assert_eq!(
-        page.eval("document.querySelector('#image-filters .log-actions')"),
-        Value::Null
+        page.eval("!!document.querySelector('#image-filters .log-actions')"),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        page.eval("document.getElementById('image-current-actions')?.parentElement?.id"),
+        Value::String("image-view".to_owned())
     );
     assert_eq!(attr(page, "image-history", "role"), "radiogroup");
     assert_eq!(attr(page, "image-history", "aria-label"), "Image history");
@@ -648,6 +688,8 @@ fn assert_png_metadata(page: &mut Browser) {
     assert_eq!(attr(page, "image-modal", "data-image"), "png-a");
     assert_eq!(attr(page, "image-modal", "data-origin"), "history");
     assert_eq!(attr(page, "image-preview", "alt"), "plate well");
+    assert_eq!(text(page, "image-size"), "8 × 4");
+    assert_eq!(page.eval(SIZE_CORNER), Value::Bool(true));
     assert!(attr(page, "image-preview", "src").starts_with("data:image/png;base64,"));
     assert!(!attr(page, "image-preview", "src").contains("svg"));
     assert_eq!(
@@ -760,7 +802,13 @@ fn press_result(page: &mut Browser, key: &str) {
 }
 
 const INSPECTOR_READY: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-a' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.querySelectorAll('#image-history [data-id]').length === 4 && document.getElementById('image-result-0')?.dataset.image === 'png-a'";
-const PNG_READY: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'png-a' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1 && !document.getElementById('image-facts') && !document.getElementById('image-origin') && !document.getElementById('image-modal-title')";
+const PNG_READY: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'png-a' && document.getElementById('image-preview')?.complete && document.getElementById('image-preview')?.naturalWidth === 1 && document.getElementById('image-preview')?.clientWidth === 200 && document.getElementById('image-preview')?.clientHeight === 200 && document.getElementById('image-size')?.textContent === '8 × 4' && !document.getElementById('image-facts') && !document.getElementById('image-origin') && !document.getElementById('image-modal-title')";
+const SIZE_CORNER: &str = r"( () => {
+  const img = document.getElementById('image-preview')?.getBoundingClientRect();
+  const size = document.getElementById('image-size')?.getBoundingClientRect();
+  if (!img || !size) return false;
+  return Math.abs(size.left - img.left) < 1 && Math.abs(size.bottom - img.bottom) < 1;
+})()";
 const SVG_WITHHELD: &str = "document.getElementById('image-modal')?.dataset.state === 'selected-ready' && document.getElementById('image-modal')?.dataset.image === 'svg-b' && !document.getElementById('image-preview') && !document.querySelector('#image-modal svg')";
 const OVERSIZED_WITHHELD: &str = "document.getElementById('image-modal')?.dataset.image === 'big-c' && !document.getElementById('image-preview')";
 const ONE_RESULT_TAB: &str = "(() => { const stops = [...document.querySelectorAll('#image-history [role=\"radio\"]')].filter(el => el.tabIndex === 0); return stops.length === 1; })()";
@@ -803,7 +851,8 @@ const NARROW_STACK: &str = r"( () => {
 })()";
 
 const CAM_A_PAGE: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-a' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.querySelectorAll('#image-history [data-id]').length === 100 && document.getElementById('image-result-0')?.dataset.image === 'frame-000'";
-const CAM_B: &str = "document.querySelector('#image-sources [aria-pressed=true]')?.dataset.source === 'cam-b' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.querySelectorAll('#image-history [data-id]').length === 1";
+const CAM_A_AND_B: &str = "document.querySelector('#image-sources [data-source=\"cam-a\"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('#image-sources [data-source=\"cam-b\"]')?.getAttribute('aria-pressed') === 'true' && document.getElementById('image-source-all')?.getAttribute('aria-pressed') === 'false' && document.getElementById('image-history-status')?.dataset.state === 'ready'";
+const CAM_B: &str = "document.querySelector('#image-sources [data-source=\"cam-b\"]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('#image-sources [data-source=\"cam-a\"]')?.getAttribute('aria-pressed') === 'false' && document.getElementById('image-history-status')?.dataset.state === 'ready' && document.querySelectorAll('#image-history [data-id]').length === 1";
 const FULL_PAGE: &str = "document.querySelectorAll('#image-history [data-id]').length === 101 && document.querySelector('#image-history [data-id]:last-child')?.dataset.id === 'frame-100'";
 const UNIQUE_IDS: &str = "(() => { const ids = [...document.querySelectorAll('#image-history [data-id]')].map(el => el.dataset.id); return new Set(ids).size === ids.length && ids[0] === 'frame-000' && ids.at(-1) === 'frame-100'; })()";
-const ONE_TAB: &str = "(() => { const group = document.getElementById('image-sources'); const facets = [...(group?.querySelectorAll('.log-facet') || [])]; const pressed = facets.filter((el) => el.getAttribute('aria-pressed') === 'true'); return document.querySelector('#image-filters > .log-filter-group') === group && !document.querySelector('#image-filters select') && facets.length > 0 && pressed.length === 1 && facets.every((el) => el.tagName === 'BUTTON'); })()";
+const ONE_TAB: &str = "(() => { const group = document.getElementById('image-sources'); const facets = [...(group?.querySelectorAll('.log-facet') || [])]; const pressed = facets.filter((el) => el.getAttribute('aria-pressed') === 'true'); const all = document.getElementById('image-source-all'); const allPressed = all?.getAttribute('aria-pressed') === 'true'; const sources = pressed.filter((el) => el !== all); const exclusive = (allPressed && sources.length === 0) || (!allPressed && sources.length >= 1); return document.querySelector('#image-filters > .log-filter-group') === group && !document.querySelector('#image-filters select') && facets.length > 0 && exclusive && facets.every((el) => el.tagName === 'BUTTON'); })()";

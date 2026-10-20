@@ -103,6 +103,8 @@ fn flow(populated: &str, empty: &str, logs: &MemoryLogs, handle: &tokio::runtime
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     page.viewport(1280, 800);
     page.show("#logs");
+    assert_default_last_day(&mut page);
+    show_every_log(&mut page);
     page.wait_until(READY);
     assert_rail(&mut page);
     assert_cards(&mut page);
@@ -124,6 +126,7 @@ fn flow(populated: &str, empty: &str, logs: &MemoryLogs, handle: &tokio::runtime
     assert_eq!(pressed(&mut page, "log-source-all"), "true");
     page.goto(&format!("{empty}/ui/#logs"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
+    show_every_log(&mut page);
     page.wait_until(EMPTY);
     assert_eq!(
         text(&mut page, "log-view-status"),
@@ -140,6 +143,22 @@ fn flow(populated: &str, empty: &str, logs: &MemoryLogs, handle: &tokio::runtime
 const READY: &str = "document.querySelectorAll('#log-view-entries .log-card').length === 3 && document.getElementById('log-result-state')?.dataset.state === 'ready'";
 const ERROR: &str = "document.getElementById('log-result-state')?.dataset.state === 'error'";
 const EMPTY: &str = "document.getElementById('log-result-state')?.dataset.state === 'empty' && document.getElementById('log-result-state')?.dataset.gen !== '0'";
+
+fn assert_default_last_day(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('log-range-start')?.value && document.getElementById('log-range-end')?.value",
+    );
+    let range = page.eval(
+        "(() => { const start = document.getElementById('log-range-start').value; const end = document.getElementById('log-range-end').value; return { span: new Date(end + 'T00:00:00Z') - new Date(start + 'T00:00:00Z'), end, today: new Date().toISOString().slice(0, 10) }; })()",
+    );
+    assert_eq!(range["span"], serde_json::json!(86_400_000), "{range}");
+    assert_eq!(range["end"], range["today"], "{range}");
+}
+
+fn show_every_log(page: &mut Browser) {
+    page.wait_until("document.querySelector('#log-filter-chips [data-clear=\"range\"]')");
+    page.eval("document.querySelector('#log-filter-chips [data-clear=\"range\"]').click()");
+}
 
 fn assert_rail(page: &mut Browser) {
     let rail = page.eval(RAIL);

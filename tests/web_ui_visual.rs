@@ -158,6 +158,19 @@ fn visit(page: &mut Browser, spec: &Spec) -> Vec<String> {
 fn wait_ready(page: &mut Browser, spec: &Spec) {
     let start = std::time::Instant::now();
     while start.elapsed() < std::time::Duration::from_secs(8) {
+        if spec.route.hash == "#metrics" {
+            page.eval(
+                "document.querySelector('#metric-filter-chips [data-clear=\"range\"]')?.click()",
+            );
+        }
+        if spec.route.hash == "#logs" || spec.route.hash == "#workbench" {
+            page.eval(
+                "document.querySelector('#log-filter-chips [data-clear=\"range\"]')?.click()",
+            );
+        }
+        if spec.route.hash == "#images" {
+            page.eval("['image-range-start','image-range-end'].forEach((id) => { const el = document.getElementById(id); if (!el || !el.value) return; el.value = ''; el.dispatchEvent(new Event('input', {bubbles:true})); })");
+        }
         if page.eval(&format!("!!({})", spec.route.ready)) == Value::Bool(true) {
             return;
         }
@@ -471,7 +484,7 @@ fn image_differences(problems: &mut Vec<String>, report: &Value) {
         problems.push("Images is missing its history and preview parts".to_owned());
     }
     if !flag(report, "imageCapture") {
-        problems.push("Images still shows Capture Current Image".to_owned());
+        problems.push("Images is missing current-image capture".to_owned());
     }
 }
 
@@ -869,7 +882,7 @@ const PROBE: &str = r#"(() => {
     catalogTasks: document.getElementById('inventory-tasks')?.hasAttribute('hidden') === true,
     catalogImages: document.getElementById('inventory-images')?.hasAttribute('hidden') === true,
     imageParts: ['image-filters', 'image-results'].every((id) => !!document.getElementById(id)) && !document.getElementById('image-inspector'),
-    imageCapture: !document.getElementById('image-current') && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear') && document.querySelector('#image-filters > .log-filter-group') === document.getElementById('image-sources') && (document.getElementById('image-sources')?.querySelectorAll('.log-facet').length || 0) > 0,
+    imageCapture: !!document.getElementById('image-current') && !!document.getElementById('image-current-source') && document.getElementById('image-current-actions')?.parentElement?.id === 'image-view' && document.getElementById('image-current-actions')?.nextElementSibling?.id === 'image-browser' && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear') && document.querySelector('#image-filters > .log-filter-group') === document.getElementById('image-sources') && (document.getElementById('image-sources')?.querySelectorAll('.log-facet').length || 0) > 0,
     current: document.getElementById('nav-logs')?.getAttribute('aria-current') || '',
     runnerHidden: document.getElementById('workbench')?.hasAttribute('hidden') === true,
     command: document.getElementById('workbench-heading')?.textContent || ''

@@ -7,6 +7,7 @@ use wasm_bindgen::JsCast;
 
 use crate::inventory::{Fault, Item, Primitive};
 use crate::logs::{self, QueryRange, Record};
+use crate::shell::loading::ListPlaceholders;
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 
 const MESSAGE_FOLD: usize = 72;
@@ -36,7 +37,7 @@ impl LogUi {
             records: Vec::new(),
             query: String::new(),
             levels: Vec::new(),
-            range: QueryRange::Window,
+            range: current_last_day(),
             alert: String::new(),
             tick: 0,
             sending: false,
@@ -142,6 +143,31 @@ pub fn sources_changed() {
     }
 }
 
+fn current_last_day() -> QueryRange {
+    let now = js_sys::Date::new_0()
+        .to_iso_string()
+        .as_string()
+        .unwrap_or_default();
+    logs::last_day(&now).unwrap_or(QueryRange::Window)
+}
+
+fn fill_default_range(ui: Signal<LogUi>, mut filled: Signal<bool>) {
+    if filled() {
+        return;
+    }
+    let QueryRange::Bounded { start, end } = ui.read().range.clone() else {
+        return;
+    };
+    let Some((start_day, end_day)) = logs::input_days(&start, &end) else {
+        return;
+    };
+    session::write_control("log-range-start", &start_day);
+    session::write_control("log-range-end", &end_day);
+    if session::control_value("log-range-end") == end_day {
+        filled.set(true);
+    }
+}
+
 fn bound() -> Option<Signal<LogUi>> {
     UI.with(|slot| *slot.borrow())
 }
@@ -153,9 +179,11 @@ fn loader() -> Option<Loader> {
 #[component]
 pub fn LogView(ui: Signal<LogUi>) -> Element {
     let job = use_signal(|| LogJob::Idle);
+    let mut filled_range = use_signal(|| false);
     use_hook(|| {
         LOADER.with(|slot| *slot.borrow_mut() = Some(Loader { ui, job }));
     });
+    use_effect(move || fill_default_range(ui, filled_range));
     let reply = use_resource(move || {
         let job = job();
         let secret = session::native_secret();
@@ -339,10 +367,14 @@ fn ResultState(state: LogUi, mode: Mode) -> Element {
             "data-state": mode.slug(),
             "data-gen": state.tick.to_string(),
             hidden: mode == Mode::Ready,
+            if mode == Mode::Loading {
+                ListPlaceholders { count: 3 }
+            }
             p {
                 id: "log-view-status",
                 role: "status",
                 aria_live: "polite",
+                class: if mode == Mode::Loading { "visually-hidden" } else { "" },
                 "data-state": mode.slug(),
                 "{mode.text()}"
             }
