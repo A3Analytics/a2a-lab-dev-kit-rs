@@ -369,6 +369,17 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert_eq!(unknown.status(), reqwest::StatusCode::NOT_FOUND);
     assert_eq!(header(&unknown, "x-content-type-options"), "nosniff");
     assert_eq!(header(&unknown, "cache-control"), "no-store");
+    assert_section_shells(&base).await;
+}
+
+async fn assert_section_shells(base: &str) {
+    for section in ["/ui/logs", "/ui/metrics"] {
+        let page = get(&format!("{base}{section}"), None).await;
+        assert_eq!(page.status(), reqwest::StatusCode::OK, "{section}");
+        assert_eq!(header(&page, "content-type"), "text/html; charset=utf-8");
+        assert_eq!(header(&page, "cache-control"), "no-cache");
+        assert!(page.text().await.unwrap().contains("id=\"app\""));
+    }
 }
 
 #[tokio::test]
@@ -382,6 +393,11 @@ async fn web_ui_assets_stay_public_and_protocol_routes_stay_gated() {
     assert!(!html.contains("Authorization"));
     let anonymous = get(&format!("{base}{WEB_UI_PATH}"), None).await;
     assert_eq!(anonymous.status(), reqwest::StatusCode::OK);
+    let logs = get(&format!("{base}/ui/logs"), None).await;
+    assert_eq!(logs.status(), reqwest::StatusCode::OK);
+    assert_eq!(header(&logs, "content-type"), "text/html; charset=utf-8");
+    let metrics = get(&format!("{base}/ui/metrics"), None).await;
+    assert_eq!(metrics.status(), reqwest::StatusCode::OK);
     let card = get(&format!("{base}/.well-known/agent-card.json"), None).await;
     assert_eq!(card.status(), reqwest::StatusCode::OK);
     assert!(!card.text().await.unwrap().is_empty());

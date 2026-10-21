@@ -486,8 +486,7 @@ fn navigation_flow(base: &str) {
         page.eval("document.getElementById('inventory-logs-limit')?.value"),
         json!("7")
     );
-    page.eval("location.hash = '#nope'");
-    page.wait_until("!document.getElementById('view-logs')?.hasAttribute('hidden')");
+    page.show("#nope");
     page.show("#chat");
     page.reload();
     page.wait_until(
@@ -892,6 +891,7 @@ async fn serve_mock(
         .route("/ui/", axum::routing::get(index_route))
         .route("/ui/index.html", axum::routing::get(index_route))
         .route("/ui/assets/{*path}", axum::routing::get(asset_route))
+        .route("/ui/{*path}", axum::routing::get(index_route))
         .route("/message:send", axum::routing::post(send_route))
         .route("/tasks", axum::routing::get(tasks_route))
         .with_state(state);

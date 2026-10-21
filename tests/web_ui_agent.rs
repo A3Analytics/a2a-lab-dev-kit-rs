@@ -281,6 +281,7 @@ async fn serve(body: String) -> String {
         .route("/ui/", axum::routing::get(index_route))
         .route("/ui/index.html", axum::routing::get(index_route))
         .route("/ui/assets/{*path}", axum::routing::get(asset_route))
+        .route("/ui/{*path}", axum::routing::get(index_route))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

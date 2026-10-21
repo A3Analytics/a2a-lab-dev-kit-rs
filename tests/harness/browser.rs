@@ -237,25 +237,28 @@ impl Browser {
             .join("\n")
     }
 
-    pub fn show(&mut self, hash: &str) {
-        let target = if hash.starts_with('#') {
-            hash.to_owned()
+    pub fn show(&mut self, route: &str) {
+        let key = route.trim().trim_start_matches('#').trim_matches('/');
+        let key = key.strip_prefix("ui/").unwrap_or(key);
+        let key = if key == "ui" { "" } else { key };
+        let path = if key.is_empty() {
+            "/ui/".to_owned()
         } else {
-            format!("#{hash}")
+            format!("/ui/{key}")
         };
-        let literal = serde_json::to_string(&target).unwrap_or_default();
-        self.eval(&format!("location.hash = {literal}"));
-        let hash = target.trim_start_matches('#').trim_matches('/');
-        let view = match hash {
+        let literal = serde_json::to_string(&path).unwrap_or_default();
+        self.eval(&format!(
+            "history.pushState(null, '', {literal}); window.dispatchEvent(new PopStateEvent('popstate'))"
+        ));
+        let view = match key {
             "chat" => "view-chat",
-            "logs" | "inventory" | "inventory/logs" | "workbench" => "view-logs",
             "metrics" | "inventory/metrics" => "view-metrics",
             "tasks" | "inventory/tasks" => "view-tasks",
             "images" | "inventory/images" => "view-images",
             _ => "view-logs",
         };
         self.wait_until(&format!(
-            "location.hash === {literal} && document.getElementById('{view}')?.parentElement?.id === 'main' && !document.getElementById('{view}')?.hasAttribute('hidden') && document.querySelectorAll('#main > .view:not([hidden])').length === 1"
+            "location.pathname === {literal} && document.getElementById('{view}')?.parentElement?.id === 'main' && !document.getElementById('{view}')?.hasAttribute('hidden') && document.querySelectorAll('#main > .view:not([hidden])').length === 1"
         ));
     }
 

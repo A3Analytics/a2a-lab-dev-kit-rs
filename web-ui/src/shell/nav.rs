@@ -1,4 +1,4 @@
-//! Hash routes for the shell. Dioxus owns layout; hash and viewport stay as browser integrations.
+//! Path routes for the shell. Dioxus owns layout; the History API and viewport stay as browser integrations.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -6,12 +6,13 @@ use std::rc::Rc;
 use dioxus::core::{Runtime, RuntimeGuard, ScopeId, current_scope_id};
 use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::closure::Closure;
 use web_sys::{Event, HtmlElement, KeyboardEvent};
 
 use crate::inventory::Primitive;
 
-type HashListener = Closure<dyn FnMut(Event)>;
+type DomListener = Closure<dyn FnMut(Event)>;
 type EscapeListener = Closure<dyn FnMut(KeyboardEvent)>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -66,40 +67,69 @@ pub struct Route {
 thread_local! {
     static RUNTIME: RefCell<Option<Rc<Runtime>>> = const { RefCell::new(None) };
     static SCOPE: RefCell<Option<ScopeId>> = const { RefCell::new(None) };
-    static HASH: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    static ROUTE: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
     static MENU: RefCell<Option<Signal<bool>>> = const { RefCell::new(None) };
     static MOBILE: RefCell<Option<Signal<bool>>> = const { RefCell::new(None) };
-    static HASH_LISTENER: RefCell<Option<HashListener>> = const { RefCell::new(None) };
+    static POPSTATE_LISTENER: RefCell<Option<DomListener>> = const { RefCell::new(None) };
     static ESCAPE_LISTENER: RefCell<Option<EscapeListener>> = const { RefCell::new(None) };
-    static LAYOUT_LISTENER: RefCell<Option<HashListener>> = const { RefCell::new(None) };
-    static SCHEME_LISTENER: RefCell<Option<HashListener>> = const { RefCell::new(None) };
+    static LAYOUT_LISTENER: RefCell<Option<DomListener>> = const { RefCell::new(None) };
+    static SCHEME_LISTENER: RefCell<Option<DomListener>> = const { RefCell::new(None) };
     static THEME: Cell<Theme> = const { Cell::new(Theme::System) };
 }
 
-pub fn bind(hash: Signal<String>, menu: Signal<bool>, mobile: Signal<bool>) {
+pub fn bind(route: Signal<String>, menu: Signal<bool>, mobile: Signal<bool>) {
     RUNTIME.with(|slot| *slot.borrow_mut() = Some(Runtime::current()));
     SCOPE.with(|slot| *slot.borrow_mut() = Some(current_scope_id()));
-    HASH.with(|slot| *slot.borrow_mut() = Some(hash));
+    ROUTE.with(|slot| *slot.borrow_mut() = Some(route));
     MENU.with(|slot| *slot.borrow_mut() = Some(menu));
     MOBILE.with(|slot| *slot.borrow_mut() = Some(mobile));
 }
 
 pub fn install() {
-    listen_hash();
+    replace_legacy_hash();
+    listen_navigation();
     listen_escape();
     listen_layout();
+    publish(current_route());
     apply_islands(false);
     sync_layout();
 }
 
-pub fn current_hash() -> String {
+pub fn replace_legacy_hash() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(hash) = window.location().hash() else {
+        return;
+    };
+    let key = normalize(&hash);
+    if key.is_empty() || key == "main" {
+        return;
+    }
+    let url = location_for(key);
+    if let Ok(history) = window.history() {
+        let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&url));
+    }
+}
+
+pub fn open(href: &str) {
+    let key = normalize(href).to_owned();
+    let url = location_for(&key);
+    if let Some(history) = web_sys::window().and_then(|window| window.history().ok()) {
+        let _ = history.push_state_with_url(&JsValue::NULL, "", Some(&url));
+    }
+    publish(key);
+}
+
+pub fn current_route() -> String {
     web_sys::window()
-        .and_then(|window| window.location().hash().ok())
+        .and_then(|window| window.location().pathname().ok())
+        .map(|path| normalize(&path).to_owned())
         .unwrap_or_default()
 }
 
-pub fn route_for(hash: &str) -> Route {
-    match hash.trim().trim_start_matches('#').trim_matches('/') {
+pub fn route_for(path: &str) -> Route {
+    match normalize(path) {
         "logs" | "inventory" | "inventory/logs" | "workbench" => {
             primitive(Primitive::Logs, "view-logs", "nav-logs", "Logs")
         }
@@ -206,7 +236,7 @@ pub fn focus_heading(id: &str) {
 }
 
 pub fn apply_islands(focus: bool) {
-    let route = route_for(&current_hash());
+    let route = route_for(&current_route());
     if let Some(primitive) = route.primitive {
         super::workbench::scope(primitive);
         super::inventory::reveal(primitive);
@@ -219,29 +249,46 @@ pub fn apply_islands(focus: bool) {
     }
 }
 
-fn listen_hash() {
+fn listen_navigation() {
     let Some(window) = web_sys::window() else {
         return;
     };
     let closure = Closure::wrap(Box::new(move |_event: Event| {
-        let next = current_hash();
-        run(move || {
-            HASH.with(|slot| {
-                if let Some(mut hash) = *slot.borrow() {
-                    hash.set(next.clone());
-                }
-            });
-            MENU.with(|slot| {
-                if let Some(mut menu) = *slot.borrow()
-                    && is_mobile()
-                {
-                    menu.set(false);
-                }
-            });
-        });
+        publish(current_route());
     }) as Box<dyn FnMut(Event)>);
-    let _ = window.add_event_listener_with_callback("hashchange", closure.as_ref().unchecked_ref());
-    HASH_LISTENER.with(|slot| *slot.borrow_mut() = Some(closure));
+    let _ = window.add_event_listener_with_callback("popstate", closure.as_ref().unchecked_ref());
+    POPSTATE_LISTENER.with(|slot| *slot.borrow_mut() = Some(closure));
+}
+
+fn publish(next: String) {
+    run(move || {
+        ROUTE.with(|slot| {
+            if let Some(mut route) = *slot.borrow() {
+                route.set(next);
+            }
+        });
+        MENU.with(|slot| {
+            if let Some(mut menu) = *slot.borrow()
+                && is_mobile()
+            {
+                menu.set(false);
+            }
+        });
+    });
+}
+
+fn normalize(value: &str) -> &str {
+    let trimmed = value.trim().trim_start_matches('#').trim_matches('/');
+    let trimmed = trimmed.strip_prefix("ui/").unwrap_or(trimmed);
+    if trimmed == "ui" { "" } else { trimmed }
+}
+
+fn location_for(key: &str) -> String {
+    if key.is_empty() {
+        "/ui/".to_owned()
+    } else {
+        format!("/ui/{key}")
+    }
 }
 
 fn listen_escape() {

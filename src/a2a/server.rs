@@ -147,9 +147,10 @@ impl A2aServer {
 
     /// Serves the packaged web interface at `/ui/` on this HTTP listener.
     ///
-    /// The shell, JavaScript, WebAssembly, and stylesheet are public and carry
-    /// no agent data or credentials. A2A protocol routes keep the configured
-    /// access gate. Without this opt-in, `/ui/` is not served.
+    /// Section paths such as `/ui/logs` return that same shell. The shell,
+    /// JavaScript, WebAssembly, and stylesheet are public and carry no agent
+    /// data or credentials. A2A protocol routes keep the configured access gate.
+    /// Without this opt-in, `/ui/` is not served.
     #[cfg(feature = "web-ui")]
     #[must_use]
     pub fn with_web_ui(mut self) -> Self {

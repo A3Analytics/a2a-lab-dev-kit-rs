@@ -215,7 +215,7 @@ fn assert_loading_state(page: &mut Browser) {
 }
 
 fn assert_catalog_stays_off(page: &mut Browser) {
-    assert_eq!(page.eval("location.hash"), json!("#metrics"));
+    assert_eq!(page.eval("location.pathname"), json!("/ui/metrics"));
     assert_eq!(
         page.eval("document.getElementById('inventory-metrics')?.hasAttribute('hidden')"),
         Value::Bool(true)

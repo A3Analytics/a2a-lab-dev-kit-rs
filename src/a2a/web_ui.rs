@@ -30,6 +30,7 @@ pub(crate) fn router() -> Router {
         .route("/ui/", get(entry))
         .route("/ui/index.html", get(entry))
         .route("/ui/assets/{*path}", get(asset))
+        .route("/ui/{*path}", get(entry))
 }
 
 #[must_use]
@@ -37,10 +38,10 @@ pub(crate) fn is_public_route(method: &Method, path: &str) -> bool {
     if *method != Method::GET {
         return false;
     }
-    match path {
-        "/ui" | "/ui/" | "/ui/index.html" => true,
-        _ => asset_name(path).is_some_and(|name| packed_asset(name).is_some()),
+    if let Some(name) = asset_name(path) {
+        return packed_asset(name).is_some();
     }
+    path == "/ui" || path == "/ui/" || path == "/ui/index.html" || is_shell_path(path)
 }
 
 async fn entry() -> Response {
@@ -52,6 +53,17 @@ async fn asset(Path(path): Path<String>) -> Response {
         Some(asset) => shell(asset.body, asset.content_type, ASSET_CACHE),
         None => not_found(),
     }
+}
+
+fn is_shell_path(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/ui/") else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest != "assets"
+        && !rest.starts_with("assets/")
+        && !rest.contains("..")
+        && !rest.contains('\\')
 }
 
 fn asset_name(path: &str) -> Option<&str> {

@@ -23,6 +23,7 @@ use crate::shell::workbench::{self, WorkbenchUi, WorkbenchView};
 
 pub fn start() {
     drop_bootstrap();
+    nav::replace_legacy_hash();
     nav::apply_stored_theme();
     launch_cfg(LabApp, Config::new().rootname("app"));
 }
@@ -36,7 +37,7 @@ fn LabApp() -> Element {
 
 #[component]
 fn Shell() -> Element {
-    let hash = use_signal(nav::current_hash);
+    let path = use_signal(nav::current_route);
     let mut menu = use_signal(|| false);
     let mobile = use_signal(nav::is_mobile);
     let mut rail_open = use_signal(nav::read_sidebar_open);
@@ -54,7 +55,7 @@ fn Shell() -> Element {
     let ready = use_signal(|| false);
     let fetch_gen = use_signal(|| 0u32);
     use_hook(|| {
-        nav::bind(hash, menu, mobile);
+        nav::bind(path, menu, mobile);
         nav::apply_theme(theme());
         session::bind(session);
         inventory::bind(logs, metrics, tasks, images);
@@ -81,7 +82,7 @@ fn Shell() -> Element {
         applied.set(Some(tick));
         apply_card(session, chat, Some((tick, load)));
     }
-    let current = hash();
+    let current = path();
     let route = nav::route_for(&current);
     let panes = pane_hidden(
         session().connection == session::Connection::Loading,
@@ -89,22 +90,22 @@ fn Shell() -> Element {
         &current,
     );
     let skip_focus = use_hook(|| Rc::new(Cell::new(true)));
-    let mut last_hash = use_signal(String::new);
+    let mut last_path = use_signal(String::new);
     use_effect(move || {
         nav::set_rail_inert(!mobile() && !rail_open());
     });
     use_effect(move || {
-        let current = hash();
+        let current = path();
         let route = nav::route_for(&current);
         nav::set_document_title(route.title);
         nav::set_layout_attr(mobile());
         if skip_focus.get() {
             skip_focus.set(false);
-            last_hash.set(current);
+            last_path.set(current);
             return;
         }
-        let focus = last_hash.peek().as_str() != current;
-        last_hash.set(current);
+        let focus = last_path.peek().as_str() != current;
+        last_path.set(current);
         nav::apply_islands(focus);
     });
     let notice = session::refusal_text(&session());
@@ -142,11 +143,11 @@ fn Shell() -> Element {
                         }
                         p { id: "brand-name", class: "font-oxanium", "A2A Lab" }
                     }
-                    NavLink { id: "nav-chat", href: "#chat", route, label: "Chat", glyph: "C" }
-                    NavLink { id: "nav-logs", href: "#logs", route, label: "Logs", glyph: "L" }
-                    NavLink { id: "nav-metrics", href: "#metrics", route, label: "Metrics", glyph: "M" }
-                    NavLink { id: "nav-tasks", href: "#tasks", route, label: "Tasks", glyph: "T" }
-                    NavLink { id: "nav-images", href: "#images", route, label: "Images", glyph: "I" }
+                    NavLink { id: "nav-chat", href: "/ui/chat", route, label: "Chat", glyph: "C" }
+                    NavLink { id: "nav-logs", href: "/ui/logs", route, label: "Logs", glyph: "L" }
+                    NavLink { id: "nav-metrics", href: "/ui/metrics", route, label: "Metrics", glyph: "M" }
+                    NavLink { id: "nav-tasks", href: "/ui/tasks", route, label: "Tasks", glyph: "T" }
+                    NavLink { id: "nav-images", href: "/ui/images", route, label: "Images", glyph: "I" }
                 }
             }
             div { class: "shell-main",
@@ -312,11 +313,23 @@ fn apply_card(mut session: Signal<SessionUi>, chat: Signal<ChatUi>, load: Option
 
 #[component]
 fn NavLink(id: String, href: String, route: Route, label: String, glyph: String) -> Element {
+    let target = href.clone();
     rsx! {
         a {
             id: "{id}",
             href: "{href}",
             aria_current: nav::current_link(route, &id),
+            onclick: move |event| {
+                if event.modifiers().ctrl()
+                    || event.modifiers().meta()
+                    || event.modifiers().shift()
+                    || event.modifiers().alt()
+                {
+                    return;
+                }
+                event.prevent_default();
+                nav::open(&target);
+            },
             span { class: "nav-glyph", aria_hidden: "true", "{glyph}" }
             span { "{label}" }
         }
@@ -337,7 +350,7 @@ struct PaneHidden {
     loading: bool,
 }
 
-fn pane_hidden(loading: bool, route: Route, hash: &str) -> PaneHidden {
+fn pane_hidden(loading: bool, route: Route, path: &str) -> PaneHidden {
     PaneHidden {
         loading,
         logs: loading || route.view != "view-logs",
@@ -345,13 +358,8 @@ fn pane_hidden(loading: bool, route: Route, hash: &str) -> PaneHidden {
         tasks: loading || route.view != "view-tasks",
         images: loading || route.view != "view-images",
         chat: loading || route.view != "view-chat",
-        workbench: loading || workbench_hidden(hash),
+        workbench: loading || path != "workbench",
     }
-}
-
-fn workbench_hidden(hash: &str) -> bool {
-    let key = hash.trim().trim_start_matches('#').trim_matches('/');
-    key != "workbench"
 }
 
 fn drop_bootstrap() {

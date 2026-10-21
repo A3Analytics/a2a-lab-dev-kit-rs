@@ -108,7 +108,7 @@ The page is a same-origin A2A HTTP+JSON client. It calls the listener that serve
 
 It loads `GET /.well-known/agent-card.json`, then uses the HTTP+JSON routes on [A2A](<../../reference/a2a/doc-4 - A2A.md>).
 
-The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Chat, Logs, Metrics, Tasks, and Images. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Logs is the default. Older hashes still open the matching page: `#overview`, `#agent`, `#inventory`, `#inventory/logs`, and `#workbench` open Logs, `#inventory/metrics` opens Metrics, `#inventory/tasks` opens Tasks, and `#inventory/images` opens Images.
+The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Chat, Logs, Metrics, Tasks, and Images. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Logs is the default at `/ui/` and `/ui/logs`. Chat, Metrics, Tasks, and Images are `/ui/chat`, `/ui/metrics`, `/ui/tasks`, and `/ui/images`. `/ui/workbench` opens Logs and the command runner. Older paths still open the matching page: `/ui/overview`, `/ui/agent`, `/ui/inventory`, and `/ui/inventory/logs` open Logs, `/ui/inventory/metrics` opens Metrics, `/ui/inventory/tasks` opens Tasks, and `/ui/inventory/images` opens Images. A saved hash other than `#main` is replaced with that path when the page opens.
 
 Each primitive page lists that primitive and runs its commands:
 

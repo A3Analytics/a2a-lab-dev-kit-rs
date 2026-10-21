@@ -213,14 +213,14 @@ fn tone_is(kind: &str) -> String {
 }
 
 fn assert_chrome_focus(page: &mut Browser) {
-    let hash = page.eval("location.hash");
+    let path = page.eval("location.pathname");
     page.click_selector("a.skip");
     assert_eq!(page.eval("document.activeElement?.id"), json!("main"));
     assert_eq!(
         page.eval("document.getElementById('main')?.tabIndex"),
         json!(-1)
     );
-    assert_eq!(page.eval("location.hash"), hash);
+    assert_eq!(page.eval("location.pathname"), path);
     page.show("#agent");
     page.show("#logs");
     assert_eq!(page.eval("document.activeElement?.id"), json!("view-title"));
