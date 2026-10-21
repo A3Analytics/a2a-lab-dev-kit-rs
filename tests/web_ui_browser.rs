@@ -587,6 +587,7 @@ async fn browser_metrics_chart_draws_switches_and_stays_accessible() {
 fn chart_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
+    page.viewport(1280, 800);
     page.show("metrics");
     page.wait_until(
         "document.getElementById('metric-range-start')?.value && document.getElementById('metric-range-end')?.value",
