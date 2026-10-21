@@ -523,14 +523,6 @@ pub fn merge(existing: &[Descriptor], incoming: &[Descriptor]) -> Vec<Descriptor
     merged
 }
 
-pub fn keep_source(selected: &str, sources: &[String]) -> String {
-    if sources.iter().any(|id| id == selected) {
-        selected.to_owned()
-    } else {
-        sources.first().cloned().unwrap_or_default()
-    }
-}
-
 pub fn keep_result(selected: &str, items: &[Descriptor]) -> String {
     if items.iter().any(|item| item.id == selected) {
         selected.to_owned()
@@ -1156,9 +1148,6 @@ mod tests {
         );
         assert_eq!(keep_result("b", &merged), "b");
         assert_eq!(keep_result("missing", &merged), "");
-        assert_eq!(keep_source("cam-b", &ids("cam-a", "cam-b")), "cam-b");
-        assert_eq!(keep_source("gone", &ids("cam-a", "cam-b")), "cam-a");
-        assert_eq!(keep_source("", &ids("cam-b", "cam-a")), "cam-b");
 
         let mut reader = Reader::new();
         let sources = ids("cam-b", "cam-a");

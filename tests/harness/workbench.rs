@@ -27,21 +27,10 @@ fn workbench_flow(base: &str) {
     page.show("#workbench");
     assert_commands(&mut page);
     reject_local_json(&mut page);
-    open_protocol(&mut page);
-    page.set_value("context-id", "keep-me");
     show_structured_error(&mut page);
     prefill_and_send(&mut page);
     preview_images(&mut page);
     assert_history(&mut page, base);
-}
-
-fn open_protocol(page: &mut Browser) {
-    page.show("#agent");
-    if page.eval("document.getElementById('protocol-advanced')?.open === true") != Value::Bool(true)
-    {
-        page.click("protocol-advanced-summary");
-    }
-    page.wait_until("document.getElementById('protocol-advanced')?.open === true");
 }
 
 fn assert_commands(page: &mut Browser) {
@@ -176,11 +165,6 @@ fn prefill_and_send(page: &mut Browser) {
         Value::Null
     );
     assert_eq!(page.eval("window.__workbenchXss"), Value::Null);
-    page.show("#agent");
-    assert_eq!(
-        eval_str(page, "document.getElementById('context-id').value"),
-        "keep-me"
-    );
 }
 
 fn preview_images(page: &mut Browser) {
@@ -243,15 +227,9 @@ fn assert_history(page: &mut Browser, base: &str) {
                 .as_str()
                 .unwrap_or("");
             assert!(!post.contains("contextId"), "{post}");
-            assert!(!post.contains("keep-me"), "{post}");
             assert!(header(&request, "authorization").is_none());
         }
     }
-    page.show("#agent");
-    assert_eq!(
-        eval_str(page, "document.getElementById('context-id').value"),
-        "keep-me"
-    );
 }
 
 fn facts(page: &mut Browser) -> Value {

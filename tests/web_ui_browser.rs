@@ -39,7 +39,6 @@ use browser::{Browser, header, request_method, request_url};
 const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 const MARKUP: &str = r#"<img id="xss-payload" src=x onerror="window.__xss=1">"#;
 const TOKEN: &str = "page-lifetime-token";
-const COMMAND: &str = r#"{"operation":"list_tasks","params":{"page":{"limit":10}}}"#;
 
 #[tokio::test]
 async fn browser_shell_reads_the_agent_card_and_exchanges_messages() {
@@ -100,16 +99,14 @@ fn anonymous_flow(base: &str) {
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     assert_identity(&page.snapshot(), base);
     assert_layout(&mut page);
-    exchange(&mut page);
-    recover(&mut page);
+    show_task_markup(&mut page);
     assert_same_origin(&page, base);
 }
 
 fn assert_identity(view: &Value, base: &str) {
-    assert_eq!(view["name"], "a2a-lab");
     assert_eq!(view["access"], "anonymous");
     assert_eq!(view["bearer"], false);
-    assert_card_text(view["text"].as_str().unwrap_or(""));
+    assert_eq!(view["name"], "");
     assert_eq!(view["nav"], true);
     assert_eq!(view["skip"], true);
     assert_eq!(view["live"], "polite");
@@ -130,11 +127,20 @@ fn assert_identity(view: &Value, base: &str) {
     );
 }
 
-fn assert_card_text(text: &str) {
-    assert!(text.contains("HTTP+JSON"));
-    assert!(text.contains("list-tasks"));
-    assert!(text.contains("Streaming: yes"));
-    assert!(text.contains("0.1.0"));
+fn show_task_markup(page: &mut Browser) {
+    send_tasks(page);
+    page.wait_until(
+        "document.getElementById('workbench-tree')?.textContent.includes('xss-payload')",
+    );
+    let payload = page.snapshot();
+    assert_eq!(payload["xss"], false);
+    assert_eq!(payload["xssPayload"], false);
+    assert_eq!(payload["images"], 0);
+    assert_eq!(payload["inlineScripts"], 0);
+    let output = page.eval("document.getElementById('workbench-tree')?.textContent ?? ''");
+    let output = output.as_str().unwrap_or("");
+    assert!(output.contains("xss-payload"), "{output}");
+    assert!(output.contains("onerror"), "{output}");
 }
 
 fn assert_layout(page: &mut Browser) {
@@ -151,51 +157,6 @@ fn assert_layout(page: &mut Browser) {
     assert!(page.snapshot()["buttonWidth"].as_f64().unwrap_or(0.0) > 0.0);
 }
 
-fn exchange(page: &mut Browser) {
-    open_protocol(page);
-    page.set_value("message-text", "hello");
-    page.focus("send-text");
-    page.press_enter();
-    page.wait_until("document.getElementById('output')?.textContent.includes('lab-profile')");
-    let sent = page.snapshot();
-    assert!(!sent["context"].as_str().unwrap_or("").is_empty());
-    assert_eq!(sent["state"], "connected");
-    page.set_value("command-json", COMMAND);
-    page.click("send-command");
-    page.wait_until("document.getElementById('output')?.textContent.includes('xss-payload')");
-    let payload = page.snapshot();
-    assert_eq!(payload["xss"], false);
-    assert_eq!(payload["xssPayload"], false);
-    assert_eq!(payload["images"], 0);
-    assert_eq!(payload["inlineScripts"], 0);
-    let output = payload["output"].as_str().unwrap_or("");
-    assert!(output.contains("xss-payload"));
-    assert!(output.contains("onerror"));
-    assert!(output.contains("list_tasks"));
-    page.click("list-tasks");
-    page.wait_until("document.getElementById('output')?.textContent.includes('Task ')");
-    let listed = page.snapshot();
-    assert_eq!(listed["state"], "connected");
-    assert_eq!(listed["nav"], true);
-}
-
-fn recover(page: &mut Browser) {
-    page.fail_network(true);
-    page.click("retry");
-    page.wait_until(
-        "document.getElementById('connection')?.dataset.state === 'loading' || document.getElementById('connection')?.dataset.state === 'offline'",
-    );
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'offline'");
-    page.show("#overview");
-    let offline = page.snapshot();
-    assert_eq!(offline["name"], "a2a-lab");
-    assert_eq!(offline["nav"], true);
-    open_protocol(page);
-    page.fail_network(false);
-    page.click("retry");
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
-}
-
 fn assert_same_origin(page: &Browser, base: &str) {
     assert!(
         page.urls()
@@ -207,11 +168,6 @@ fn assert_same_origin(page: &Browser, base: &str) {
         protocol
             .iter()
             .any(|request| request_url(request).contains("/message:send"))
-    );
-    assert!(
-        protocol
-            .iter()
-            .any(|request| request_url(request).contains("/tasks?"))
     );
     assert!(
         protocol
@@ -231,18 +187,14 @@ fn bearer_flow(base: &str) {
     let ready = page.snapshot();
     assert_eq!(ready["access"], "bearer");
     assert_eq!(ready["bearer"], true);
-    open_protocol(&mut page);
-    page.set_value("message-text", "hello");
-    page.click("send-text");
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'unauthorized'");
-    page.show("#overview");
+    send_tasks(&mut page);
+    page.wait_until("document.getElementById('workbench')?.dataset.kind === 'unauthorized'");
     let rejected = page.snapshot();
     assert_eq!(rejected["nav"], true);
     assert!(!rejected["alert"].as_str().unwrap_or("").contains(TOKEN));
     page.set_value("bearer-token", TOKEN);
-    open_protocol(&mut page);
-    page.click("send-text");
-    page.wait_until("document.getElementById('output')?.textContent.includes('lab-profile')");
+    send_tasks(&mut page);
+    page.wait_until("document.getElementById('workbench')?.dataset.kind === 'success'");
     let accepted = page.snapshot();
     assert_eq!(accepted["state"], "connected");
     let console = page.console_text();
@@ -250,12 +202,11 @@ fn bearer_flow(base: &str) {
     assert_authorized(&page.requests(base));
     page.reload();
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
-    open_protocol(&mut page);
+    page.show("#workbench");
     let reloaded = page.snapshot();
     assert_eq!(reloaded["bearerValue"], "");
-    page.set_value("message-text", "hello again");
-    page.click("send-text");
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'unauthorized'");
+    send_tasks(&mut page);
+    page.wait_until("document.getElementById('workbench')?.dataset.kind === 'unauthorized'");
     let again = page.requests(base);
     let last = again
         .iter()
@@ -264,27 +215,19 @@ fn bearer_flow(base: &str) {
     assert!(last.is_some_and(|request| header(request, "authorization").is_none()));
 }
 
+fn send_tasks(page: &mut Browser) {
+    page.show("#tasks");
+    page.set_value("workbench-operation", "list_tasks");
+    page.set_value("workbench-params", r#"{"page":{"limit":10}}"#);
+    page.click("workbench-send");
+}
+
 fn untrusted_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'unsupported'");
     let view = page.snapshot();
-    assert_eq!(
-        view["name"],
-        r#"<img id="xss-name" src=x onerror="window.__xss=1">"#
-    );
-    assert!(
-        view["text"]
-            .as_str()
-            .unwrap_or("")
-            .contains("<script>window.__xss=1</script>")
-    );
-    assert!(view["text"].as_str().unwrap_or("").contains("mutual TLS"));
-    assert!(
-        view["text"]
-            .as_str()
-            .unwrap_or("")
-            .contains("cannot satisfy")
-    );
+    assert_eq!(view["name"], "");
+    assert!(view["text"].as_str().unwrap_or("").contains("cannot use"));
     assert_eq!(view["access"], "unsupported");
     assert_eq!(view["bearer"], false);
     assert_eq!(view["xss"], false);
@@ -293,8 +236,6 @@ fn untrusted_flow(base: &str) {
     assert_eq!(view["images"], 0);
     assert_eq!(view["inlineScripts"], 0);
     assert_eq!(view["nav"], true);
-    open_protocol(&mut page);
-    page.click("send-text");
     assert!(
         !page
             .urls()
@@ -307,27 +248,16 @@ fn error_flow(errors: &str, grpc: &str) {
     let mut page = Browser::open(&format!("{errors}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'loading'");
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
-    open_protocol(&mut page);
-    page.set_value("message-text", "hello");
-    page.click("send-text");
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'forbidden'");
+    page.wait_until(
+        "document.getElementById('inventory-logs-alert')?.textContent.includes('not allowed')",
+    );
     let forbidden = page.snapshot();
-    assert!(
-        forbidden["alert"]
-            .as_str()
-            .unwrap_or("")
-            .contains("not allowed")
-    );
     assert_eq!(forbidden["nav"], true);
-    page.click("send-text");
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'malformed'");
-    let malformed = page.snapshot();
-    assert!(
-        malformed["alert"]
-            .as_str()
-            .unwrap_or("")
-            .contains("could not be read")
+    send_tasks(&mut page);
+    page.wait_until(
+        "document.getElementById('workbench-alert')?.textContent.includes('could not be read')",
     );
+    let malformed = page.snapshot();
     assert!(
         !malformed["text"]
             .as_str()
@@ -335,25 +265,18 @@ fn error_flow(errors: &str, grpc: &str) {
             .contains("not-json")
     );
     assert_eq!(malformed["nav"], true);
-    page.click("retry");
+    page.reload();
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     page.goto(&format!("{grpc}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'unsupported'");
     let unsupported = page.snapshot();
-    assert_eq!(unsupported["name"], "grpc-only");
     assert!(
-        unsupported["text"]
+        unsupported["alert"]
             .as_str()
             .unwrap_or("")
-            .contains("does not advertise HTTP+JSON")
-            || unsupported["alert"]
-                .as_str()
-                .unwrap_or("")
-                .contains("HTTP+JSON")
+            .contains("HTTP+JSON")
     );
     assert_eq!(unsupported["nav"], true);
-    open_protocol(&mut page);
-    page.click("send-text");
     assert!(
         !page
             .urls()
@@ -367,7 +290,7 @@ fn route_scroll_flow(base: &str) {
     page.wait_until("document.getElementById('shell')");
     page.viewport(1843, 768);
     assert_bootstrap(&mut page);
-    for hash in ["#agent", "#logs", "#metrics", "#tasks", "#images"] {
+    for hash in ["#overview", "#logs", "#metrics", "#tasks", "#images"] {
         page.show(hash);
         assert_route_scroll(&mut page, hash);
     }
@@ -520,7 +443,7 @@ fn navigation_flow(base: &str) {
         json!(1)
     );
     assert_eq!(
-        page.eval("document.getElementById('view-agent')?.parentElement?.id"),
+        page.eval("document.getElementById('view-logs')?.parentElement?.id"),
         json!("main")
     );
     assert_eq!(
@@ -546,8 +469,8 @@ fn navigation_flow(base: &str) {
         json!("{\"keep\":true}")
     );
     assert_eq!(
-        page.eval("document.getElementById('protocol-advanced')?.open === true"),
-        Value::Bool(false)
+        page.eval("document.getElementById('protocol-advanced')"),
+        Value::Null
     );
     page.show("#inventory/metrics");
     assert_eq!(
@@ -564,7 +487,7 @@ fn navigation_flow(base: &str) {
         json!("7")
     );
     page.eval("location.hash = '#nope'");
-    page.wait_until("document.getElementById('view-agent')?.parentElement?.id === 'main'");
+    page.wait_until("!document.getElementById('view-logs')?.hasAttribute('hidden')");
     page.show("#chat");
     page.reload();
     page.wait_until(
@@ -614,15 +537,6 @@ fn assert_shell_scripts(page: &mut Browser) {
         page.eval("[...document.scripts].every(script => script.src.includes('/ui/assets/'))"),
         Value::Bool(true)
     );
-}
-
-fn open_protocol(page: &mut Browser) {
-    page.show("#agent");
-    if page.eval("document.getElementById('protocol-advanced')?.open === true") != Value::Bool(true)
-    {
-        page.click("protocol-advanced-summary");
-    }
-    page.wait_until("document.getElementById('protocol-advanced')?.open === true");
 }
 
 fn assert_hidden(snapshot: &Value, console: &str) {

@@ -179,7 +179,7 @@ fn loader() -> Option<Loader> {
 #[component]
 pub fn LogView(ui: Signal<LogUi>) -> Element {
     let job = use_signal(|| LogJob::Idle);
-    let mut filled_range = use_signal(|| false);
+    let filled_range = use_signal(|| false);
     use_hook(|| {
         LOADER.with(|slot| *slot.borrow_mut() = Some(Loader { ui, job }));
     });
@@ -367,7 +367,7 @@ fn ResultState(state: LogUi, mode: Mode) -> Element {
             "data-state": mode.slug(),
             "data-gen": state.tick.to_string(),
             hidden: mode == Mode::Ready,
-            if mode == Mode::Loading {
+            if mode == Mode::Loading && state.sending {
                 ListPlaceholders { count: 3 }
             }
             p {

@@ -225,7 +225,7 @@ pub fn ImageView(ui: Signal<ImageUi>) -> Element {
     let inspect = use_signal(|| InspectJob::Idle);
     let thumbs = use_signal(|| ThumbJob::Idle);
     let current = use_signal(|| CurrentJob::Idle);
-    let mut filled_range = use_signal(|| false);
+    let filled_range = use_signal(|| false);
     use_hook(|| {
         install_modal_escape();
         LOADER.with(|slot| {

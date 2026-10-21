@@ -76,20 +76,6 @@ pub fn command_message(id: &str, command: &Value, context_id: &str) -> Result<St
     Ok(message(id, context_id, vec![part_data(command)]))
 }
 
-pub fn parse_command(text: &str) -> Result<Value, ()> {
-    let value: Value = serde_json::from_str(text).map_err(|_| ())?;
-    value.is_object().then_some(value).ok_or(())
-}
-
-pub fn tasks_path(context_id: &str) -> String {
-    let mut path = String::from("/tasks?includeArtifacts=true&historyLength=10");
-    if !context_id.is_empty() {
-        path.push_str("&contextId=");
-        path.push_str(&percent_encode(context_id));
-    }
-    path
-}
-
 pub fn decode(reply: &Reply, secret: Option<&str>) -> Result<Outcome, ProtocolError> {
     if reply.status == 401 {
         return Err(ProtocolError::Unauthorized(status_message(
@@ -125,22 +111,6 @@ pub fn decode(reply: &Reply, secret: Option<&str>) -> Result<Outcome, ProtocolEr
         return task_record(&value, secret).map(|task| Outcome::Exchange(Exchange::Task(task)));
     }
     Err(ProtocolError::Malformed)
-}
-
-pub fn render_outcome(outcome: &Outcome) -> String {
-    match outcome {
-        Outcome::Exchange(Exchange::Task(task)) => render_task(task),
-        Outcome::Exchange(Exchange::Message(message)) => render_message(message),
-        Outcome::Tasks(tasks) if tasks.is_empty() => {
-            "No protocol tasks in this context.".to_owned()
-        }
-        Outcome::Tasks(tasks) => tasks
-            .iter()
-            .map(render_task)
-            .collect::<Vec<_>>()
-            .join("\n\n"),
-        Outcome::Status(status) => render_status(status),
-    }
 }
 
 pub fn context_of(outcome: &Outcome) -> Option<&str> {
@@ -345,49 +315,6 @@ fn status_message(body: &str, secret: Option<&str>) -> String {
         .unwrap_or_else(|| "The agent rejected the call.".to_owned())
 }
 
-fn render_task(task: &TaskRecord) -> String {
-    let mut lines = vec![
-        format!("Task {}", task.id),
-        format!("Context {}", task.context_id),
-        format!("State {}", task.state),
-    ];
-    for artifact in &task.artifacts {
-        lines.push(format!("Artifact {}", artifact.id));
-        if !artifact.name.is_empty() {
-            lines.push(format!("Name {}", artifact.name));
-        }
-        lines.extend(artifact.texts.iter().map(|text| format!("text: {text}")));
-        lines.extend(artifact.data.iter().map(|data| format!("data: {data}")));
-    }
-    lines.join("\n")
-}
-
-fn render_message(message: &MessageRecord) -> String {
-    let mut lines = vec![
-        format!("Message {}", message.id),
-        format!("Role {}", message.role),
-        format!("Context {}", message.context_id),
-    ];
-    lines.extend(message.texts.iter().map(|text| format!("text: {text}")));
-    lines.extend(message.data.iter().map(|data| format!("data: {data}")));
-    lines.join("\n")
-}
-
-fn render_status(status: &RpcStatus) -> String {
-    let mut lines = vec![
-        format!("Status {}", status.status),
-        format!("Code {}", status.code),
-        format!("Message {}", status.message),
-    ];
-    lines.extend(
-        status
-            .reasons
-            .iter()
-            .map(|reason| format!("Reason {reason}")),
-    );
-    lines.join("\n")
-}
-
 fn history_of(object: &Map<String, Value>, secret: Option<&str>) -> Vec<MessageRecord> {
     object
         .get("history")
@@ -456,18 +383,6 @@ fn json_scalar(value: Option<&Value>) -> String {
     }
 }
 
-fn percent_encode(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            encoded.push(char::from(byte));
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    encoded
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,17 +414,7 @@ mod tests {
             "list_tasks"
         );
         assert!(value["message"].get("contextId").is_none());
-        assert!(parse_command("[]").is_err());
-    }
-
-    #[test]
-    fn tasks_path_keeps_the_context_in_the_query_and_out_of_secrets() {
-        let path = tasks_path("ctx/1");
-        assert_eq!(
-            path,
-            "/tasks?includeArtifacts=true&historyLength=10&contextId=ctx%2F1"
-        );
-        assert!(!path.contains(SECRET));
+        assert!(command_message("ui-3", &json!([]), "").is_err());
     }
 
     #[test]
@@ -537,13 +442,15 @@ mod tests {
             Some(SECRET),
         )
         .unwrap();
-        let rendered = render_outcome(&task);
-        assert!(rendered.contains("Task task-1"));
-        assert!(rendered.contains("Context ctx-1"));
-        assert!(rendered.contains("TASK_STATE_COMPLETED"));
-        assert!(rendered.contains("text: <img id=\"xss\">"));
-        assert!(rendered.contains("list_tasks"));
         assert_eq!(context_of(&task), Some("ctx-1"));
+        let Outcome::Exchange(Exchange::Task(record)) = task else {
+            panic!("expected a task");
+        };
+        assert_eq!(record.id, "task-1");
+        assert_eq!(record.context_id, "ctx-1");
+        assert_eq!(record.state, "TASK_STATE_COMPLETED");
+        assert_eq!(record.artifacts[0].texts, ["<img id=\"xss\">"]);
+        assert!(record.artifacts[0].data[0].contains("list_tasks"));
 
         let tasks = decode(
             &Reply {
@@ -558,7 +465,10 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(render_outcome(&tasks).contains("TASK_STATE_WORKING"));
+        let Outcome::Tasks(records) = tasks else {
+            panic!("expected tasks");
+        };
+        assert_eq!(records[0].state, "TASK_STATE_WORKING");
 
         let message = decode(
             &Reply {
@@ -574,7 +484,11 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(render_outcome(&message).contains("Role ROLE_AGENT"));
+        let Outcome::Exchange(Exchange::Message(record)) = message else {
+            panic!("expected a message");
+        };
+        assert_eq!(record.role, "ROLE_AGENT");
+        assert_eq!(record.texts, ["hi"]);
     }
 
     #[test]

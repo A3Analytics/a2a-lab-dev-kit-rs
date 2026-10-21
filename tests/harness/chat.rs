@@ -10,7 +10,7 @@ use a2a_lab_dev_kit::{
 use serde_json::Value;
 
 use super::browser::{Browser, request_method, request_url};
-use super::{COMMAND, MARKUP, TOKEN, lab};
+use super::{MARKUP, TOKEN, lab};
 
 const CONNECTED: &str = "document.getElementById('connection')?.dataset.state === 'connected'";
 const CHAT_READY: &str = "document.getElementById('chat')?.dataset.enabled === 'true'";
@@ -217,15 +217,10 @@ fn disabled_chat(base: &str) {
     );
     page.click("chat-send");
     assert!(send_bodies(&page, base).is_empty());
-    page.show("#agent");
-    if page.eval("document.getElementById('protocol-advanced')?.open === true") != Value::Bool(true)
-    {
-        page.click("protocol-advanced-summary");
-    }
-    page.wait_until("document.getElementById('protocol-advanced')?.open === true");
-    page.set_value("command-json", COMMAND);
-    page.click("send-command");
-    page.wait_until("document.getElementById('output')?.textContent.includes('list_tasks')");
+    page.show("#workbench");
+    page.wait_until("document.getElementById('workbench-operation')?.value === 'list_log_sources'");
+    page.click("workbench-send");
+    page.wait_until("document.getElementById('workbench')?.dataset.kind === 'success'");
 }
 
 fn chat_error_flow(base: &str) {
@@ -365,7 +360,7 @@ fn send_bodies(page: &Browser, base: &str) -> Vec<String> {
                 .unwrap_or("")
                 .to_owned()
         })
-        .filter(|body| !body.is_empty())
+        .filter(|body| !body.is_empty() && body.contains("text/plain"))
         .collect()
 }
 

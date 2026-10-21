@@ -76,7 +76,7 @@ const LOADING: &str = "document.getElementById('connection')?.dataset.state === 
 
 const MOTION_STOPPED: &str = "getComputedStyle(document.querySelector('#card-loading .strand-wave')).animationName === 'none' && getComputedStyle(document.querySelector('#skeleton-rail .skeleton-block'), '::after').animationName === 'none'";
 
-const CONNECTED: &str = "document.getElementById('connection')?.dataset.state === 'connected' && document.getElementById('loading-root')?.hasAttribute('hidden') && !document.getElementById('view-agent')?.hasAttribute('hidden')";
+const CONNECTED: &str = "document.getElementById('connection')?.dataset.state === 'connected' && document.getElementById('loading-root')?.hasAttribute('hidden') && !document.getElementById('view-logs')?.hasAttribute('hidden')";
 
 fn assert_card_surface(page: &mut Browser) {
     assert_eq!(attr(page, "card-loading", "role"), "status");
@@ -169,7 +169,6 @@ fn assert_skeletons(page: &mut Browser) {
 
 fn assert_routes_held(page: &mut Browser) {
     for id in [
-        "view-agent",
         "view-logs",
         "view-metrics",
         "view-tasks",
@@ -190,7 +189,7 @@ fn assert_routes_held(page: &mut Browser) {
     );
     assert!(flag(
         page,
-        "document.getElementById('agent-name')?.closest('#view-agent')"
+        "document.getElementById('log-view-status')?.closest('#view-logs')"
     ));
     assert!(flag(
         page,
@@ -210,7 +209,7 @@ fn assert_routes_held(page: &mut Browser) {
 }
 
 fn assert_routes_restored(page: &mut Browser) {
-    assert_eq!(text(page, "agent-name"), "a2a-lab");
+    assert_eq!(text(page, "view-title"), "Logs");
     assert!(flag(
         page,
         "document.getElementById('loading-root')?.hasAttribute('hidden')"
@@ -221,8 +220,6 @@ fn assert_routes_restored(page: &mut Browser) {
     assert_kept(page, "view-metrics", "metric-view-heading");
     page.show("#chat");
     assert_kept(page, "view-chat", "chat-log");
-    page.show("#agent");
-    assert_kept(page, "view-agent", "agent-name");
 }
 
 fn assert_kept(page: &mut Browser, view: &str, marker: &str) {
@@ -271,7 +268,7 @@ fn assert_hidden_blocks(page: &mut Browser, selector: &str) {
 
 fn assert_rail_matches_nav(page: &mut Browser) {
     let close = page.eval(
-        "(() => { const nav = document.querySelector('#primary-nav a').getBoundingClientRect(); const row = document.getElementById('skeleton-rail').getBoundingClientRect(); const glyph = document.querySelector('#nav-agent .nav-glyph').getBoundingClientRect(); const bone = document.querySelector('#skeleton-rail .skeleton-glyph').getBoundingClientRect(); return Math.abs(nav.height - row.height) < 2 && Math.abs(glyph.width - bone.width) < 1 && Math.abs(glyph.height - bone.height) < 1; })()",
+        "(() => { const nav = document.querySelector('#primary-nav a').getBoundingClientRect(); const row = document.getElementById('skeleton-rail').getBoundingClientRect(); const glyph = document.querySelector('#nav-logs .nav-glyph').getBoundingClientRect(); const bone = document.querySelector('#skeleton-rail .skeleton-glyph').getBoundingClientRect(); return Math.abs(nav.height - row.height) < 2 && Math.abs(glyph.width - bone.width) < 1 && Math.abs(glyph.height - bone.height) < 1; })()",
     );
     assert_eq!(close, Value::Bool(true), "{close}");
 }

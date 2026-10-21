@@ -9,7 +9,6 @@ use dioxus_web::Config;
 use dioxus_web::launch::launch_cfg;
 
 use crate::inventory::Primitive;
-use crate::shell::agent::AgentView;
 use crate::shell::chat::{self, ChatUi, ChatView};
 use crate::shell::http::Transport;
 use crate::shell::images::{self as image_ui, ImageUi, ImageView};
@@ -143,12 +142,11 @@ fn Shell() -> Element {
                         }
                         p { id: "brand-name", class: "font-oxanium", "A2A Lab" }
                     }
-                    NavLink { id: "nav-agent", href: "#agent", route, label: "Agent", glyph: "A" }
+                    NavLink { id: "nav-chat", href: "#chat", route, label: "Chat", glyph: "C" }
                     NavLink { id: "nav-logs", href: "#logs", route, label: "Logs", glyph: "L" }
                     NavLink { id: "nav-metrics", href: "#metrics", route, label: "Metrics", glyph: "M" }
                     NavLink { id: "nav-tasks", href: "#tasks", route, label: "Tasks", glyph: "T" }
                     NavLink { id: "nav-images", href: "#images", route, label: "Images", glyph: "I" }
-                    NavLink { id: "nav-chat", href: "#chat", route, label: "Chat", glyph: "C" }
                 }
             }
             div { class: "shell-main",
@@ -181,7 +179,19 @@ fn Shell() -> Element {
                         role: "status",
                         aria_live: "polite",
                         "data-state": "{session().connection.slug()}",
+                        "data-access": "{session().access}",
                         "{session().banner}"
+                    }
+                    if session().access == "bearer" {
+                        label { r#for: "bearer-token", class: "visually-hidden", "Bearer token" }
+                        input {
+                            id: "bearer-token",
+                            class: "banner-token",
+                            r#type: "password",
+                            autocomplete: "off",
+                            spellcheck: "false",
+                            placeholder: "Bearer token",
+                        }
                     }
                     button {
                         id: "theme-toggle",
@@ -208,12 +218,6 @@ fn Shell() -> Element {
                     "{notice}"
                 }
                 CardLoading { concealed: !panes.loading }
-                div {
-                    id: "view-agent",
-                    class: "view",
-                    hidden: panes.agent,
-                    AgentView { session, fetch_gen }
-                }
                 div {
                     id: "view-logs",
                     class: "view",
@@ -324,7 +328,6 @@ fn expanded(open: bool) -> &'static str {
 }
 
 struct PaneHidden {
-    agent: bool,
     logs: bool,
     metrics: bool,
     tasks: bool,
@@ -337,7 +340,6 @@ struct PaneHidden {
 fn pane_hidden(loading: bool, route: Route, hash: &str) -> PaneHidden {
     PaneHidden {
         loading,
-        agent: loading || route.view != "view-agent",
         logs: loading || route.view != "view-logs",
         metrics: loading || route.view != "view-metrics",
         tasks: loading || route.view != "view-tasks",

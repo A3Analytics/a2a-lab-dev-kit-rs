@@ -1,4 +1,4 @@
-//! Agent section order, empty states, and shared lab refusals.
+//! Shared lab refusals after the agent page was removed.
 
 #![cfg(feature = "web-ui")]
 
@@ -22,7 +22,7 @@ const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; 
 const SCHEME: &str = "This agent requires a security scheme this page cannot use.";
 const REFUSE: &str = "This page will not send credentials or call an unsupported agent.";
 const TOKEN: &str = "agent-page-token";
-const ROUTES: [&str; 6] = ["#agent", "#logs", "#metrics", "#tasks", "#images", "#chat"];
+const ROUTES: [&str; 5] = ["#logs", "#metrics", "#tasks", "#images", "#chat"];
 
 const VISIBLE: &str = r"(needle) => {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -42,39 +42,12 @@ const VISIBLE: &str = r"(needle) => {
   return false;
 }";
 
-const STACKED: &str = r"() => {
-  const ids = ['identity','interfaces','skills','capabilities','security','protocol-advanced'];
-  const nodes = ids.map((id) => document.getElementById(id));
-  if (nodes.some((node) => !node)) return false;
-  for (let index = 1; index < nodes.length; index += 1) {
-    const before = nodes[index - 1];
-    const after = nodes[index];
-    if ((before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING) === 0) return false;
-    const previous = before.getBoundingClientRect();
-    const next = after.getBoundingClientRect();
-    if (next.top + 1 < previous.bottom) return false;
-  }
-  return true;
-}";
-
 #[tokio::test]
-async fn browser_agent_sections_stay_in_source_order() {
+async fn browser_agent_page_is_absent() {
     let base = serve(populated_card().to_string()).await;
-    tokio::task::spawn_blocking(move || order_flow(&base))
+    tokio::task::spawn_blocking(move || absent_flow(&base))
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn browser_agent_empty_lists_show_text() {
-    let bare = serve(bare_card().to_string()).await;
-    let broken = serve("not-json".to_owned()).await;
-    tokio::task::spawn_blocking(move || {
-        bare_flow(&bare);
-        broken_flow(&broken);
-    })
-    .await
-    .unwrap();
 }
 
 #[tokio::test]
@@ -89,100 +62,37 @@ async fn browser_agent_refusals_stay_visible_on_every_route() {
     .unwrap();
 }
 
-fn order_flow(base: &str) {
+fn absent_flow(base: &str) {
     let mut page = open_agent(base, "connected");
-    assert_title(&mut page, "Agent");
-    assert_stacked(&mut page);
-    page.viewport(360, 800);
-    assert_stacked(&mut page);
-    page.viewport(1024, 800);
-    assert_stacked(&mut page);
-    page.viewport(1280, 800);
-    assert_stacked(&mut page);
-    assert_text(&mut page, "agent-name", "a2a-lab");
-    assert_text(
-        &mut page,
-        "agent-description",
-        "Lab logs, metrics, tasks, and images",
-    );
-    assert_text(&mut page, "agent-version", "0.1.0");
-    assert_advanced(&mut page);
+    assert_title(&mut page, "Logs");
     assert_eq!(
-        page.eval("document.getElementById('agent-heading')"),
+        page.eval("document.getElementById('nav-agent')"),
+        Value::Null
+    );
+    assert_eq!(
+        page.eval("document.getElementById('view-agent')"),
         Value::Null
     );
     assert_eq!(
         page.eval("document.getElementById('bearer-token')"),
         Value::Null
     );
-}
-
-fn bare_flow(base: &str) {
-    let mut page = Browser::open(&format!("{base}/ui/"));
-    page.wait_until("document.getElementById('agent-name')?.textContent === 'Bare Agent'");
-    assert_text(&mut page, "agent-name", "Bare Agent");
-    assert_text(&mut page, "agent-description", "No lists");
-    assert_text(&mut page, "agent-version", "9.9.9");
-    assert_empty(
-        &mut page,
-        "interfaces-empty",
-        "No interfaces are advertised.",
-    );
-    assert_empty(&mut page, "skills-empty", "No skills are advertised.");
-    assert_eq!(
-        page.eval(
-            "document.getElementById('capabilities-list')?.textContent.includes('Streaming')",
-        ),
-        Value::Bool(true)
-    );
-    assert_eq!(
-        page.eval("document.getElementById('capabilities-empty')"),
-        Value::Null
-    );
-    assert_eq!(
-        page.eval("document.getElementById('security-schemes')?.textContent.includes('Anonymous')"),
-        Value::Bool(true)
-    );
-}
-
-fn broken_flow(base: &str) {
-    let mut page = open_agent(base, "malformed");
-    assert_empty(
-        &mut page,
-        "interfaces-empty",
-        "No interfaces are advertised.",
-    );
-    assert_empty(&mut page, "skills-empty", "No skills are advertised.");
-    assert_empty(
-        &mut page,
-        "capabilities-empty",
-        "No capabilities are advertised.",
-    );
-    assert_empty(
-        &mut page,
-        "security-schemes-empty",
-        "No security schemes are advertised.",
-    );
-    assert_text(&mut page, "agent-name", "A2A Lab");
-    assert_eq!(
-        page.eval(
-            "['agent-name','agent-description','agent-version'].every((id) => document.getElementById(id)?.closest('#identity'))",
-        ),
-        Value::Bool(true)
-    );
+    for hash in ["#agent", "#overview", "#nope"] {
+        page.show(hash);
+        assert_title(&mut page, "Logs");
+    }
 }
 
 fn refusal_flow(base: &str) {
     let mut page = open_agent(base, "unsupported");
     page.viewport(1280, 900);
     assert_scheme_visible(&mut page);
-    page.set_value("message-text", "hello");
-    page.click("send-text");
+    page.show("#tasks");
     page.wait_until(&format!(
         "document.getElementById('alert')?.textContent.includes({})",
         serde_json::to_string(REFUSE).unwrap_or_default()
     ));
-    assert_closed(&mut page);
+    assert_absent(&mut page);
     assert!(
         !page.urls().iter().any(|url| url.contains("/message:send")),
         "unsupported agent was called"
@@ -191,12 +101,12 @@ fn refusal_flow(base: &str) {
 }
 
 fn assert_scheme_visible(page: &mut Browser) {
-    assert_closed(page);
+    assert_absent(page);
     assert_alert_outside(page);
     for route in ROUTES {
         page.show(route);
         assert_title(page, route_title(route));
-        assert_closed(page);
+        assert_absent(page);
         assert_visible(page, SCHEME);
     }
 }
@@ -205,7 +115,7 @@ fn assert_refusals(page: &mut Browser) {
     for route in ROUTES {
         page.show(route);
         assert_title(page, route_title(route));
-        assert_closed(page);
+        assert_absent(page);
         assert_alert_outside(page);
         assert_visible(page, SCHEME);
         assert_visible(page, REFUSE);
@@ -223,7 +133,11 @@ fn bearer_flow(base: &str) {
         json!("off")
     );
     assert_eq!(
-        page.eval("!!document.getElementById('bearer-token')?.closest('#security')"),
+        page.eval("!!document.getElementById('bearer-token')?.closest('header.banner')"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        page.eval("!!document.querySelector('label[for=\"bearer-token\"]')"),
         Value::Bool(true)
     );
     page.set_value("bearer-token", TOKEN);
@@ -236,7 +150,7 @@ fn bearer_flow(base: &str) {
         page.eval("document.getElementById('bearer-token')?.value"),
         json!("")
     );
-    assert_advanced(&mut page);
+    assert_absent(&mut page);
 }
 
 fn open_agent(base: &str, state: &str) -> Browser {
@@ -255,27 +169,6 @@ fn assert_title(page: &mut Browser, title: &str) {
     assert_eq!(shown, Value::Bool(true), "{title}");
 }
 
-fn assert_stacked(page: &mut Browser) {
-    assert_eq!(page.eval(&format!("({STACKED})()")), Value::Bool(true));
-}
-
-fn assert_text(page: &mut Browser, id: &str, text: &str) {
-    let id = serde_json::to_string(id).unwrap_or_default();
-    assert_eq!(
-        page.eval(&format!("document.getElementById({id})?.textContent")),
-        Value::String(text.to_owned())
-    );
-}
-
-fn assert_empty(page: &mut Browser, id: &str, text: &str) {
-    let id = serde_json::to_string(id).unwrap_or_default();
-    let text = serde_json::to_string(text).unwrap_or_default();
-    let shown = page.eval(&format!(
-        "(() => {{ const el = document.getElementById({id}); if (!el || el.textContent.trim() !== {text}) return false; const box = el.getBoundingClientRect(); return getComputedStyle(el).display !== 'none' && box.height > 2 && box.width > 2; }})()"
-    ));
-    assert_eq!(shown, Value::Bool(true), "{id} {text}");
-}
-
 fn assert_visible(page: &mut Browser, needle: &str) {
     let needle_json = serde_json::to_string(needle).unwrap_or_default();
     let shown = page.eval(&format!("({VISIBLE})({needle_json})"));
@@ -287,10 +180,18 @@ fn assert_visible(page: &mut Browser, needle: &str) {
     );
 }
 
-fn assert_closed(page: &mut Browser) {
+fn assert_absent(page: &mut Browser) {
     assert_eq!(
-        page.eval("document.getElementById('protocol-advanced')?.open === false"),
-        Value::Bool(true)
+        page.eval("document.getElementById('nav-agent')"),
+        Value::Null
+    );
+    assert_eq!(
+        page.eval("document.getElementById('view-agent')"),
+        Value::Null
+    );
+    assert_eq!(
+        page.eval("document.getElementById('protocol-advanced')"),
+        Value::Null
     );
 }
 
@@ -303,24 +204,13 @@ fn assert_alert_outside(page: &mut Browser) {
     );
 }
 
-fn assert_advanced(page: &mut Browser) {
-    assert_closed(page);
-    assert_eq!(
-        page.eval(
-            "['message-text','command-json','context-id','output','send-text','send-command','list-tasks','retry'].every((id) => document.getElementById(id)?.closest('#protocol-advanced'))",
-        ),
-        Value::Bool(true)
-    );
-}
-
 fn route_title(hash: &str) -> &'static str {
     match hash {
-        "#logs" => "Logs",
         "#metrics" => "Metrics",
         "#tasks" => "Tasks",
         "#images" => "Images",
         "#chat" => "Chat",
-        _ => "Agent",
+        _ => "Logs",
     }
 }
 
@@ -332,17 +222,6 @@ fn populated_card() -> Value {
         "supportedInterfaces": [http_interface()],
         "capabilities": {"streaming": true},
         "skills": [{"id": "list-tasks", "name": "List tasks", "description": "List"}]
-    })
-}
-
-fn bare_card() -> Value {
-    json!({
-        "name": "Bare Agent",
-        "description": "No lists",
-        "version": "9.9.9",
-        "supportedInterfaces": [],
-        "skills": [],
-        "capabilities": {}
     })
 }
 

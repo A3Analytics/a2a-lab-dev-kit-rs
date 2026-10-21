@@ -163,7 +163,7 @@ impl Browser {
                 text: document.body.innerText,
                 html: document.documentElement.outerHTML,
                 state: document.getElementById('connection')?.dataset.state ?? '',
-                access: document.getElementById('security')?.dataset.access ?? '',
+                access: document.getElementById('connection')?.dataset.access ?? '',
                 alert: document.getElementById('alert')?.textContent ?? '',
                 output: document.getElementById('output')?.textContent ?? '',
                 name: document.getElementById('agent-name')?.textContent ?? '',
@@ -252,7 +252,7 @@ impl Browser {
             "metrics" | "inventory/metrics" => "view-metrics",
             "tasks" | "inventory/tasks" => "view-tasks",
             "images" | "inventory/images" => "view-images",
-            _ => "view-agent",
+            _ => "view-logs",
         };
         self.wait_until(&format!(
             "location.hash === {literal} && document.getElementById('{view}')?.parentElement?.id === 'main' && !document.getElementById('{view}')?.hasAttribute('hidden') && document.querySelectorAll('#main > .view:not([hidden])').length === 1"

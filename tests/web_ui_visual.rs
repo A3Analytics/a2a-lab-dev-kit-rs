@@ -18,13 +18,7 @@ mod browser;
 
 use browser::Browser;
 
-const ROUTES: [Route; 7] = [
-    Route {
-        hash: "#agent",
-        title: "Agent",
-        kind: Kind::Agent,
-        ready: "document.getElementById('agent-name')?.textContent === 'a2a-lab'",
-    },
+const ROUTES: [Route; 6] = [
     Route {
         hash: "#logs",
         title: "Logs",
@@ -67,7 +61,6 @@ const VIEWPORTS: [(u32, u32); 3] = [(767, 768), (768, 768), (1843, 768)];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    Agent,
     Logs,
     Metrics,
     Tasks,
@@ -715,7 +708,6 @@ impl Kind {
 
     fn required(self) -> &'static [&'static str] {
         match self {
-            Self::Agent => &["a2a-lab", "No credential is required."],
             Self::Logs => &["pump ready"],
             Self::Metrics => &["Latency", "Data CSV", "ms"],
             Self::Tasks => &["Home", "This task has no input fields."],
@@ -727,7 +719,6 @@ impl Kind {
 
     fn forbidden(self) -> &'static [&'static str] {
         match self {
-            Self::Agent => AGENT_FORBIDDEN,
             Self::Logs | Self::Workbench => LOG_FORBIDDEN,
             Self::Metrics => METRIC_FORBIDDEN,
             Self::Tasks => TASK_FORBIDDEN,
@@ -737,16 +728,7 @@ impl Kind {
     }
 }
 
-const NAV: [&str; 6] = ["#agent", "#logs", "#metrics", "#tasks", "#images", "#chat"];
-
-const AGENT_FORBIDDEN: &[&str] = &[
-    "Loading the lab interface.",
-    "Loading agent card.",
-    "No interfaces are advertised.",
-    "No skills are advertised.",
-    "No capabilities are advertised.",
-    "No security schemes are advertised.",
-];
+const NAV: [&str; 5] = ["#chat", "#logs", "#metrics", "#tasks", "#images"];
 const LOG_FORBIDDEN: &[&str] = &[
     "Loading the lab interface.",
     "Loading logs.",
@@ -806,7 +788,7 @@ const PROBE: &str = r#"(() => {
     const data = ctx.getImageData(0, 0, 1, 1).data;
     return data[0] * 0.2126 + data[1] * 0.7152 + data[2] * 0.0722;
   };
-  const names = new Set(['Agent', 'Logs', 'Metrics', 'Tasks', 'Images', 'Chat']);
+  const names = new Set(['Logs', 'Metrics', 'Tasks', 'Images', 'Chat']);
   const view = document.querySelector('#main > .view:not([hidden])');
   const rail = view ? view.querySelector('#log-filters, #metric-filters, #task-filters, #image-filters') : null;
   const railBox = rail ? rail.getBoundingClientRect() : null;

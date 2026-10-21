@@ -88,7 +88,6 @@ pub const STYLE_FRAGMENTS: &[&str] = &[
     "metrics.css",
     "tasks.css",
     "chat.css",
-    "agent.css",
     "inventory.css",
     "workbench.css",
 ];

@@ -108,7 +108,7 @@ The page is a same-origin A2A HTTP+JSON client. It calls the listener that serve
 
 It loads `GET /.well-known/agent-card.json`, then uses the HTTP+JSON routes on [A2A](<../../reference/a2a/doc-4 - A2A.md>).
 
-The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Agent, Logs, Metrics, Tasks, Images, and Chat. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Agent is the default. Older hashes still open the matching page: `#overview` opens Agent, `#inventory`, `#inventory/logs`, and `#workbench` open Logs, `#inventory/metrics` opens Metrics, `#inventory/tasks` opens Tasks, and `#inventory/images` opens Images.
+The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Chat, Logs, Metrics, Tasks, and Images. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Logs is the default. Older hashes still open the matching page: `#overview`, `#agent`, `#inventory`, `#inventory/logs`, and `#workbench` open Logs, `#inventory/metrics` opens Metrics, `#inventory/tasks` opens Tasks, and `#inventory/images` opens Images.
 
 Each primitive page lists that primitive and runs its commands:
 
@@ -120,8 +120,6 @@ Each primitive page lists that primitive and runs its commands:
 Choosing a row action stays on that page and fills the matching command. A log source, metric, task, or image source is chosen from a dropdown of the items listed on that page. The filled command stays until Send or until another primitive page replaces it with that page's first command. Command history is page memory, at most 20 entries, and a reload drops it. A continued list keeps the cursor returned by the latest chunk.
 
 Lab commands omit `contextId`, matching `A2aClient::send_request`. Chat sends `contextId` after the server has returned one.
-
-Agent shows identity, interfaces, skills, capabilities, the bearer token, and raw protocol controls. Raw protocol stays inside Advanced.
 
 ## Sessions and server memory
 
@@ -139,7 +137,7 @@ Chat is disabled when the agent card does not advertise `agent-message`. The sta
 
 The page writes two preferences to `localStorage`: `sidebar_state`, whether the desktop rail is open, and `theme`, the appearance choice. It does not write a sidebar cookie. It does not write chat history, command history, or credentials to `localStorage`, `sessionStorage`, or cookies. A conversation exists only in the current page. Reload drops it.
 
-When the card requires HTTP bearer authentication, the token is a password field on Agent. `autocomplete` is off. The field lives for that page load. Reload clears it. The token is sent only in the `Authorization` header. The page refuses a command or chat message whose visible text contains the token.
+When the card requires HTTP bearer authentication, the token is a password field in the page header. `autocomplete` is off. The field lives for that page load. Reload clears it. The token is sent only in the `Authorization` header. The page refuses a command or chat message whose visible text contains the token.
 
 The page can call an agent with no security requirements, or an agent whose requirement is HTTP bearer. It lists and refuses schemes it cannot satisfy:
 
@@ -151,13 +149,13 @@ The page can call an agent with no security requirements, or an agent whose requ
 - one requirement that mixes bearer with any of those schemes
 - a security requirement the card does not describe
 
-The Security section lists each unsupported scheme. The page will not send credentials or call that agent. That refusal stays visible on Agent without opening Advanced, and the same text stays visible on Logs, Metrics, Tasks, Images, and Chat. Chat stays disabled, and the status says chat is unavailable for this agent.
+The page will not send credentials or call an agent whose scheme it cannot satisfy. That refusal stays visible on Logs, Metrics, Tasks, Images, and Chat. Chat stays disabled, and the status says chat is unavailable for this agent.
 
-A rejected bearer token shows Unauthorized on the protocol panel. A token that lacks the required scope shows Forbidden. A chat send that is unauthorized or forbidden reports that failure and leaves the draft available for retry.
+A rejected bearer token shows Unauthorized on the command that was sent. A token that lacks the required scope shows Forbidden. A chat send that is unauthorized or forbidden reports that failure and leaves the draft available for retry.
 
 ## Rendering, previews, and browsers
 
-Agent-provided strings are written as text. The page does not insert agent content as HTML. Chat, primitive lists, protocol output, and command results are plain text. Displayed text redacts a bearer token that appears in a response.
+Agent-provided strings are written as text. The page does not insert agent content as HTML. Chat, primitive lists, and command results are plain text. Displayed text redacts a bearer token that appears in a response.
 
 Image preview is separate from the server limit. `ImageTransportConfig` defaults to 64 MiB of decoded bytes. The browser previews `image/png`, `image/jpeg`, `image/gif`, and `image/webp` only when the decoded payload is at most 262144 bytes. A larger payload, or any other media type, including SVG, stays a text summary. A preview that is allowed uses a `data:` URL.
 

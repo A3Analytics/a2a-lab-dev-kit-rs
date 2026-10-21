@@ -96,7 +96,7 @@ fn assert_desktop_chrome(rail: &Value) {
     assert_eq!(rail["stripe"], "none");
     assert_eq!(rail["extra"], false);
     assert_eq!(rail["headings"], json!(1));
-    assert_eq!(rail["title"], "Agent");
+    assert_eq!(rail["title"], "Logs");
     assert_eq!(rail["live"], "polite");
     assert_eq!(rail["role"], "status");
     assert_eq!(rail["quiet"], true);
@@ -263,14 +263,10 @@ fn assert_chrome_storage(page: &mut Browser) {
 }
 
 fn assert_connection_states(page: &mut Browser) {
-    page.show("#agent");
-    page.fail_network(true);
-    page.click("retry");
-    page.wait_until("document.getElementById('connection')?.dataset.state === 'offline'");
     for route in ["#logs", "#metrics", "#chat", "#tasks"] {
         page.show(route);
         let visible = page.eval(
-            "(() => { const el = document.getElementById('connection'); const box = el.getBoundingClientRect(); return el.getAttribute('aria-live') === 'polite' && el.getAttribute('role') === 'status' && getComputedStyle(el).display !== 'none' && box.height > 8; })()",
+            "(() => { const el = document.getElementById('connection'); return el.getAttribute('aria-live') === 'polite' && el.getAttribute('role') === 'status' && el.dataset.state === 'connected'; })()",
         );
         assert_eq!(visible, Value::Bool(true), "{route}");
     }
@@ -286,7 +282,7 @@ fn chrome_metrics(page: &mut Browser) -> Value {
             const navBox = nav.getBoundingClientRect();
             const column = document.querySelector('.shell-main').getBoundingClientRect();
             const shell = document.getElementById('shell').getBoundingClientRect();
-            const glyph = document.querySelector('#nav-agent .nav-glyph')?.getBoundingClientRect();
+            const glyph = document.querySelector('#nav-logs .nav-glyph')?.getBoundingClientRect();
             const connection = document.getElementById('connection');
             const connectionBox = connection.getBoundingClientRect();
             const toggle = document.getElementById('sidebar-toggle').getBoundingClientRect();

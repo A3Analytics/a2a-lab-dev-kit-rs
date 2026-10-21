@@ -10,7 +10,6 @@ use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 
 use crate::card::{self, Access, Card};
-use crate::codec::{self, ProtocolError};
 use crate::shell::http::Transport;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -124,37 +123,6 @@ pub enum CardLoad {
 pub struct AppliedCard {
     pub ui: SessionUi,
     pub card: Option<Card>,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum ProtocolKind {
-    SendText,
-    SendCommand,
-    ListTasks,
-}
-
-#[derive(Clone, PartialEq)]
-pub struct ProtocolRequest {
-    pub kind: ProtocolKind,
-    pub message: String,
-    pub command: String,
-    pub context: String,
-    pub access: String,
-    pub connection: Connection,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum ProtocolOutcome {
-    Idle,
-    Alert(String),
-    Fail {
-        connection: Connection,
-        detail: String,
-    },
-    Ok {
-        output: String,
-        context: Option<String>,
-    },
 }
 
 thread_local! {
@@ -292,176 +260,6 @@ fn fail_ui(ui: &mut SessionUi, connection: Connection, detail: &str) {
     ui.alert = detail.to_owned();
 }
 
-pub fn begin_retry(mut session: Signal<SessionUi>) {
-    let mut ui = session();
-    ui.connection = Connection::Loading;
-    ui.banner = Connection::Loading.label().to_owned();
-    ui.alert.clear();
-    session.set(ui);
-}
-
-pub fn request_text(session: &SessionUi) -> Result<ProtocolRequest, String> {
-    let message = control_value("message-text");
-    let context = control_value("context-id");
-    if message.trim().is_empty() {
-        return Err("Enter a message.".to_owned());
-    }
-    guard(session, &[message.as_str(), context.as_str()])?;
-    Ok(ProtocolRequest {
-        kind: ProtocolKind::SendText,
-        message,
-        command: String::new(),
-        context,
-        access: session.access.clone(),
-        connection: session.connection,
-    })
-}
-
-pub fn request_command(session: &SessionUi) -> Result<ProtocolRequest, String> {
-    let command = control_value("command-json");
-    let context = control_value("context-id");
-    if codec::parse_command(command.trim()).is_err() {
-        return Err("The lab command is not a JSON object.".to_owned());
-    }
-    guard(session, &[command.as_str(), context.as_str()])?;
-    Ok(ProtocolRequest {
-        kind: ProtocolKind::SendCommand,
-        message: String::new(),
-        command,
-        context,
-        access: session.access.clone(),
-        connection: session.connection,
-    })
-}
-
-pub fn request_tasks(session: &SessionUi) -> Result<ProtocolRequest, String> {
-    let context = control_value("context-id");
-    if context.trim().is_empty() {
-        return Err("Enter a context to list protocol tasks.".to_owned());
-    }
-    guard(session, &[context.as_str()])?;
-    Ok(ProtocolRequest {
-        kind: ProtocolKind::ListTasks,
-        message: String::new(),
-        command: String::new(),
-        context,
-        access: session.access.clone(),
-        connection: session.connection,
-    })
-}
-
-pub fn set_alert_ui(mut session: Signal<SessionUi>, message: &str) {
-    let mut ui = session();
-    ui.alert = message.to_owned();
-    session.set(ui);
-}
-
-pub async fn run_protocol(
-    request: Option<ProtocolRequest>,
-    secret: Option<String>,
-) -> ProtocolOutcome {
-    let Some(request) = request else {
-        return ProtocolOutcome::Idle;
-    };
-    if !calls_allowed_values(&request.access, request.connection) {
-        return ProtocolOutcome::Alert(
-            "This page will not send credentials or call an unsupported agent.".to_owned(),
-        );
-    }
-    let Some(transport) = transport() else {
-        return ProtocolOutcome::Fail {
-            connection: Connection::Unsupported,
-            detail: "This page has no origin to call.".to_owned(),
-        };
-    };
-    let result = match request.kind {
-        ProtocolKind::SendText => {
-            let body = codec::text_message(
-                &message_id(),
-                request.message.trim(),
-                request.context.trim(),
-            );
-            transport.send(&body, secret.as_deref()).await
-        }
-        ProtocolKind::SendCommand => {
-            let Ok(command) = codec::parse_command(request.command.trim()) else {
-                return ProtocolOutcome::Alert("The lab command is not a JSON object.".to_owned());
-            };
-            let Ok(body) = codec::command_message(&message_id(), &command, request.context.trim())
-            else {
-                return ProtocolOutcome::Alert("The lab command is not a JSON object.".to_owned());
-            };
-            transport.send(&body, secret.as_deref()).await
-        }
-        ProtocolKind::ListTasks => {
-            let path = codec::tasks_path(request.context.trim());
-            transport.tasks(&path, secret.as_deref()).await
-        }
-    };
-    finish(result, secret.as_deref())
-}
-
-pub fn apply_protocol(mut session: Signal<SessionUi>, outcome: ProtocolOutcome) {
-    match outcome {
-        ProtocolOutcome::Idle => {}
-        ProtocolOutcome::Alert(message) => {
-            let mut ui = session();
-            ui.alert = message;
-            session.set(ui);
-        }
-        ProtocolOutcome::Fail { connection, detail } => {
-            let mut ui = session();
-            fail_ui(&mut ui, connection, &detail);
-            session.set(ui);
-        }
-        ProtocolOutcome::Ok { output, context } => {
-            let mut ui = session();
-            ui.alert.clear();
-            ui.output = output;
-            ui.connection = Connection::Connected;
-            ui.banner = Connection::Connected.label().to_owned();
-            session.set(ui);
-            if let Some(context) = context {
-                write_control("context-id", &context);
-            }
-        }
-    }
-}
-
-fn finish(result: Result<codec::Reply, ()>, secret: Option<&str>) -> ProtocolOutcome {
-    match result {
-        Err(()) => ProtocolOutcome::Fail {
-            connection: Connection::Offline,
-            detail: "The browser could not reach this origin.".to_owned(),
-        },
-        Ok(reply) => match codec::decode(&reply, secret) {
-            Ok(outcome) => ProtocolOutcome::Ok {
-                output: codec::render_outcome(&outcome),
-                context: codec::context_of(&outcome).map(str::to_owned),
-            },
-            Err(ProtocolError::Unauthorized(message)) => ProtocolOutcome::Fail {
-                connection: Connection::Unauthorized,
-                detail: message,
-            },
-            Err(ProtocolError::Forbidden(message)) => ProtocolOutcome::Fail {
-                connection: Connection::Forbidden,
-                detail: message,
-            },
-            Err(ProtocolError::Malformed) => ProtocolOutcome::Fail {
-                connection: Connection::Malformed,
-                detail: "The response could not be read.".to_owned(),
-            },
-        },
-    }
-}
-
-fn guard(session: &SessionUi, visible: &[&str]) -> Result<(), String> {
-    if !calls_allowed_values(&session.access, session.connection) {
-        return Err("This page will not send credentials or call an unsupported agent.".to_owned());
-    }
-    take_secret_values(visible).map(|_| ())
-}
-
 fn calls_allowed_values(access: &str, connection: Connection) -> bool {
     matches!(access, "anonymous" | "bearer") && connection != Connection::Unsupported
 }
@@ -497,7 +295,7 @@ fn session_gate() -> (String, Connection) {
         "unsupported" => Connection::Unsupported,
         _ => Connection::Loading,
     };
-    (attr("security", "data-access"), connection)
+    (attr("connection", "data-access"), connection)
 }
 
 pub(super) fn take_secret(visible: &[&str]) -> Result<Option<String>, ()> {

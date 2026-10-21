@@ -142,7 +142,7 @@ pub fn MetricView() -> Element {
     });
     let range_alert = use_signal(String::new);
     let fetch = use_signal(|| 0u32);
-    let mut filled_range = use_signal(|| false);
+    let filled_range = use_signal(|| false);
     use_hook(|| bind(picks, selected, query, fetch));
     use_effect(move || fill_default_range(query, filled_range));
     let chart = use_resource(move || {

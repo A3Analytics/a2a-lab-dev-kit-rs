@@ -36,8 +36,6 @@ fn inventory_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     let stored = seed_session(&mut page);
-    open_protocol(&mut page);
-    page.set_value("context-id", "keep-me");
     assert_advertised(&mut page);
     reject_without_token(&mut page, &stored);
     page.show("#overview");
@@ -84,14 +82,9 @@ fn reject_without_token(page: &mut Browser, stored: &str) {
         eval_str(page, "document.getElementById('connection').dataset.state"),
         "connected"
     );
-    open_protocol(page);
     assert_eq!(
         eval_str(page, "document.getElementById('alert').textContent"),
         ""
-    );
-    assert_eq!(
-        eval_str(page, "document.getElementById('context-id').value"),
-        "keep-me"
     );
     assert_eq!(stored_session(page), stored);
 }
@@ -185,11 +178,6 @@ fn assert_task_text(page: &mut Browser) {
         Value::Null
     );
     assert_eq!(page.eval("window.__xss"), Value::Null);
-    open_protocol(page);
-    assert_eq!(
-        eval_str(page, "document.getElementById('context-id').value"),
-        "keep-me"
-    );
     page.show("#chat");
     assert_eq!(
         eval_str(page, "document.getElementById('chat').dataset.context"),
@@ -232,8 +220,6 @@ fn inventory_states(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until("document.getElementById('connection')?.dataset.state === 'connected'");
     let stored = seed_session(&mut page);
-    open_protocol(&mut page);
-    page.set_value("context-id", "keep-me");
     assert_scripted_advertisement(&mut page);
     page_scripted_logs(&mut page);
     page_scripted_metrics(&mut page);
@@ -354,11 +340,6 @@ fn fail_remaining_primitives(page: &mut Browser, base: &str) {
 }
 
 fn assert_scripted_requests(page: &mut Browser, base: &str, stored: &str) {
-    open_protocol(page);
-    assert_eq!(
-        eval_str(page, "document.getElementById('context-id').value"),
-        "keep-me"
-    );
     assert_eq!(stored_session(page), stored);
     let bodies = post_bodies(page, base);
     assert!(bodies.iter().any(|body| body.contains("list_log_sources")));
@@ -417,15 +398,6 @@ fn wait_inventory(page: &mut Browser, slug: &str, state: &str) {
     page.wait_until(&format!(
         "document.getElementById('inventory-' + {slug} + '-status')?.dataset.state === {state}"
     ));
-}
-
-fn open_protocol(page: &mut Browser) {
-    page.show("#agent");
-    if page.eval("document.getElementById('protocol-advanced')?.open === true") != Value::Bool(true)
-    {
-        page.click("protocol-advanced-summary");
-    }
-    page.wait_until("document.getElementById('protocol-advanced')?.open === true");
 }
 
 fn seed_session(page: &mut Browser) -> String {

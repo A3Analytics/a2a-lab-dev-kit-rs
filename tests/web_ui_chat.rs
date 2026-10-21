@@ -268,7 +268,12 @@ fn send_count(page: &Browser, base: &str) -> usize {
     page.requests(base)
         .into_iter()
         .filter(|request| {
-            request_url(request).contains("/message:send") && request_method(request) == "POST"
+            request_url(request).contains("/message:send")
+                && request_method(request) == "POST"
+                && request["params"]["request"]["postData"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("text/plain")
         })
         .count()
 }

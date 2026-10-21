@@ -1,6 +1,5 @@
 //! WASM shell: DOM, fetch, and page session.
 
-mod agent;
 mod app;
 mod chat;
 mod http;

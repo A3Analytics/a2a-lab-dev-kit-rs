@@ -118,12 +118,7 @@ pub fn route_for(hash: &str) -> Route {
             title: "Chat",
             primitive: None,
         },
-        _ => Route {
-            view: "view-agent",
-            link: "nav-agent",
-            title: "Agent",
-            primitive: None,
-        },
+        _ => primitive(Primitive::Logs, "view-logs", "nav-logs", "Logs"),
     }
 }
 

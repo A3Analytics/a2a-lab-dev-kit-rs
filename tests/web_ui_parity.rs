@@ -755,12 +755,11 @@ fn access(page: &mut Browser, status: &str) {
                 page,
                 "shell",
                 &[
-                    "nav-agent",
+                    "nav-chat",
                     "nav-logs",
                     "nav-metrics",
                     "nav-tasks",
                     "nav-images",
-                    "nav-chat",
                 ],
             );
             page.eval(
@@ -774,24 +773,16 @@ fn access(page: &mut Browser, status: &str) {
                 page,
                 "shell",
                 &[
-                    "nav-agent",
+                    "nav-chat",
                     "nav-logs",
                     "nav-metrics",
                     "nav-tasks",
                     "nav-images",
-                    "nav-chat",
                 ],
             );
             assert_unreachable(page, "shell", &["nav-toggle"]);
         }
         assert_reader_keys(page);
-        page.show("#agent");
-        page.eval("document.getElementById('protocol-advanced').open = false");
-        assert_reachable(page, "Agent", &["protocol-advanced-summary"]);
-        assert_unreachable(page, "Agent", &["send-text", "workbench-send"]);
-        page.click("protocol-advanced-summary");
-        page.wait_until("document.getElementById('protocol-advanced')?.open === true");
-        assert_reachable(page, "Agent", &["send-text"]);
         page.show("#chat");
         assert_reachable(page, "Chat", &["chat-draft", "chat-send"]);
     }

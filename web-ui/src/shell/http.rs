@@ -29,10 +29,6 @@ impl Transport {
             .await
     }
 
-    pub async fn tasks(&self, path: &str, token: Option<&str>) -> Result<Reply, ()> {
-        self.request("GET", path, None, token).await
-    }
-
     async fn request(
         &self,
         method: &str,
