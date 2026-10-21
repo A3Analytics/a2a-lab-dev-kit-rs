@@ -728,7 +728,7 @@ impl Kind {
     }
 }
 
-const NAV: [&str; 5] = ["#chat", "#logs", "#metrics", "#tasks", "#images"];
+const NAV: [&str; 5] = ["/ui/chat", "/ui/logs", "/ui/metrics", "/ui/tasks", "/ui/images"];
 const LOG_FORBIDDEN: &[&str] = &[
     "Loading the lab interface.",
     "Loading logs.",
