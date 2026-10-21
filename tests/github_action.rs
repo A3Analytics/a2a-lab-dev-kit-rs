@@ -7,6 +7,7 @@ const LIB: &str = include_str!("../src/lib.rs");
 const README: &str = include_str!("../README.md");
 const MISE_TASKS: &str = include_str!("../.mise/run.toml");
 const QUALITY_SCRIPT: &str = include_str!("../.mise/scripts/quality.sh");
+const TCK_WORKFLOW: &str = include_str!("../.github/workflows/a2a-tck.yml");
 const STANDALONE_TCK_SHA: &str = "1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd";
 const LAST_EMBEDDED_SHA: &str = "9d5327868d96b3e800fd89f6debf434bcc12709d";
 
@@ -94,4 +95,5 @@ fn official_a2a_tck_remains_in_the_quality_gate() {
     assert!(MISE_TASKS.contains("[tck]"));
     assert!(MISE_TASKS.contains(".mise/scripts/a2a-tck.sh"));
     assert!(QUALITY_SCRIPT.contains("step tck bash .mise/scripts/a2a-tck.sh"));
+    assert!(TCK_WORKFLOW.contains("rustup target add wasm32-unknown-unknown"));
 }

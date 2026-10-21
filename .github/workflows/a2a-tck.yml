@@ -25,6 +25,9 @@ jobs:
         with:
           install_args: "rust cargo:cargo-nextest"
 
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Test
         run: mise run test
 
