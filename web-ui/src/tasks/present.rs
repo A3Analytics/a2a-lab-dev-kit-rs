@@ -404,9 +404,9 @@ mod tests {
         assert_eq!(sniffed.kind, "Image");
         assert_eq!(sniffed.image.as_ref().unwrap().media_type, "image/jpeg");
 
-        let nested = present(&format!(
-            r#"{{"value":{{"descriptor":{{"media_type":"image/png"}},"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}}}}"#
-        ))
+        let nested = present(
+            r#"{"value":{"descriptor":{"media_type":"image/png"},"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}}"#,
+        )
         .unwrap();
         assert_eq!(nested.kind, "Image");
     }

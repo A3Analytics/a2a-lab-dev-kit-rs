@@ -92,3 +92,6 @@ id_type!(TaskId, "task definition");
 id_type!(RunId, "A2A task");
 id_type!(ImageId, "image");
 id_type!(ImageSourceId, "image source");
+id_type!(VideoSourceId, "video source");
+id_type!(VideoClipId, "video clip");
+id_type!(VideoFollowId, "video follow");

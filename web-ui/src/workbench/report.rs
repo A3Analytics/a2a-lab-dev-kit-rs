@@ -386,32 +386,48 @@ fn present_result(operation: &str, result: &Value) -> (Option<ImagePreview>, Val
         return (None, result.clone());
     };
     let mut shown = result.clone();
-    if let Some(object) = shown.as_object_mut() {
-        object.insert(
-            "data".to_owned(),
-            serde_json::json!({
-                "encoding": "base64",
-                "characters": preview.encoded_chars,
-                "decoded_bytes": preview.decoded_bytes,
-                "withheld": preview.withheld
-            }),
-        );
+    let summary = serde_json::json!({
+        "encoding": "base64",
+        "characters": preview.encoded_chars,
+        "decoded_bytes": preview.decoded_bytes,
+        "withheld": preview.withheld
+    });
+    if operation == "get_video_frame_at" {
+        if let Some(image) = shown.get_mut("image").and_then(Value::as_object_mut) {
+            image.insert("data".to_owned(), summary);
+        }
+    } else if let Some(object) = shown.as_object_mut() {
+        object.insert("data".to_owned(), summary);
     }
     (Some(preview), shown)
 }
 
 fn image_preview(operation: &str, result: &Value) -> Option<ImagePreview> {
-    if !matches!(operation, "get_image" | "get_current_image") {
-        return None;
-    }
-    let object = result.as_object()?;
-    let encoded = object.get("data")?.as_str()?.to_owned();
-    let media_type = object
-        .get("descriptor")
-        .and_then(|descriptor| descriptor.get("media_type"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_owned();
+    let (encoded, media_type) = match operation {
+        "get_image" | "get_current_image" => {
+            let object = result.as_object()?;
+            let encoded = object.get("data")?.as_str()?.to_owned();
+            let media_type = object
+                .get("descriptor")
+                .and_then(|descriptor| descriptor.get("media_type"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            (encoded, media_type)
+        }
+        "get_video_frame_at" => {
+            let image = result.get("image")?.as_object()?;
+            let encoded = image.get("data")?.as_str()?.to_owned();
+            let media_type = image
+                .get("descriptor")
+                .and_then(|descriptor| descriptor.get("media_type"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            (encoded, media_type)
+        }
+        _ => return None,
+    };
     Some(preview_for(&media_type, &encoded))
 }
 

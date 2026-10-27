@@ -22,7 +22,7 @@ const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; 
 const SCHEME: &str = "This agent requires a security scheme this page cannot use.";
 const REFUSE: &str = "This page will not send credentials or call an unsupported agent.";
 const TOKEN: &str = "agent-page-token";
-const ROUTES: [&str; 5] = ["#logs", "#metrics", "#tasks", "#images", "#chat"];
+const ROUTES: [&str; 6] = ["#logs", "#metrics", "#tasks", "#images", "#videos", "#chat"];
 
 const VISIBLE: &str = r"(needle) => {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -209,6 +209,7 @@ fn route_title(hash: &str) -> &'static str {
         "#metrics" => "Metrics",
         "#tasks" => "Tasks",
         "#images" => "Images",
+        "#videos" => "Videos",
         "#chat" => "Chat",
         _ => "Logs",
     }

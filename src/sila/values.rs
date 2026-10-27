@@ -1,6 +1,7 @@
 //! SiLA basic-type and lab-structure conversions.
 
 use jiff::civil::{Date, Time};
+use tonic::Status;
 
 use crate::error::A2aLabError;
 use crate::id::{MetricId, RunId, SourceId, TaskId};
@@ -9,6 +10,7 @@ use crate::logs::{LogLevel, LogRecord, LogSource};
 use crate::metrics::{MetricDescriptor, MetricPoint};
 use crate::page::PageRequest;
 use crate::sila::constraints::bounded_characters;
+use crate::sila::errors::validation;
 use crate::sila::wire::sila2::com::a3analytics::lab::laboperations::v1::{
     DataTypeLogRecord, DataTypeLogSource, DataTypeMetricDescriptor, DataTypeMetricPoint,
     DataTypePageRequest, DataTypeTaskDefinition, DataTypeTaskRun, DataTypeTimeRange,
@@ -153,6 +155,23 @@ pub(crate) fn read_json(
     }
     JsonObject::parse(&value.value)
         .map_err(|_| A2aLabError::invalid(field, "must be a JSON object"))
+}
+
+pub(crate) fn optional_sila_text(value: Option<&str>) -> (Boolean, SilaString) {
+    (
+        sila_bool(value.is_some()),
+        sila_string(value.unwrap_or_default()),
+    )
+}
+
+pub(crate) fn required_sila_text(
+    value: Option<&SilaString>,
+    identifier: impl Into<String>,
+) -> Result<String, Status> {
+    value
+        .map(|item| item.value.clone())
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| validation(identifier, "is required"))
 }
 
 fn optional_text(has: bool, value: Option<&str>) -> (Boolean, SilaString) {

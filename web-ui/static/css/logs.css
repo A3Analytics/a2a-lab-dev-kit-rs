@@ -3,7 +3,8 @@
 #view-logs,
 #view-metrics,
 #view-tasks,
-#view-images {
+#view-images,
+#view-videos {
   flex: 1;
   min-height: 0;
 }
@@ -11,7 +12,8 @@
 #log-view,
 #metric-view,
 #task-view,
-#image-view {
+#image-view,
+#video-view {
   flex: 1;
   min-height: 0;
 }
@@ -19,7 +21,8 @@
 #log-browser,
 #metric-browser,
 #task-browser,
-#image-browser {
+#image-browser,
+#video-browser {
   display: flex;
   flex: 1;
   align-items: stretch;
@@ -32,7 +35,8 @@
 #log-filters,
 #metric-filters,
 #task-filters,
-#image-filters {
+#image-filters,
+#video-filters {
   width: 15rem;
   flex: 0 0 15rem;
   overflow: auto;
@@ -98,6 +102,7 @@
 
 #log-filters .log-outline,
 #image-filters .log-outline,
+#video-filters .log-outline,
 #log-result-clear {
   border: 1px solid var(--input);
   background: transparent;
@@ -174,6 +179,7 @@
 #metric-results,
 #task-results,
 #image-results,
+#video-results,
 .log-results {
   display: flex;
   flex: 1 1 auto;
@@ -460,31 +466,36 @@ button.image-result[aria-checked="true"] {
   #log-browser,
   #metric-browser,
   #task-browser,
-  #image-browser {
+  #image-browser,
+  #video-browser {
     flex-direction: column;
   }
 
   #log-filters,
   #metric-filters,
   #task-filters,
-  #image-filters {
+  #image-filters,
+  #video-filters {
     width: auto;
     flex-basis: auto;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
 
-  #image-browser {
+  #image-browser,
+  #video-browser {
     overflow: auto;
   }
 
-  #image-results {
+  #image-results,
+  #video-results {
     flex: 0 0 auto;
     width: auto;
     max-width: none;
   }
 
-  #image-results .log-scroll {
+  #image-results .log-scroll,
+  #video-results .log-scroll {
     overflow: visible;
   }
 }

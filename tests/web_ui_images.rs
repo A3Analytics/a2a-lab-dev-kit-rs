@@ -411,7 +411,7 @@ fn assert_default_last_day(page: &mut Browser) {
     );
     assert_eq!(range["span"], serde_json::json!(86_400_000), "{range}");
     let age = range["age"].as_f64().unwrap_or(f64::MAX);
-    assert!(age >= 0.0 && age < 120_000.0, "{range}");
+    assert!((0.0..120_000.0).contains(&age), "{range}");
 }
 
 fn show_every_image(page: &mut Browser) {

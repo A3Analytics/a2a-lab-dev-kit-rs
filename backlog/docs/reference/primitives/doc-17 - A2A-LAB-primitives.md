@@ -8,23 +8,24 @@ created_date: "2026-10-06 21:36"
 
 # A2A-LAB primitives
 
-A2A-LAB primitives are the logs, metrics, tasks, and images shared by every interface and provider. [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>) names those two sides. The [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>) shows where they sit.
+A2A-LAB primitives are the logs, metrics, tasks, images, and optional videos shared by every interface and provider. [Interfaces and providers](<../interfaces-and-providers/doc-19 - Interfaces-and-providers.md>) names those two sides. The [A2A-LAB devkit overview](<../../overview/doc-10 - Lab-dev-kit-overview.md>) shows where they sit.
 
 ## Primitives
 
-The following diagram shows the four primitives `A2aLabService` uses:
+The following diagram shows the primitives `A2aLabService` uses. Videos is optional:
 
 ```mermaid
 flowchart LR
   accTitle: A2A-LAB primitives
-  accDescr: A2aLabService uses logs, metrics, tasks, and images.
+  accDescr: A2aLabService uses logs, metrics, tasks, images, and optional videos.
   lab["A2aLabService"] --> logs["Logs"]
   lab --> metrics["Metrics"]
   lab --> tasks["Tasks"]
   lab --> images["Images"]
+  lab --> videos["Videos"]
 ```
 
-In the preceding diagram, `A2aLabService` uses logs, metrics, tasks, and images.
+In the preceding diagram, `A2aLabService` uses logs, metrics, tasks, images, and optional videos.
 
 ### Logs
 
@@ -58,7 +59,34 @@ Configure the same decoded-byte maximum on the service and on each client. They 
 
 `get_current_image` names a source. It is not an image lookup with a missing id. The provider defines the current frame. That frame can be newly captured, taken from video, or the latest stored image. `MemoryImages` uses `set_current` when a frame was selected. Otherwise it returns the latest captured frame for that source, with the image id as the tie break.
 
-`A2aLabService::new` still takes logs, metrics, and tasks. Image operations return `unavailable` until `with_images`. MCP does not expose image resources. Agent2Agent (A2A) and MCP do not offer URI-only image delivery. SiLA 2 `LabImages` lists sources and returns one image by id or current source. Those pixel bytes always use SiLA binary download. Search and list-by-time stay on Agent2Agent (A2A) and Model Context Protocol (MCP).
+`A2aLabService::new` still takes logs, metrics, and tasks. Image operations return `unavailable` until `with_images`. MCP does not expose image resources. Agent2Agent (A2A) and MCP do not offer URI-only image delivery. SiLA 2 `LabImages` lists sources and returns one image by id or current source. Those pixel bytes always use SiLA binary download. Search and list-by-time stay on Agent2Agent (A2A) and Model Context Protocol (MCP). Saved still images remain exclusively in this Images primitive. Videos neither browses nor owns them.
+
+### Videos
+
+A video source names a place that can supply timestamped MJPEG. It has an id, a name, a description, width, height, fps, and the multipart MJPEG media type. Optional fields are `asset_id` and `semantic_id`.
+
+This crate supplies contracts and transport. It does not capture cameras and does not persist recordings. A provider owns recording, indexing, retention, clip expiry, and live-subscription cancellation. The provider coalesces rotated files or partitions into one logical interval. The timeline API rejects reversed, overlapping, or abutting intervals. A genuine temporal gap remains a separate later interval. Empty retention is a successful timeline with no intervals and no newest timestamp. Supply only metadata the provider actually has.
+
+`get_video_timeline` returns that ordered coverage for one source, including whether live follow can be prepared. It does not open a stream.
+
+`get_video_frame_at` remains the public name. It extracts a frame at time: the nearest retained JPEG at a UTC instant from retained video. Ties choose the earlier frame. Empty coverage, a request outside retained coverage, or a coverage gap is `not_found`. Coverage is never silently clamped. The response may include that extracted JPEG as inline base64. It is not a saved image.
+
+`get_video_clip` remains the public name. It prepares a short-lived clip handle for one half-open UTC range, `[start, end)`, of at most 60 seconds. A range that misses retained coverage is `no_recording`. A range that crosses a gap between retained intervals is `recording_gap`. `no_recording` applies only to that missed clip range. Invalid, reversed, or over-limit ranges are `invalid`. Agent2Agent (A2A) and Model Context Protocol (MCP) return clip metadata only: id, source, requested and effective ranges, media type, and a relative path `/media/video-clips/{id}`. Clip JSON never includes video bytes. `GET /media/video-clips/{id}` is a finite MJPEG download. An expired handle is `clip_expired`. An unknown handle is `not_found`.
+
+`follow_video` prepares a genuine live-follow handle for frames captured after the stream opens. The handle is metadata only: an opaque id, the source id, the MJPEG media type, and a relative path `/media/video-live/{id}`. It contains no frame bytes. `GET /media/video-live/{id}` follows that source. A source that cannot be followed is `live_unavailable`. The subscription ends when the consumer drops it or the provider stops the source.
+
+Both media responses use `Cache-Control: no-store`. The bearer token is sent only in the `Authorization` header. There is no public route, byte range, or shared cache. On A2A the routes use the protocol access gate and are not public `/ui` routes. On MCP, `/media/*` has no bearer gate, and the `/mcp` host allowlist does not cover it. [A2A and MCP protocols](<../../technical/protocol/doc-2 - A2A-and-MCP-protocols.md>) records that access. SiLA 2 `LabVideos` 1.1 returns a timeline and a finite clip. It has no follow command.
+
+These four availability failures keep stable codes. The user-facing sentences are:
+
+- `no_recording`: "No recording covers the requested range."
+- `recording_gap`: "The recording contains a gap."
+- `clip_expired`: "The clip expired."
+- `live_unavailable`: "Live video is unavailable."
+
+Agent2Agent (A2A) carries those codes in `ErrorInfo` `metadata.code`. Model Context Protocol (MCP) tool errors carry them in `data.code`. Media `GET` failures carry them in `error.code`. Generic `invalid`, `not_found`, and `unavailable` stay those codes. They do not always use dedicated sentences on the A2A task path.
+
+Video operations return `unavailable` until `with_videos`.
 
 ## Operations
 
@@ -76,6 +104,11 @@ Configure the same decoded-byte maximum on the service and on each client. They 
 10. `search_images` returns descriptors that match an optional source plus a half-open UTC range, nonblank text, or both. A source id alone is not a search. The page does not include pixel bytes.
 11. `get_image` returns one image, including its inline base64 bytes.
 12. `get_current_image` returns the provider-defined current frame for one source, including its inline base64 bytes.
+13. `list_video_sources` lists video sources.
+14. `get_video_frame_at` extracts a frame at time from retained video. The public name stays `get_video_frame_at`.
+15. `get_video_clip` prepares a bounded MJPEG clip handle for a half-open range of at most 60 seconds. Agent2Agent (A2A) and Model Context Protocol (MCP) return metadata and a relative path. Clip bytes are not in JSON.
+16. `get_video_timeline` returns ordered retained intervals for one source. Empty retention succeeds with no intervals and no newest timestamp.
+17. `follow_video` prepares a live-follow handle. The handle is metadata only. Frame bytes are not in JSON.
 
 Time ranges are half-open Coordinated Universal Time (UTC) intervals, `[start, end)`.
 
@@ -87,4 +120,4 @@ These values apply to every primitive:
 - A timestamp is UTC in RFC 3339 form. The offset is `Z`, `+00:00`, or `-00:00`.
 - A time range is half-open, `[start, end)`. `start` is included. `end` is excluded. `start` is before `end`.
 - A page limit is 1 to 1000. The default limit is 100. A cursor is an optional string of digits.
-- An error code is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`.
+- An error code is `invalid`, `not_found`, `unavailable`, `transport`, or `protocol`. Video availability also uses `no_recording`, `recording_gap`, `clip_expired`, and `live_unavailable`.

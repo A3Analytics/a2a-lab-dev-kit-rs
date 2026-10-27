@@ -4,7 +4,8 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    Headers, Request, RequestCache, RequestCredentials, RequestInit, RequestMode, Response,
+    AbortSignal, Headers, Request, RequestCache, RequestCredentials, RequestInit, RequestMode,
+    Response,
 };
 
 use crate::codec::Reply;
@@ -20,13 +21,41 @@ impl Transport {
     }
 
     pub async fn get_card(&self) -> Result<Reply, ()> {
-        self.request("GET", "/.well-known/agent-card.json", None, None)
+        self.request("GET", "/.well-known/agent-card.json", None, None, None)
             .await
     }
 
     pub async fn send(&self, body: &str, token: Option<&str>) -> Result<Reply, ()> {
-        self.request("POST", "/message:send", Some(body), token)
+        self.request("POST", "/message:send", Some(body), token, None)
             .await
+    }
+
+    pub async fn send_signaled(
+        &self,
+        body: &str,
+        token: Option<&str>,
+        signal: Option<&AbortSignal>,
+    ) -> Result<Reply, ()> {
+        self.request("POST", "/message:send", Some(body), token, signal)
+            .await
+    }
+
+    pub async fn get_stream(
+        &self,
+        path: &str,
+        token: Option<&str>,
+        signal: Option<&AbortSignal>,
+    ) -> Result<Response, ()> {
+        let window = web_sys::window().ok_or(())?;
+        if !window.navigator().on_line() {
+            return Err(());
+        }
+        let url = format!("{}{path}", self.origin.trim_end_matches('/'));
+        let request = build_request(&url, "GET", None, token, signal)?;
+        let value = JsFuture::from(window.fetch_with_request(&request))
+            .await
+            .map_err(|_| ())?;
+        value.dyn_into().map_err(|_| ())
     }
 
     async fn request(
@@ -35,13 +64,14 @@ impl Transport {
         path: &str,
         body: Option<&str>,
         token: Option<&str>,
+        signal: Option<&AbortSignal>,
     ) -> Result<Reply, ()> {
         let window = web_sys::window().ok_or(())?;
         if !window.navigator().on_line() {
             return Err(());
         }
         let url = format!("{}{path}", self.origin.trim_end_matches('/'));
-        let request = build_request(&url, method, body, token)?;
+        let request = build_request(&url, method, body, token, signal)?;
         let value = JsFuture::from(window.fetch_with_request(&request))
             .await
             .map_err(|_| ())?;
@@ -64,6 +94,7 @@ fn build_request(
     method: &str,
     body: Option<&str>,
     token: Option<&str>,
+    signal: Option<&AbortSignal>,
 ) -> Result<Request, ()> {
     let headers = Headers::new().map_err(|_| ())?;
     headers.set("A2A-Version", "1.0").map_err(|_| ())?;
@@ -83,6 +114,9 @@ fn build_request(
     init.set_credentials(RequestCredentials::Omit);
     init.set_cache(RequestCache::NoStore);
     init.set_headers(headers.as_ref());
+    if let Some(signal) = signal {
+        init.set_signal(Some(signal));
+    }
     if let Some(body) = body {
         init.set_body(&JsValue::from_str(body));
     }

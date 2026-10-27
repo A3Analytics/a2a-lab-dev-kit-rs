@@ -173,6 +173,7 @@ fn assert_routes_held(page: &mut Browser) {
         "view-metrics",
         "view-tasks",
         "view-images",
+        "view-videos",
         "view-chat",
     ] {
         assert!(
@@ -198,6 +199,10 @@ fn assert_routes_held(page: &mut Browser) {
     assert!(flag(
         page,
         "document.getElementById('chat-log')?.closest('#view-chat')"
+    ));
+    assert!(flag(
+        page,
+        "document.getElementById('video-view-heading')?.closest('#view-videos')"
     ));
     assert_eq!(
         count(

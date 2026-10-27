@@ -85,7 +85,9 @@ thread_local! {
     static METRICS: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
     static TASKS: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
     static IMAGES: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
-    static LOADERS: RefCell<[Option<Loader>; 4]> = const { RefCell::new([None, None, None, None]) };
+    static VIDEOS: RefCell<Option<Signal<InventoryUi>>> = const { RefCell::new(None) };
+    static LOADERS: RefCell<[Option<Loader>; 5]> =
+        const { RefCell::new([None, None, None, None, None]) };
 }
 
 pub fn bind(
@@ -93,11 +95,13 @@ pub fn bind(
     metrics: Signal<InventoryUi>,
     tasks: Signal<InventoryUi>,
     images: Signal<InventoryUi>,
+    videos: Signal<InventoryUi>,
 ) {
     LOGS.with(|slot| *slot.borrow_mut() = Some(logs));
     METRICS.with(|slot| *slot.borrow_mut() = Some(metrics));
     TASKS.with(|slot| *slot.borrow_mut() = Some(tasks));
     IMAGES.with(|slot| *slot.borrow_mut() = Some(images));
+    VIDEOS.with(|slot| *slot.borrow_mut() = Some(videos));
 }
 
 pub fn loaded(primitive: Primitive) -> Vec<Item> {
@@ -372,7 +376,10 @@ fn start_load(
     next.alert.clear();
     let stamp = next.tick;
     ui.set(next);
-    if matches!(primitive, Primitive::Tasks | Primitive::Images) {
+    if matches!(
+        primitive,
+        Primitive::Tasks | Primitive::Images | Primitive::Videos
+    ) {
         notify(primitive);
     }
     job.set(InventoryJob::Load {
@@ -526,6 +533,7 @@ fn notify(primitive: Primitive) {
         Primitive::Metrics => super::metrics::catalog_changed(),
         Primitive::Tasks => super::tasks::catalog_changed(),
         Primitive::Images => super::images::catalog_changed(),
+        Primitive::Videos => super::videos::catalog_changed(),
     }
 }
 
@@ -554,6 +562,7 @@ fn loader_index(primitive: Primitive) -> usize {
         Primitive::Metrics => 1,
         Primitive::Tasks => 2,
         Primitive::Images => 3,
+        Primitive::Videos => 4,
     }
 }
 
@@ -563,6 +572,7 @@ fn slot(primitive: Primitive) -> Option<Signal<InventoryUi>> {
         Primitive::Metrics => METRICS.with(|slot| *slot.borrow()),
         Primitive::Tasks => TASKS.with(|slot| *slot.borrow()),
         Primitive::Images => IMAGES.with(|slot| *slot.borrow()),
+        Primitive::Videos => VIDEOS.with(|slot| *slot.borrow()),
     }
 }
 

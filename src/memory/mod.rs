@@ -5,9 +5,11 @@ mod images;
 mod logs;
 mod metrics;
 mod tasks;
+mod videos;
 
 pub use catalog::MemoryCatalog;
 pub use images::MemoryImages;
 pub use logs::MemoryLogs;
 pub use metrics::MemoryMetrics;
 pub use tasks::MemoryTasks;
+pub use videos::MemoryVideos;

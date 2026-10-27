@@ -142,6 +142,9 @@ pub fn route_for(path: &str) -> Route {
         "images" | "inventory/images" => {
             primitive(Primitive::Images, "view-images", "nav-images", "Images")
         }
+        "videos" | "inventory/videos" => {
+            primitive(Primitive::Videos, "view-videos", "nav-videos", "Videos")
+        }
         "chat" => Route {
             view: "view-chat",
             link: "nav-chat",

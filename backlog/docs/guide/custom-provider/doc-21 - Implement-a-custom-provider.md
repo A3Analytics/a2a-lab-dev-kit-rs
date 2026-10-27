@@ -8,25 +8,27 @@ created_date: "2026-10-06 23:17"
 
 # Implement a custom provider
 
-Implement `LogProvider`, `MetricProvider`, `TaskProvider`, `ImageProvider`, or a combination of those traits. Pass the log, metric, and task implementations to `A2aLabService::new`. Pass an image implementation to `with_images`. [Custom](<../../reference/custom/doc-20 - Custom.md>) defines that provider role.
+Implement `LogProvider`, `MetricProvider`, `TaskProvider`, `ImageProvider`, `VideoProvider`, or a combination of those traits. Pass the log, metric, and task implementations to `A2aLabService::new`. Pass an image implementation to `with_images`. Pass a video implementation to `with_videos`. [Custom](<../../reference/custom/doc-20 - Custom.md>) defines that provider role.
 
 The following diagram shows where the implementation sits:
 
 ```mermaid
 flowchart LR
   accTitle: Wire a custom provider
-  accDescr: A custom type implements LogProvider, MetricProvider, TaskProvider, or ImageProvider. A2aLabService::new accepts the first three. with_images accepts ImageProvider.
+  accDescr: A custom type implements LogProvider, MetricProvider, TaskProvider, ImageProvider, or VideoProvider. A2aLabService::new accepts the first three. with_images accepts ImageProvider. with_videos accepts VideoProvider.
   custom["Custom type"] --> logs["LogProvider"]
   custom --> metrics["MetricProvider"]
   custom --> tasks["TaskProvider"]
   custom --> images["ImageProvider"]
+  custom --> videos["VideoProvider"]
   logs --> service["A2aLabService::new"]
   metrics --> service
   tasks --> service
   images --> attached["A2aLabService::with_images"]
+  videos --> videoAttached["A2aLabService::with_videos"]
 ```
 
-In the preceding diagram, a custom type implements `LogProvider`, `MetricProvider`, `TaskProvider`, or `ImageProvider`. `A2aLabService::new` accepts the log, metric, and task implementations. `A2aLabService::with_images` accepts `ImageProvider`.
+In the preceding diagram, a custom type implements `LogProvider`, `MetricProvider`, `TaskProvider`, `ImageProvider`, or `VideoProvider`. `A2aLabService::new` accepts the log, metric, and task implementations. `A2aLabService::with_images` accepts `ImageProvider`. `A2aLabService::with_videos` accepts `VideoProvider`.
 
 ## Implement the traits
 
@@ -57,7 +59,19 @@ The provider type is `Send` and `Sync`. Each method returns `Result<_, A2aLabErr
 - `get_image` returns one `Image`, including its inline bytes.
 - `get_current_image` returns the current `Image` for one source, including its inline bytes. The request names that source. It does not omit an image id. The provider defines the current frame. It can be newly captured, taken from video, or the latest stored image.
 
-Source fields, descriptor fields, and inline bytes are defined in the [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>). The provider supplies the frames.
+Source fields, descriptor fields, and inline bytes are defined in the [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>). The provider supplies the frames. Saved still images remain exclusively in the Images primitive. Videos neither browses nor owns them.
+
+`VideoProvider` has these methods:
+
+- `list_video_sources` returns a page of `VideoSource`.
+- `get_video_timeline` returns ordered retained coverage for one source. Coalesce continuous coverage across rotated files or partitions into one logical interval before returning it. The timeline API rejects reversed, overlapping, or abutting intervals. A genuine temporal gap remains a separate interval. Empty retention is a successful timeline with no intervals and no newest timestamp. Report live availability only when follow can be prepared. The default returns `unavailable` until the provider implements this method.
+- `get_video_frame_at` remains the public name. It extracts a frame at time: the nearest retained JPEG at a UTC instant from retained video. Ties choose the earlier frame. Empty coverage, a request outside retained coverage, or a coverage gap is `not_found`. The extracted frame is not a saved image.
+- `get_video_clip` remains the public name. It prepares a bounded clip handle for a half-open UTC range of at most 60 seconds. A range that misses retained coverage is `no_recording`. That code applies only to a missed clip range. A range that crosses a gap is `recording_gap`. Invalid, reversed, or over-limit ranges are `invalid`. The handle is metadata only.
+- `open_video_clip` opens a bounded JPEG stream for a previously prepared clip. An expired handle is `clip_expired`. An unknown handle is `not_found`. The provider owns that expiry.
+- `follow_video` prepares a live-follow handle. A source that cannot be followed is `live_unavailable`. The handle contains no frame bytes. The default returns `unavailable` until the provider implements this method.
+- `open_video_follow` opens the JPEG stream for a previously prepared live handle. Unknown handles are `not_found`. Cancel the subscription when the consumer drops the stream or when the provider stops the source. The default returns `unavailable` until the provider implements this method.
+
+The kit supplies contracts and transport. It does not capture cameras and does not persist recordings. The provider owns recording, indexing, retention, clip expiry, and live-subscription cancellation. Supply only metadata the provider actually has: omit a newest timestamp when nothing is retained, and do not invent resolution, ranges, timestamps, or live availability. Agent2Agent (A2A) and Model Context Protocol (MCP) return a relative `/media/video-clips/{id}` path for a clip and a relative `/media/video-live/{id}` path for live follow. Those responses carry no video bytes. A bearer token is sent only in the `Authorization` header. On MCP, `/media/*` has no bearer gate, and the `/mcp` host allowlist does not cover it.
 
 `Image::new` uses the 64 MiB default. A provider that creates a larger payload uses `Image::with_transport`. Set the same decoded-byte maximum on the service with `A2aLabService::with_image_transport` and on each client with `A2aClient::with_image_transport` or `McpLab::connect_with`. Pass a raised Model Context Protocol (MCP) limit to `connect_with` before the connection opens.
 
@@ -71,11 +85,12 @@ The [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives
 
 ## Pass the providers to the service
 
-`A2aLabService::new` takes one log provider, one metric provider, and one task provider. Image operations stay unavailable until `with_images`. Use `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, or `MemoryImages` for a primitive the custom type leaves to this crate. Attach an image provider without replacing that constructor:
+`A2aLabService::new` takes one log provider, one metric provider, and one task provider. Image operations stay unavailable until `with_images`. Video operations stay unavailable until `with_videos`. Use `MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, `MemoryImages`, or `MemoryVideos` for a primitive the custom type leaves to this crate. Attach image and video providers without replacing that constructor:
 
 ```rust
 let service = A2aLabService::new(OvenLogs::new()?, MemoryMetrics::new(), MemoryTasks::new())
-    .with_images(MemoryImages::new());
+    .with_images(MemoryImages::new())
+    .with_videos(MemoryVideos::new());
 ```
 
 The [custom provider example](../../../../examples/custom_provider.rs) implements `LogProvider` for one oven log and uses the in-memory metric and task providers:
@@ -102,7 +117,7 @@ log source: oven
 
 ## Use the SiLA provider
 
-A remote SiLA 2 server does not need a new trait implementation. `SilaProvider::connect` reads `SilaProviderConfig` and returns one value that implements `LogProvider`, `MetricProvider`, and `TaskProvider`. It does not implement `ImageProvider`. The inbound `SilaServer` serves images only when the lab service has an `ImageProvider`. The three-provider constructor below leaves image operations unavailable.
+A remote SiLA 2 server does not need a new trait implementation. `SilaProvider::connect` reads `SilaProviderConfig` and returns one value that implements `LogProvider`, `MetricProvider`, and `TaskProvider`. It does not implement `ImageProvider` or `VideoProvider`. The inbound `SilaServer` serves images only when the lab service has an `ImageProvider`, and videos only when it has a `VideoProvider`. The three-provider constructor below leaves image and video operations unavailable.
 
 ```rust
 let provider = SilaProvider::connect(config).await?;

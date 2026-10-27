@@ -22,8 +22,10 @@ use crate::sila::executions::Executions;
 use crate::sila::identity::SilaIdentity;
 use crate::sila::images::ImageFeature;
 use crate::sila::lab::LabFeature;
+use crate::sila::videos::VideoFeature;
 use crate::sila::wire::sila2::com::a3analytics::lab::labimages::v1::lab_images_server::LabImagesServer;
 use crate::sila::wire::sila2::com::a3analytics::lab::laboperations::v1::lab_operations_server::LabOperationsServer;
+use crate::sila::wire::sila2::com::a3analytics::lab::labvideos::v1::lab_videos_server::LabVideosServer;
 use crate::sila::wire::sila2::org::silastandard::binary_download_server::BinaryDownloadServer;
 use crate::sila::wire::sila2::org::silastandard::core::commands::cancelcontroller::v1::cancel_controller_server::CancelControllerServer;
 use crate::sila::wire::sila2::org::silastandard::core::connectionconfigurationservice::v1::connection_configuration_service_server::ConnectionConfigurationServiceServer;
@@ -157,6 +159,10 @@ impl SilaServer {
             lab: Arc::clone(&self.lab),
             binaries: binaries.clone(),
         };
+        let videos = VideoFeature {
+            lab: Arc::clone(&self.lab),
+            binaries: binaries.clone(),
+        };
         let downloads = DownloadFeature { binaries };
         let lab = LabFeature {
             lab: self.lab,
@@ -180,7 +186,7 @@ impl SilaServer {
         };
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let builder = Server::builder();
-        let mut router = if let Some(certificate) = &self.certificate {
+        let router = if let Some(certificate) = &self.certificate {
             if self.plaintext {
                 builder
             } else {
@@ -194,12 +200,7 @@ impl SilaServer {
         };
         let incoming = ListenerStream { listener };
         tokio::spawn(async move {
-            let router = router
-                .add_service(SiLaServiceServer::new(core))
-                .add_service(LabOperationsServer::new(lab))
-                .add_service(LabImagesServer::new(images))
-                .add_service(BinaryDownloadServer::new(downloads))
-                .add_service(CancelControllerServer::new(cancel));
+            let router = add_lab_services(router, core, lab, images, videos, downloads, cancel);
             let served = if let Some(connection) = connection {
                 let result = router
                     .add_service(ConnectionConfigurationServiceServer::new(
@@ -276,6 +277,24 @@ fn rename_callback(
 
 fn transport(error: &std::io::Error) -> A2aLabError {
     A2aLabError::transport(error.to_string())
+}
+
+fn add_lab_services(
+    mut server: Server,
+    core: CoreService,
+    lab: LabFeature,
+    images: ImageFeature,
+    videos: VideoFeature,
+    downloads: DownloadFeature,
+    cancel: CancelFeature,
+) -> tonic::transport::server::Router {
+    server
+        .add_service(SiLaServiceServer::new(core))
+        .add_service(LabOperationsServer::new(lab))
+        .add_service(LabImagesServer::new(images))
+        .add_service(LabVideosServer::new(videos))
+        .add_service(BinaryDownloadServer::new(downloads))
+        .add_service(CancelControllerServer::new(cancel))
 }
 
 struct ListenerStream {

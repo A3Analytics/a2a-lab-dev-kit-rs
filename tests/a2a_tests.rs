@@ -181,6 +181,11 @@ async fn agent_card_advertises_every_skill() {
             "search-images",
             "get-image",
             "get-current-image",
+            "list-video-sources",
+            "get-video-frame-at",
+            "get-video-clip",
+            "get-video-timeline",
+            "follow-video",
         ]
     );
     let bindings: Vec<_> = card
@@ -810,7 +815,7 @@ async fn agent_message_continues_context_and_keeps_lab_commands() {
         .map(|skill| skill.id)
         .collect();
     assert_eq!(ids.last().map(String::as_str), Some("agent-message"));
-    assert_eq!(ids.len(), 13);
+    assert_eq!(ids.len(), 18);
 
     let first = client.agent_message("hello", None).await.unwrap();
     assert_eq!(first.text, "echo hello");

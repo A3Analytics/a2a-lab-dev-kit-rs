@@ -21,6 +21,7 @@ use crate::sila::wire::sila2::org::silastandard::core::silaservice::v1::{
 pub(crate) const SILA_SERVICE: &str = "org.silastandard/core/SiLAService/v1";
 pub(crate) const LAB_OPERATIONS: &str = "com.a3analytics/lab/LabOperations/v1";
 pub(crate) const LAB_IMAGES: &str = "com.a3analytics/lab/LabImages/v1";
+pub(crate) const LAB_VIDEOS: &str = "com.a3analytics/lab/LabVideos/v1";
 pub(crate) const CANCEL_CONTROLLER: &str = "org.silastandard/core/commands/CancelController/v1";
 pub(crate) const CONNECTION_CONFIGURATION: &str =
     "org.silastandard/core/ConnectionConfigurationService/v1";
@@ -30,6 +31,7 @@ const FEATURE_IDENTIFIER: &str =
 const SILA_SERVICE_XML: &str = include_str!("standard/SiLAService.sila.xml");
 const LAB_OPERATIONS_XML: &str = include_str!("standard/LabOperations.sila.xml");
 const LAB_IMAGES_XML: &str = include_str!("standard/LabImages.sila.xml");
+const LAB_VIDEOS_XML: &str = include_str!("standard/LabVideos.sila.xml");
 const CANCEL_CONTROLLER_XML: &str = include_str!("standard/CancelController.sila.xml");
 const CONNECTION_CONFIGURATION_XML: &str =
     include_str!("standard/ConnectionConfigurationService.sila.xml");
@@ -42,6 +44,7 @@ impl FeatureCatalog {
         }
         ids.push(LAB_OPERATIONS);
         ids.push(LAB_IMAGES);
+        ids.push(LAB_VIDEOS);
         ids.push(CANCEL_CONTROLLER);
         ids
     }
@@ -51,6 +54,7 @@ impl FeatureCatalog {
             SILA_SERVICE => Some(SILA_SERVICE_XML),
             LAB_OPERATIONS => Some(LAB_OPERATIONS_XML),
             LAB_IMAGES => Some(LAB_IMAGES_XML),
+            LAB_VIDEOS => Some(LAB_VIDEOS_XML),
             CANCEL_CONTROLLER => Some(CANCEL_CONTROLLER_XML),
             CONNECTION_CONFIGURATION if self.connection => Some(CONNECTION_CONFIGURATION_XML),
             _ => None,

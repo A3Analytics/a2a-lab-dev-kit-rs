@@ -20,6 +20,7 @@ fn main() {
                 "proto/sila/SiLAService.proto",
                 "proto/sila/LabOperations.proto",
                 "proto/sila/LabImages.proto",
+                "proto/sila/LabVideos.proto",
                 "proto/sila/CancelController.proto",
                 "proto/sila/ConnectionConfigurationService.proto",
                 "proto/sila/SiLABinaryTransfer.proto",

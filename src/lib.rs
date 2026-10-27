@@ -1,7 +1,7 @@
-//! Rust dev kit for lab logs, metrics, tasks, and images.
+//! Rust dev kit for lab logs, metrics, tasks, images, and videos.
 //!
 //! Provider traits are the source of truth. The A2A adapter (HTTP+JSON, JSON-RPC,
-//! and gRPC) and the MCP adapter expose logs, metrics, tasks, and images.
+//! and gRPC) and the MCP adapter expose logs, metrics, tasks, images, and videos.
 //! The optional `web-ui` feature packages a Rust browser shell. `A2aServer::with_web_ui`
 //! serves that shell at `/ui/` on the A2A HTTP listener.
 
@@ -29,6 +29,7 @@ pub mod service;
 pub mod sila;
 pub mod tasks;
 pub mod time;
+pub mod videos;
 
 #[cfg(feature = "web-ui")]
 pub use a2a::WEB_UI_PATH;
@@ -42,8 +43,11 @@ pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
 };
-pub use error::A2aLabError;
-pub use id::{ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId};
+pub use error::{A2aLabError, VideoAvailability};
+pub use id::{
+    ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId, VideoClipId, VideoFollowId,
+    VideoSourceId,
+};
 pub use images::{
     DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor,
     ImageProvider, ImageSource, ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest,
@@ -57,7 +61,9 @@ pub use logs::{
     ListLogSourcesRequest, LogLevel, LogProvider, LogRecord, LogSource, QueryLogsRequest,
 };
 pub use mcp::{DEFAULT_MCP_URL, McpLab, McpServer};
-pub use memory::{MemoryCatalog, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks};
+pub use memory::{
+    MemoryCatalog, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos,
+};
 pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
 };
@@ -72,6 +78,15 @@ pub use tasks::{
     TaskRun, TaskState, start_run,
 };
 pub use time::{TimeRange, UtcTimestamp};
+pub use videos::{
+    DEFAULT_MJPEG_BOUNDARY, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest,
+    MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, TckMalformedVideoRequests,
+    VIDEO_CLIP_PATH_PREFIX, VIDEO_LIVE_PATH_PREFIX, VideoClip, VideoClipStream, VideoFollow,
+    VideoFrame, VideoLiveStream, VideoProvider, VideoSource, VideoTimeline, decode_mjpeg_multipart,
+    encode_mjpeg_end, encode_mjpeg_multipart, encode_mjpeg_part, mjpeg_content_type,
+    video_clip_path, video_live_path,
+};
 
 /// Returns the crate version.
 #[must_use]

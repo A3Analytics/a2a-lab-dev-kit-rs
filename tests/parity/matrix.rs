@@ -5,13 +5,15 @@ use std::time::Duration;
 
 use a2a_lab_dev_kit::{
     A2aClient, A2aLabCommand, A2aLabResult, A2aLabService, A2aServer, AgentCard,
-    GetCurrentImageRequest, GetImageRequest, GetTaskStatusRequest, HttpAuthSecurityScheme, Image,
-    ImageDescriptor, ImageId, ImageSource, ImageSourceId, JsonObject, ListImageSourcesRequest,
-    ListImagesRequest, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest, LogLevel,
-    LogRecord, LogSource, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor,
-    MetricId, MetricPoint, PageRequest, QueryLogsRequest, QueryMetricRequest, RunId,
-    SearchImagesRequest, SecurityScheme, SourceId, StartTaskRequest, TaskDefinition, TaskId,
-    TaskState, TimeRange, UtcTimestamp, bind_local,
+    GetCurrentImageRequest, GetImageRequest, GetTaskStatusRequest, GetVideoClipRequest,
+    GetVideoFrameAtRequest, HttpAuthSecurityScheme, Image, ImageDescriptor, ImageId, ImageSource,
+    ImageSourceId, JsonObject, ListImageSourcesRequest, ListImagesRequest, ListLogSourcesRequest,
+    ListMetricsRequest, ListTasksRequest, ListVideoSourcesRequest, LogLevel, LogRecord, LogSource,
+    MJPEG_MEDIA_TYPE, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos,
+    MetricDescriptor, MetricId, MetricPoint, PageRequest, QueryLogsRequest, QueryMetricRequest,
+    RunId, SearchImagesRequest, SecurityScheme, SourceId, StartTaskRequest, TaskDefinition, TaskId,
+    TaskState, TckMalformedVideoRequests, TimeRange, UtcTimestamp, VideoSource, VideoSourceId,
+    bind_local,
 };
 use a2a_types::SecurityRequirement;
 use base64::Engine;
@@ -157,6 +159,56 @@ async fn run_and_image_cases(client: &A2aClient) -> Vec<Success> {
         absent: Vec::new(),
         preview_bytes: Some(frame.data().len()),
     });
+    cases.extend(video_cases(client).await);
+    cases
+}
+
+async fn video_cases(client: &A2aClient) -> Vec<Success> {
+    let mut cases = Vec::new();
+    let sources = ListVideoSourcesRequest::new(page_of(10)).expect("page");
+    let command = A2aLabCommand::ListVideoSources(sources.clone());
+    let page = client
+        .list_video_sources(sources)
+        .await
+        .expect("video sources");
+    cases.push(finished(
+        "list video sources",
+        &command,
+        body(&A2aLabResult::ListVideoSources(page)),
+        &[],
+        None,
+    ));
+    let at = GetVideoFrameAtRequest::new(
+        VideoSourceId::new("cam").expect("source"),
+        UtcTimestamp::parse(START).expect("time"),
+        None,
+    );
+    let command = A2aLabCommand::GetVideoFrameAt(at.clone());
+    let frame = client.get_video_frame_at(at).await.expect("video frame");
+    let still_bytes = frame.image().data().len();
+    cases.push(finished(
+        "get video frame at",
+        &command,
+        body(&A2aLabResult::GetVideoFrameAt(frame)),
+        &[],
+        Some(still_bytes),
+    ));
+    let clip = GetVideoClipRequest::new(
+        VideoSourceId::new("cam").expect("source"),
+        span(START, "2020-06-01T00:00:02Z"),
+    )
+    .expect("clip");
+    let command = A2aLabCommand::GetVideoClip(clip.clone());
+    let handle = client.get_video_clip(clip).await.expect("video clip");
+    let encoded = serde_json::to_value(&handle).expect("clip json");
+    assert!(encoded.get("data").is_none());
+    cases.push(finished(
+        "get video clip",
+        &command,
+        body(&A2aLabResult::GetVideoClip(handle)),
+        &["data:video", "FFD8"],
+        None,
+    ));
     cases
 }
 
@@ -317,7 +369,46 @@ pub(crate) async fn failure_cases(client: &A2aClient) -> Vec<Failure> {
         )
         .await,
     );
+    cases.extend(video_failure_cases(client).await);
     cases
+}
+
+async fn video_failure_cases(client: &A2aClient) -> Vec<Failure> {
+    vec![
+        failed(
+            client,
+            "zero video page limit",
+            A2aLabCommand::ListVideoSources(
+                TckMalformedVideoRequests::list_video_sources_zero_limit(),
+            ),
+            "rpc",
+            "Status error",
+        )
+        .await,
+        failed(
+            client,
+            "reversed video clip range",
+            A2aLabCommand::GetVideoClip(TckMalformedVideoRequests::get_video_clip_reversed_range(
+                VideoSourceId::new("cam").expect("source"),
+                span(START, "2020-06-01T00:00:02Z"),
+            )),
+            "rpc",
+            "Status error",
+        )
+        .await,
+        failed(
+            client,
+            "unknown video source",
+            A2aLabCommand::GetVideoFrameAt(GetVideoFrameAtRequest::new(
+                VideoSourceId::new("missing-cam").expect("source"),
+                UtcTimestamp::parse(START).expect("time"),
+                None,
+            )),
+            "rpc",
+            "Status error",
+        )
+        .await,
+    ]
 }
 
 pub(crate) async fn image_unavailable(base: &str) -> Failure {
@@ -774,6 +865,21 @@ async fn failed(
             .await
             .expect_err(name)
             .to_string(),
+        A2aLabCommand::ListVideoSources(request) => client
+            .list_video_sources(request.clone())
+            .await
+            .expect_err(name)
+            .to_string(),
+        A2aLabCommand::GetVideoFrameAt(request) => client
+            .get_video_frame_at(request.clone())
+            .await
+            .expect_err(name)
+            .to_string(),
+        A2aLabCommand::GetVideoClip(request) => client
+            .get_video_clip(request.clone())
+            .await
+            .expect_err(name)
+            .to_string(),
         _ => panic!("unsupported failure command"),
     };
     Failure {
@@ -868,8 +974,10 @@ pub(crate) async fn seed() -> Lab {
     let metrics = seed_metrics().await;
     let tasks = seed_tasks().await;
     let images = seed_images().await;
+    let videos = seed_videos().await;
     let service = A2aLabService::new(logs, metrics, tasks.clone())
         .with_images(images.clone())
+        .with_videos(videos)
         .share();
     Lab {
         service,
@@ -1013,6 +1121,42 @@ async fn seed_images() -> MemoryImages {
         .await
         .expect("current");
     images
+}
+
+async fn seed_videos() -> MemoryVideos {
+    const JPEG: &[u8] = &[
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+    ];
+    let videos = MemoryVideos::new();
+    videos
+        .insert_source(
+            VideoSource::new(
+                VideoSourceId::new("cam").expect("source"),
+                "cam",
+                "cam recording",
+                None,
+                None,
+                1,
+                1,
+                1,
+                MJPEG_MEDIA_TYPE,
+            )
+            .expect("video source"),
+        )
+        .await
+        .expect("video source");
+    for at in [START, "2020-06-01T00:00:01Z", "2020-06-01T00:00:02Z"] {
+        videos
+            .insert_frame(
+                VideoSourceId::new("cam").expect("source"),
+                UtcTimestamp::parse(at).expect("time"),
+                JPEG.to_vec(),
+            )
+            .await
+            .expect("video frame");
+    }
+    videos
 }
 
 fn frame(id: &str, source: &str, caption: Option<&str>, at: &str) -> ImageDescriptor {

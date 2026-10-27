@@ -1,10 +1,12 @@
 use base64::Engine;
 
 use a2a_lab_dev_kit::{
-    A2aLabError, DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest, Image,
-    ImageDescriptor, ImageId, ImageProvider, ImageSource, ImageSourceId, ImageTransportConfig,
-    JsonObject, ListImageSourcesRequest, ListImagesRequest, MAX_PAGE_LIMIT, MetricPoint, Page,
-    PageRequest, SearchImagesRequest, SourceId, TimeRange, UtcTimestamp, version,
+    A2aLabError, DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest,
+    GetVideoClipRequest, Image, ImageDescriptor, ImageId, ImageProvider, ImageSource,
+    ImageSourceId, ImageTransportConfig, JsonObject, ListImageSourcesRequest, ListImagesRequest,
+    MAX_PAGE_LIMIT, MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, MetricPoint, Page, PageRequest,
+    SearchImagesRequest, SourceId, TimeRange, UtcTimestamp, VideoClipId, VideoSource,
+    VideoSourceId, version,
 };
 
 fn timestamp(value: &str) -> UtcTimestamp {
@@ -92,6 +94,67 @@ fn image_ids_match_the_public_identifier_rules() {
     assert_eq!(ImageId::new("cam.frame_1").unwrap().as_str(), "cam.frame_1");
     assert!(serde_json::from_str::<GetImageRequest>(r#"{"id":"bad id"}"#).is_err());
     assert!(serde_json::from_str::<GetCurrentImageRequest>(r#"{"source_id":""}"#).is_err());
+}
+
+#[test]
+fn video_ids_match_the_public_identifier_rules() {
+    assert!(VideoSourceId::new("").is_err());
+    assert!(VideoSourceId::new("has space").is_err());
+    assert!(VideoClipId::new("a/b").is_err());
+    assert!(VideoClipId::new("x".repeat(129)).is_err());
+    assert_eq!(
+        VideoSourceId::new("cam.stream_1").unwrap().as_str(),
+        "cam.stream_1"
+    );
+}
+
+#[test]
+fn video_source_requires_mjpeg_media_type_and_utc_construction() {
+    let id = VideoSourceId::new("cam").unwrap();
+    assert!(
+        VideoSource::new(id.clone(), "Cam", "bench", None, None, 1, 1, 1, "video/mp4",).is_err()
+    );
+    let source = VideoSource::new(
+        id,
+        "Cam",
+        "bench",
+        None,
+        None,
+        640,
+        480,
+        15,
+        MJPEG_MEDIA_TYPE,
+    )
+    .unwrap();
+    assert_eq!(source.media_type(), MJPEG_MEDIA_TYPE);
+    let value = serde_json::to_value(&source).unwrap();
+    assert_eq!(value["media_type"], MJPEG_MEDIA_TYPE);
+    assert!(
+        serde_json::from_value::<VideoSource>(serde_json::json!({
+            "id": "cam",
+            "name": "Cam",
+            "description": "bench",
+            "width": 1,
+            "height": 1,
+            "fps": 1,
+            "media_type": "image/jpeg"
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn video_clip_rejects_over_limit_and_reversed_ranges() {
+    let start = timestamp("2024-01-01T00:00:00Z");
+    let far = timestamp("2024-01-01T00:02:00Z");
+    let source = VideoSourceId::new("cam").unwrap();
+    let reversed: TimeRange =
+        serde_json::from_str(r#"{"start":"2024-01-01T00:00:01Z","end":"2024-01-01T00:00:00Z"}"#)
+            .unwrap();
+    assert!(GetVideoClipRequest::new(source.clone(), reversed).is_err());
+    let long = TimeRange::new(start, far).unwrap();
+    assert!(long.duration_us() > MAX_VIDEO_CLIP_DURATION_US);
+    assert!(GetVideoClipRequest::new(source, long).is_err());
 }
 
 #[test]

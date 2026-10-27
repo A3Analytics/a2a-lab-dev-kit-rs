@@ -12,7 +12,7 @@ created_date: "2026-09-30 17:38"
 
 ## Role in A2A-LAB devkit
 
-SiLA 2 is both an interface and a provider. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `SilaProvider` connects to a remote SiLA server and fulfills logs, metrics, and tasks. `SilaProvider` does not implement `ImageProvider`.
+SiLA 2 is both an interface and a provider. A SiLA client calls `SilaServer`. `A2aLabApi` fulfills `SilaServer` with the [A2A-LAB primitives](<../primitives/doc-17 - A2A-LAB-primitives.md>). `SilaProvider` connects to a remote SiLA server and fulfills logs, metrics, and tasks. `SilaProvider` does not implement `ImageProvider` or `VideoProvider`.
 
 The following diagram shows that path:
 
@@ -33,6 +33,7 @@ The `sila2` feature is on by default. The lab profile uses these features:
 - `org.silastandard/core/SiLAService/v1`
 - `com.a3analytics/lab/LabOperations/v1`
 - `com.a3analytics/lab/LabImages/v1`
+- `com.a3analytics/lab/LabVideos/v1`
 - `org.silastandard/core/commands/CancelController/v1`
 
 `LabOperations` covers logs, metrics, and tasks. It has these seven operations:
@@ -45,6 +46,12 @@ Pages, time ranges, records, and task runs are SiLA structures. Task input and l
 `LabImages` lists image sources and returns one image. `ListImageSources` returns a page of named sources and what each source captures. `GetImage` reads one stored image by id. `GetCurrentImage` reads the provider-defined current frame for one source. Search and list-by-time stay on Agent2Agent (A2A) and Model Context Protocol (MCP).
 
 Every image uses SiLA binary download, including a payload under 2 MiB. The command response carries metadata and a `binaryTransferUUID`. The client calls `BinaryDownload.GetBinaryInfo`, `GetChunk`, and `DeleteBinary` for the pixel bytes. The cloud connector does not proxy `LabImages` or `BinaryDownload`.
+
+`LabVideos` 1.1 lists video sources, returns retained timeline coverage, extracts one frame at time, and returns one finite clip. `ListVideoSources` returns a page of named sources. `GetVideoFrameAt` remains the public command. It extracts the nearest retained JPEG at a UTC instant from retained video. Saved still images remain exclusively in the Images primitive and in `LabImages`. Videos neither browses nor owns them. `GetVideoTimeline` returns ordered half-open retained intervals, the newest retained timestamp when one exists, and `LiveAvailable`. Empty retention succeeds with no intervals and no newest timestamp. `LiveAvailable=false` means live follow is off. `GetVideoClip` remains the public command for a half-open UTC range of at most 60 seconds. The response is a finite `BinaryDownload` plus the relative `/media/video-clips/{id}` path. That path is metadata. The body does not include frames added after the call.
+
+SiLA LabVideos exposes retained timeline metadata and finite BinaryDownload clips but has no follow command and no post-call frame stream. That difference from Agent2Agent (A2A) and Model Context Protocol (MCP) genuine live follow is intentional. A2A and MCP use `follow_video` and authenticated `GET /media/video-live/{id}`. `get_video_frame_at` remains the compatible public protocol name. The Videos page says "frame at time" for that extraction. A2A and MCP return clip metadata without embedding clip bytes and download the finite clip from the media route.
+
+Defined errors include `NoRecording`, `RecordingGap`, `ClipExpired`, and `LiveUnavailable`. `LiveUnavailable` is returned only when the provider returns `live_unavailable`. A provider that does not implement the timeline returns `ProviderUnavailable`. `NoRecording` applies when a clip range misses coverage. The kit supplies contracts and transport. It does not capture cameras and does not persist recordings. `LabVideos` is served only when the lab service has a `VideoProvider`. The feature identifier remains `com.a3analytics/lab/LabVideos/v1`.
 
 `CancelController.CancelCommand` cancels the lab run behind a `StartTask` execution. The execution id must be a lowercase UUID. A canceled execution finishes with `canceled`. A provider that cannot cancel returns `OperationNotSupported`.
 
@@ -97,7 +104,7 @@ Each binding assigns one feature command or readable property to `task`, `logs`,
 
 A task binding uses the Feature Definition for its input and output JSON Schema. An observable command keeps progress and can be canceled. A log or metric binding calls its member when the lab query arrives. JSON pointers select the returned records or samples, and the provider keeps the requested half-open UTC range. There is no background collection.
 
-`SilaProvider` implements `LogProvider`, `MetricProvider`, and `TaskProvider`. It does not implement `ImageProvider`. Pass one cloned value to each argument of `A2aLabService::new`. Image operations on that service stay unavailable until a separate `ImageProvider` is attached.
+`SilaProvider` implements `LogProvider`, `MetricProvider`, and `TaskProvider`. It does not implement `ImageProvider` or `VideoProvider`. Pass one cloned value to each argument of `A2aLabService::new`. Image operations on that service stay unavailable until a separate `ImageProvider` is attached. Video operations stay unavailable until a separate `VideoProvider` is attached.
 
 The [SiLA provider example](../../../../examples/sila_provider.rs) (`examples/sila_provider.rs`) reads one remote log command.
 

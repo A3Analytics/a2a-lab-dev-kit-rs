@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use a2a_lab_dev_kit::{
     A2aLabService, A2aServer, HttpAuthSecurityScheme, ImageSource, ImageSourceId, LogSource,
-    MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId,
-    SecurityScheme, SourceId, TaskDefinition, TaskId, bind_local,
+    MJPEG_MEDIA_TYPE, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos,
+    MetricDescriptor, MetricId, SecurityScheme, SourceId, TaskDefinition, TaskId, VideoSource,
+    VideoSourceId, bind_local,
 };
 use axum::body::Bytes;
 use axum::http::StatusCode;
@@ -50,7 +51,7 @@ fn inventory_flow(base: &str) {
 }
 
 fn assert_advertised(page: &mut Browser) {
-    for slug in ["logs", "metrics", "tasks", "images"] {
+    for slug in ["logs", "metrics", "tasks", "images", "videos"] {
         page.show(&format!("#inventory/{slug}"));
         wait_inventory(page, slug, "unauthorized");
         let view = inventory_view(page, slug);
@@ -95,6 +96,7 @@ fn page_all(page: &mut Browser) {
         ("metrics", "metric-a", "metric-b"),
         ("tasks", "task-a", "task-b"),
         ("images", "image-a", "image-b"),
+        ("videos", "video-a", "video-b"),
     ] {
         page_one(page, slug, first, second);
         let logs = inventory_view(page, "logs");
@@ -297,6 +299,8 @@ fn fail_remaining_primitives(page: &mut Browser, base: &str) {
     assert_eq!(inventory_view(page, "metrics")["state"], "empty");
     page.show("#inventory/images");
     wait_inventory(page, "images", "unavailable");
+    page.show("#inventory/videos");
+    wait_inventory(page, "videos", "unavailable");
     let images = inventory_view(page, "images");
     assert_eq!(images["configured"], "false");
     assert_eq!(images["advertised"], "false");
@@ -469,6 +473,7 @@ fn assert_inventory_requests(page: &Browser, base: &str) {
         "list_metrics",
         "list_tasks",
         "list_image_sources",
+        "list_video_sources",
     ] {
         assert!(
             bodies.iter().any(|body| body.contains(operation)),
@@ -484,6 +489,7 @@ async fn inventory_lab() -> String {
         inventory_tasks().await,
     )
     .with_images(inventory_images().await)
+    .with_videos(inventory_videos().await)
     .share();
     let (listener, address) = bind_local().await.unwrap();
     let schemes = [(
@@ -603,6 +609,45 @@ async fn inventory_images() -> MemoryImages {
     images
 }
 
+async fn inventory_videos() -> MemoryVideos {
+    let videos = MemoryVideos::new();
+    videos
+        .insert_source(
+            VideoSource::new(
+                VideoSourceId::new("video-a").unwrap(),
+                "Camera",
+                MARKUP,
+                Some("asset-video".to_owned()),
+                Some("semantic-video".to_owned()),
+                8,
+                4,
+                1,
+                MJPEG_MEDIA_TYPE,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    videos
+        .insert_source(
+            VideoSource::new(
+                VideoSourceId::new("video-b").unwrap(),
+                "Deck",
+                "Deck camera",
+                None,
+                None,
+                8,
+                4,
+                1,
+                MJPEG_MEDIA_TYPE,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    videos
+}
+
 async fn scripted_inventory() -> String {
     serve_mock(
         json!({
@@ -674,7 +719,7 @@ pub(super) async fn scripted_send(body: Bytes) -> Response {
             tokio::time::sleep(Duration::from_millis(400)).await;
             bytes(StatusCode::OK, "application/json", b"not-json".to_vec())
         }
-        "list_image_sources" => bytes(
+        "list_image_sources" | "list_video_sources" => bytes(
             StatusCode::INTERNAL_SERVER_ERROR,
             "application/json",
             json!({

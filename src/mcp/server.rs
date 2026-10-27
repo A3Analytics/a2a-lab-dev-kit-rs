@@ -1,4 +1,4 @@
-//! MCP tools for lab logs, metrics, tasks, and images.
+//! MCP tools for lab logs, metrics, tasks, images, and videos.
 
 use std::sync::Arc;
 
@@ -23,6 +23,11 @@ use crate::page::Page;
 use crate::service::{A2aLabApi, A2aLabCommand, A2aLabResult};
 use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
+};
+use crate::videos::{
+    FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
+    GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip, VideoFollow, VideoSource,
+    VideoTimeline,
 };
 
 /// MCP server exposing the lab operations as tools.
@@ -86,12 +91,15 @@ impl McpServer {
         {
             config = config.disable_allowed_hosts();
         }
+        let lab = Arc::clone(&self.lab);
         let service = StreamableHttpService::new(
             move || Ok(self.clone()),
             Arc::new(LocalSessionManager::default()),
             config,
         );
-        let router = axum::Router::new().nest_service("/mcp", service);
+        let router = axum::Router::new()
+            .nest_service("/mcp", service)
+            .merge(crate::videos::http::router(lab));
         axum::serve(listener, router)
             .await
             .map_err(|error| A2aLabError::transport(error.to_string()))
@@ -315,6 +323,96 @@ impl McpServer {
         )
         .await
     }
+
+    #[tool(
+        name = "list_video_sources",
+        description = "List the video sources this agent can read"
+    )]
+    async fn list_video_sources(
+        &self,
+        params: Parameters<ListVideoSourcesRequest>,
+    ) -> Result<Json<Page<VideoSource>>, ErrorData> {
+        self.take(
+            A2aLabCommand::ListVideoSources(params.0),
+            |result| match result {
+                A2aLabResult::ListVideoSources(page) => Some(page),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_video_frame_at",
+        description = "Read the retained frame at a UTC instant"
+    )]
+    async fn get_video_frame_at(
+        &self,
+        params: Parameters<GetVideoFrameAtRequest>,
+    ) -> Result<Json<GetVideoFrameAtResult>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetVideoFrameAt(params.0),
+            |result| match result {
+                A2aLabResult::GetVideoFrameAt(frame) => Some(frame),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_video_clip",
+        description = "Prepare a bounded MJPEG clip handle. Bytes are not embedded."
+    )]
+    async fn get_video_clip(
+        &self,
+        params: Parameters<GetVideoClipRequest>,
+    ) -> Result<Json<VideoClip>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetVideoClip(params.0),
+            |result| match result {
+                A2aLabResult::GetVideoClip(clip) => Some(clip),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_video_timeline",
+        description = "Read ordered retained coverage for one source. Bytes are not embedded."
+    )]
+    async fn get_video_timeline(
+        &self,
+        params: Parameters<GetVideoTimelineRequest>,
+    ) -> Result<Json<VideoTimeline>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetVideoTimeline(params.0),
+            |result| match result {
+                A2aLabResult::GetVideoTimeline(timeline) => Some(timeline),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "follow_video",
+        description = "Prepare a live MJPEG follow handle. Bytes are not embedded."
+    )]
+    async fn follow_video(
+        &self,
+        params: Parameters<FollowVideoRequest>,
+    ) -> Result<Json<VideoFollow>, ErrorData> {
+        self.take(
+            A2aLabCommand::FollowVideo(params.0),
+            |result| match result {
+                A2aLabResult::FollowVideo(follow) => Some(follow),
+                _ => None,
+            },
+        )
+        .await
+    }
 }
 
 #[allow(clippy::unused_async_trait_impl)]
@@ -324,7 +422,7 @@ impl ServerHandler for McpServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2026_07_28)
             .with_server_info(Implementation::new("a2a-lab", env!("CARGO_PKG_VERSION")))
-            .with_instructions("Lab logs, metrics, tasks, and images")
+            .with_instructions("Lab logs, metrics, tasks, images, and videos")
     }
 }
 
@@ -332,11 +430,15 @@ fn mcp_error(error: &A2aLabError) -> ErrorData {
     let message = error.to_string();
     let data = Some(serde_json::json!({ "code": error.code() }));
     match error {
+        A2aLabError::Unavailable { .. }
+        | A2aLabError::Transport { .. }
+        | A2aLabError::Video {
+            availability: crate::error::VideoAvailability::LiveUnavailable,
+            ..
+        } => ErrorData::internal_error(message, data),
         A2aLabError::Invalid { .. }
         | A2aLabError::Protocol { .. }
-        | A2aLabError::NotFound { .. } => ErrorData::invalid_params(message, data),
-        A2aLabError::Unavailable { .. } | A2aLabError::Transport { .. } => {
-            ErrorData::internal_error(message, data)
-        }
+        | A2aLabError::NotFound { .. }
+        | A2aLabError::Video { .. } => ErrorData::invalid_params(message, data),
     }
 }

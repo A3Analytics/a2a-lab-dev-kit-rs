@@ -1,19 +1,23 @@
 //! In-memory lab served with the optional web interface.
 //!
 //! The process prints a local `/ui/` URL and keeps listening. Open that URL
-//! to browse logs, metrics, tasks, images, and an `agent-message` echo.
+//! to browse logs, metrics, tasks, images, videos, and an `agent-message` echo.
 
 use std::io::{Write, stdout};
 use std::sync::Arc;
+use std::time::Duration;
 
 use a2a_lab_dev_kit::{
     A2aLabApi, A2aLabError, A2aLabService, A2aServer, AgentMessageFuture, AgentMessageHandler,
     AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest, Image, ImageDescriptor, ImageId,
-    ImageSource, ImageSourceId, JsonObject, LogLevel, LogRecord, LogSource, MemoryImages,
-    MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint, RunId,
-    SourceId, TaskDefinition, TaskId, TaskProvider, TaskState, UtcTimestamp, WEB_UI_PATH,
+    ImageSource, ImageSourceId, JsonObject, LogLevel, LogRecord, LogSource, MJPEG_MEDIA_TYPE,
+    MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, MetricDescriptor, MetricId,
+    MetricPoint, RunId, SourceId, TaskDefinition, TaskId, TaskProvider, TaskState, UtcTimestamp,
+    VideoSource, VideoSourceId, WEB_UI_PATH,
 };
 use tokio::net::TcpListener;
+
+mod bench_jpeg;
 
 const DEFAULT_BIND: &str = "127.0.0.1:3847";
 
@@ -88,7 +92,73 @@ async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
 
     Ok(A2aLabService::new(logs, metrics, tasks)
         .with_images(images)
+        .with_videos(seed_videos().await?)
         .share())
+}
+
+async fn seed_videos() -> Result<MemoryVideos, A2aLabError> {
+    let videos = MemoryVideos::new();
+    let source = VideoSourceId::new("bench")?;
+    videos
+        .insert_source(VideoSource::new(
+            source.clone(),
+            "Bench",
+            "Bench camera recording",
+            None,
+            None,
+            bench_jpeg::FRAME_WIDTH,
+            bench_jpeg::FRAME_HEIGHT,
+            4,
+            MJPEG_MEDIA_TYPE,
+        )?)
+        .await?;
+    videos.set_live_available(&source, true).await?;
+    let mut next = snap_down(UtcTimestamp::now().saturating_add_micros(-bench_jpeg::RETAIN_US));
+    publish_until(&videos, &source, &mut next).await?;
+    let running = videos.clone();
+    let followed = source.clone();
+    tokio::spawn(async move {
+        let mut next = next;
+        loop {
+            tokio::time::sleep(Duration::from_micros(
+                u64::try_from(bench_jpeg::FRAME_STEP_US).unwrap_or(250_000),
+            ))
+            .await;
+            if publish_until(&running, &followed, &mut next).await.is_err() {
+                break;
+            }
+        }
+    });
+    Ok(videos)
+}
+
+fn snap_down(stamp: UtcTimestamp) -> UtcTimestamp {
+    let extra = stamp.as_micros().rem_euclid(bench_jpeg::FRAME_STEP_US);
+    stamp.saturating_add_micros(-extra)
+}
+
+async fn publish_until(
+    videos: &MemoryVideos,
+    source: &VideoSourceId,
+    next: &mut UtcTimestamp,
+) -> Result<(), A2aLabError> {
+    let now = UtcTimestamp::now();
+    let earliest = snap_down(now.saturating_add_micros(-bench_jpeg::RETAIN_US));
+    if next.as_micros() < earliest.as_micros() {
+        *next = earliest;
+    }
+    while next.as_micros() <= now.as_micros() {
+        let (hour, minute, second, step) = bench_jpeg::clock_parts(next.as_micros());
+        videos
+            .insert_frame(
+                source.clone(),
+                *next,
+                bench_jpeg::clock_frame(hour, minute, second, step),
+            )
+            .await?;
+        *next = next.saturating_add_micros(bench_jpeg::FRAME_STEP_US);
+    }
+    videos.forget_before(source, earliest).await
 }
 
 async fn seed_logs() -> Result<MemoryLogs, A2aLabError> {

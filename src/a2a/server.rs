@@ -291,7 +291,8 @@ fn router(
             StaticAgentCard::new(card),
         )))
         .merge(a2a_server::rest::rest_router(Arc::clone(&handler)))
-        .merge(a2a_server::jsonrpc::jsonrpc_router(Arc::clone(&handler)));
+        .merge(a2a_server::jsonrpc::jsonrpc_router(Arc::clone(&handler)))
+        .merge(crate::videos::http::router(Arc::clone(&server.lab)));
     #[cfg(feature = "web-ui")]
     let app = if serve_web_ui {
         app.merge(super::web_ui::router())

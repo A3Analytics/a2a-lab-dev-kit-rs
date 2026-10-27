@@ -14,12 +14,15 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::A2aLabError;
-use crate::id::RunId;
+use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{DEFAULT_MAX_IMAGE_BYTES, Image, ImageTransportConfig};
 use crate::service::{
     A2aLabApi, A2aLabCommand, A2aLabFuture, A2aLabOutcome, A2aLabResult, TaskSnapshot,
 };
 use crate::tasks::{GetTaskStatusRequest, TaskState};
+use crate::videos::{
+    DEFAULT_MJPEG_BOUNDARY, GetVideoFrameAtResult, VideoClipStream, decode_mjpeg_multipart,
+};
 
 /// Default Streamable HTTP URL for [`McpServer::serve_http`](super::McpServer::serve_http).
 pub const DEFAULT_MCP_URL: &str = "http://127.0.0.1:31001/mcp";
@@ -31,6 +34,7 @@ const CONNECT_WAIT: Duration = Duration::from_millis(20);
 pub struct McpLab {
     client: RunningService<rmcp::RoleClient, ClientConfig>,
     image_transport: ImageTransportConfig,
+    origin: Option<String>,
 }
 
 impl McpLab {
@@ -42,6 +46,7 @@ impl McpLab {
         Self {
             client,
             image_transport: ImageTransportConfig::default(),
+            origin: None,
         }
     }
 
@@ -102,6 +107,16 @@ impl McpLab {
         self.image_transport.max_image_bytes()
     }
 
+    /// Origin-qualified URL for `GET` of a live-follow handle.
+    ///
+    /// The handle path stays relative. This joins that path to the HTTP MCP origin.
+    pub fn video_live_url(&self, id: &VideoFollowId) -> Result<String, A2aLabError> {
+        let origin = self.origin.as_deref().ok_or_else(|| {
+            A2aLabError::unavailable("video live download requires an HTTP MCP origin")
+        })?;
+        Ok(crate::videos::http::live_url(origin, id))
+    }
+
     async fn call<Req, Res>(&self, name: &str, request: Req) -> Result<Res, A2aLabError>
     where
         Req: Serialize,
@@ -121,6 +136,25 @@ impl McpLab {
         // the caller's limit so a raised maximum applies while the JSON is decoded.
         let value = tool_json(self.invoke(name, request).await?)?;
         decode_image(&value, self.image_transport)
+    }
+
+    async fn call_video_frame_at(
+        &self,
+        request: crate::videos::GetVideoFrameAtRequest,
+    ) -> Result<GetVideoFrameAtResult, A2aLabError> {
+        let value = tool_json(self.invoke("get_video_frame_at", request).await?)?;
+        let requested_at = serde_json::from_value(
+            value
+                .get("requested_at")
+                .cloned()
+                .ok_or_else(|| A2aLabError::protocol("requested_at is missing"))?,
+        )
+        .map_err(|error| A2aLabError::protocol(error.to_string()))?;
+        let image_value = value
+            .get("image")
+            .ok_or_else(|| A2aLabError::protocol("video frame image is missing"))?;
+        let image = decode_image(image_value, self.image_transport)?;
+        Ok(GetVideoFrameAtResult::new(requested_at, image))
     }
 
     async fn invoke<Req>(&self, name: &str, request: Req) -> Result<CallToolResult, A2aLabError>
@@ -187,8 +221,34 @@ impl McpLab {
             A2aLabCommand::GetCurrentImage(request) => {
                 A2aLabResult::GetCurrentImage(self.call_image("get_current_image", request).await?)
             }
+            A2aLabCommand::ListVideoSources(_)
+            | A2aLabCommand::GetVideoFrameAt(_)
+            | A2aLabCommand::GetVideoClip(_)
+            | A2aLabCommand::GetVideoTimeline(_)
+            | A2aLabCommand::FollowVideo(_) => self.execute_video(command).await?,
         };
         Ok(outcome(result))
+    }
+
+    async fn execute_video(&self, command: A2aLabCommand) -> Result<A2aLabResult, A2aLabError> {
+        match command {
+            A2aLabCommand::ListVideoSources(request) => Ok(A2aLabResult::ListVideoSources(
+                self.call("list_video_sources", request).await?,
+            )),
+            A2aLabCommand::GetVideoFrameAt(request) => Ok(A2aLabResult::GetVideoFrameAt(
+                self.call_video_frame_at(request).await?,
+            )),
+            A2aLabCommand::GetVideoClip(request) => Ok(A2aLabResult::GetVideoClip(
+                self.call("get_video_clip", request).await?,
+            )),
+            A2aLabCommand::GetVideoTimeline(request) => Ok(A2aLabResult::GetVideoTimeline(
+                self.call("get_video_timeline", request).await?,
+            )),
+            A2aLabCommand::FollowVideo(request) => Ok(A2aLabResult::FollowVideo(
+                self.call("follow_video", request).await?,
+            )),
+            _ => Err(A2aLabError::protocol("unexpected video command")),
+        }
     }
 }
 
@@ -218,6 +278,39 @@ impl A2aLabApi for McpLab {
     ) -> A2aLabFuture<'_, Result<TaskSnapshot, A2aLabError>> {
         Box::pin(async { Err(A2aLabError::unavailable("task is not cancelable")) })
     }
+
+    fn open_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> A2aLabFuture<'_, Result<VideoClipStream, A2aLabError>> {
+        let id = id.clone();
+        Box::pin(async move { self.fetch_video_clip(&id).await })
+    }
+}
+
+impl McpLab {
+    async fn fetch_video_clip(&self, id: &VideoClipId) -> Result<VideoClipStream, A2aLabError> {
+        let origin = self.origin.as_ref().ok_or_else(|| {
+            A2aLabError::unavailable("video clip download requires an HTTP MCP origin")
+        })?;
+        let response = reqwest::Client::new()
+            .get(crate::videos::http::clip_url(origin, id))
+            .send()
+            .await
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        let status = response.status();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(media_http_error(status, &body));
+        }
+        let frames = decode_mjpeg_multipart(&body, DEFAULT_MJPEG_BOUNDARY)?;
+        Ok(Box::pin(futures_util::stream::iter(
+            frames.into_iter().map(Ok),
+        )))
+    }
 }
 
 async fn connect_once(
@@ -230,7 +323,15 @@ async fn connect_once(
     );
     let mut lab = McpLab::connect_transport(transport).await?;
     lab.image_transport = image_transport;
+    lab.origin = Some(http_origin(url));
     Ok(lab)
+}
+
+fn http_origin(url: &str) -> String {
+    url.split_once("/mcp")
+        .map(|(origin, _)| origin.trim_end_matches('/').to_owned())
+        .filter(|origin| !origin.is_empty())
+        .unwrap_or_else(|| url.trim_end_matches('/').to_owned())
 }
 
 fn sse_event_limit(max_image_bytes: u64) -> usize {
@@ -294,6 +395,25 @@ fn outcome(result: A2aLabResult) -> A2aLabOutcome {
             state,
             result,
         },
+    }
+}
+
+fn media_http_error(status: reqwest::StatusCode, body: &[u8]) -> A2aLabError {
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+        && let Some(code) = value
+            .pointer("/error/code")
+            .and_then(serde_json::Value::as_str)
+    {
+        let message = value
+            .pointer("/error/message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(code);
+        return A2aLabError::from_code(code, message);
+    }
+    match status.as_u16() {
+        404 => A2aLabError::not_found("video clip", status.to_string()),
+        400 => A2aLabError::invalid("id", status.to_string()),
+        _ => A2aLabError::transport(status.to_string()),
     }
 }
 

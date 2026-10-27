@@ -28,7 +28,7 @@ A2aServer::new(&service).with_web_ui()
 
 `with_web_ui` is compiled only with the `web-ui` feature. The constant `WEB_UI_PATH` is `/ui/`. The listener serves the page at `GET /ui`, `GET /ui/`, and `GET /ui/index.html`. Packaged assets are under `/ui/assets/`.
 
-Those page and asset routes are public and carry no agent data or credentials. A2A protocol routes keep the access gate configured on `A2aServer`.
+Those page and asset routes are public and carry no agent data or credentials. A2A protocol routes, `GET /media/video-clips/{id}`, and `GET /media/video-live/{id}` keep the access gate configured on `A2aServer`. Those media routes are not public. Responses use `Cache-Control: no-store`. There is no byte range and no shared cache. The bearer token is sent only in the `Authorization` header.
 
 With the feature omitted, `with_web_ui` is absent and `/ui/` is not a route. With the feature compiled and `with_web_ui` left uncalled, `/ui/` is still absent. In both cases the A2A and MCP routes stay as they are.
 
@@ -86,9 +86,10 @@ The process inserts this representative data:
 - Metric `latency`, with one sample of value `5` at that same timestamp.
 - Task definition `build`, with an input schema that covers typed, required, defaulted, constrained, nested, array, and JSON-fallback fields, and task definition `home`, with no input schema.
 - Image source `bench`, with a 1 by 1 PNG frame `current`.
+- Video source `bench`, a live in-memory stream at 4 fps. Each frame draws the current UTC time. The process keeps the latest 2 minutes and drops older frames and expired clip copies. It does not write video files.
 - An `agent-message` handler that replies `echo` plus the user text.
 
-`MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, and `MemoryImages` hold that data in the process. `A2aLabService::with_images` attaches the image catalog. `with_message_handler` advertises `agent-message`.
+`MemoryLogs`, `MemoryMetrics`, `MemoryTasks`, `MemoryImages`, and `MemoryVideos` hold that data in the process. `A2aLabService::with_images` attaches the image catalog. `with_videos` attaches the video catalog. `with_message_handler` advertises `agent-message`. Video operations stay unavailable until `with_videos`.
 
 ## Browser client
 
@@ -108,14 +109,24 @@ The page is a same-origin A2A HTTP+JSON client. It calls the listener that serve
 
 It loads `GET /.well-known/agent-card.json`, then uses the HTTP+JSON routes on [A2A](<../../reference/a2a/doc-4 - A2A.md>).
 
-The page browses the four [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, and images. Primary navigation is Chat, Logs, Metrics, Tasks, and Images. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Logs is the default at `/ui/` and `/ui/logs`. Chat, Metrics, Tasks, and Images are `/ui/chat`, `/ui/metrics`, `/ui/tasks`, and `/ui/images`. `/ui/workbench` opens Logs and the command runner. Older paths still open the matching page: `/ui/overview`, `/ui/agent`, `/ui/inventory`, and `/ui/inventory/logs` open Logs, `/ui/inventory/metrics` opens Metrics, `/ui/inventory/tasks` opens Tasks, and `/ui/inventory/images` opens Images. A saved hash other than `#main` is replaced with that path when the page opens.
+The page browses the [A2A-LAB primitives](<../../reference/primitives/doc-17 - A2A-LAB-primitives.md>): logs, metrics, tasks, images, and optional videos. Primary navigation is Chat, Logs, Metrics, Tasks, Images, and Videos. The A3 Analytics logo and the A2A Lab name sit at the top of that navigation. Logs is the default at `/ui/` and `/ui/logs`. Chat, Metrics, Tasks, Images, and Videos are `/ui/chat`, `/ui/metrics`, `/ui/tasks`, `/ui/images`, and `/ui/videos`. `/ui/workbench` opens Logs and the command runner. Older paths still open the matching page: `/ui/overview`, `/ui/agent`, `/ui/inventory`, and `/ui/inventory/logs` open Logs, `/ui/inventory/metrics` opens Metrics, `/ui/inventory/tasks` opens Tasks, `/ui/inventory/images` opens Images, and `/ui/inventory/videos` opens Videos. A saved hash other than `#main` is replaced with that path when the page opens.
 
 Each primitive page lists that primitive and runs its commands:
 
 - Logs runs `list_log_sources` and `query_logs`. The page is a list: a filter sidebar toggles sources, searches messages, limits the UTC date range, and narrows severity, and the other column shows those records as cards, each with its source. The source catalog and the command runner stay off that page.
 - Metrics runs `list_metrics` and `query_metric`. The page is a list: the sidebar lists each metric so one click switches the series, a start and end limit the UTC time range, and the other column draws those samples as an SVG line chart inside a card. The card shows the metric title, a one-line description, and a control that downloads those samples as CSV. The value axis includes the metric unit. The time axis uses compact UTC clock labels. Hovering a point shows that sample's time, value, and unit, and the chart resizes with the page. A visually hidden list keeps the same readings for assistive technology. The catalog and the command runner stay off that page. The package does not include a canvas chart runtime.
 - Tasks runs `list_tasks`, `start_task`, and `get_task_status`. The page is a list: the sidebar is a single-select of definitions, and the other column shows that task's name and description, a generated input form, and a closed Details disclosure for identifiers and schemas. Supported schema fields become labeled controls. An unsupported construct becomes a labeled JSON fallback. A missing schema needs no input. Start sends `start_task` with `wait` set to false and then polls `get_task_status` until the run is completed, failed, or canceled. Run cards stay in page memory for that load. The catalog and the command runner stay off that page. The page does not cancel runs and does not call protocol `GET /tasks`.
-- Images runs `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`. A toolbar above the image list chooses a source and captures its current image. After a successful capture, the page opens that image in the preview. The sidebar independently toggles one source or all sources, searches, and limits the UTC time range, while the other column shows matching frames as cards with thumbnails. Choosing a card opens that image alone. A picture smaller than 200 by 200 pixels is drawn scaled up so its longer side is 200 pixels. The image size sits at the bottom left of the preview. Escape or the backdrop closes it. The catalog and the command runner stay off that page.
+- Images runs `list_image_sources`, `list_images`, `search_images`, `get_image`, and `get_current_image`. A toolbar above the image list chooses a source and captures its current image. After a successful capture, the page opens that image in the preview. The sidebar independently toggles one source or all sources, searches, and limits the UTC time range, while the other column shows matching frames as cards with thumbnails. Choosing a card opens that image alone. A picture smaller than 200 by 200 pixels is drawn scaled up so its longer side is 200 pixels. The image size sits at the bottom left of the preview. Escape or the backdrop closes it. The catalog and the command runner stay off that page. Saved still images remain exclusively on this Images page.
+- Videos is one timeline-centered page. It has no Live tab and no Recorded tab. It runs `list_video_sources`, `get_video_timeline`, `follow_video`, `get_video_clip`, and `get_video_frame_at`. The public names `get_video_clip` and `get_video_frame_at` stay in those commands. The page says "Frame at time" and extracts that frame from retained video. It does not browse or own saved still images. Before a selection, the stage says "Select a source and a time." Media controls appear only after a clip, a live follow, or a frame at time exists. The same viewer plays both kinds of media. Following the newest point calls `follow_video` and then the authenticated `GET /media/video-live/{id}` stream. An earlier selection plays one bounded `get_video_clip` of at most 60 seconds, then `GET /media/video-clips/{id}`, in that same viewer. The timeline shows the available recording's start and end in UTC above the bar. The timeline hint is "Select up to 60 seconds of continuous coverage, or follow the newest point." Start (UTC) and End (UTC) accept a typed range, and Load clip plays that range in the same viewer. The timeline slider remains available. Empty retention shows "No retained video." A tertiary Details control stays closed by default. Opened, it shows only the facts that are available: source, resolution and FPS, connection, playback, requested range, effective range, the actual frame timestamp, and each retained interval. The catalog and the command runner stay off that page. The kit supplies contracts and transport. It does not capture cameras and does not persist recordings.
+
+Availability failures use these sentences, and the page can offer Retry or Choose another range:
+
+- "No recording covers the requested range." The stable code is `no_recording`. Choose another range.
+- "The recording contains a gap." The stable code is `recording_gap`. Choose another range.
+- "The clip expired." The stable code is `clip_expired`. Retry.
+- "Live video is unavailable." The stable code is `live_unavailable`. Retry, or choose another range.
+
+Those codes travel in A2A `ErrorInfo` `metadata.code`. Media `GET` uses `error.code`. Generic `invalid`, `not_found`, and `unavailable` do not always use dedicated sentences on the A2A task path. The page shows "The video result could not be read." for invalid and not_found task responses, and the provider text for a generic unavailable response.
 
 Choosing a row action stays on that page and fills the matching command. A log source, metric, task, or image source is chosen from a dropdown of the items listed on that page. The filled command stays until Send or until another primitive page replaces it with that page's first command. Command history is page memory, at most 20 entries, and a reload drops it. A continued list keeps the cursor returned by the latest chunk.
 
@@ -135,7 +146,7 @@ Chat is disabled when the agent card does not advertise `agent-message`. The sta
 
 ## Privacy and security
 
-The page writes two preferences to `localStorage`: `sidebar_state`, whether the desktop rail is open, and `theme`, the appearance choice. It does not write a sidebar cookie. It does not write chat history, command history, or credentials to `localStorage`, `sessionStorage`, or cookies. A conversation exists only in the current page. Reload drops it.
+The page writes two preferences to `localStorage`: `sidebar_state`, whether the desktop rail is open, and `theme`, the appearance choice. It does not write a sidebar cookie. It does not write chat history, command history, credentials, clip bytes, or playback history to `localStorage`, `sessionStorage`, or cookies. A conversation exists only in the current page. Reload drops it.
 
 When the card requires HTTP bearer authentication, the token is a password field in the page header. `autocomplete` is off. The field lives for that page load. Reload clears it. The token is sent only in the `Authorization` header. The page refuses a command or chat message whose visible text contains the token.
 
@@ -149,7 +160,7 @@ The page can call an agent with no security requirements, or an agent whose requ
 - one requirement that mixes bearer with any of those schemes
 - a security requirement the card does not describe
 
-The page will not send credentials or call an agent whose scheme it cannot satisfy. That refusal stays visible on Logs, Metrics, Tasks, Images, and Chat. Chat stays disabled, and the status says chat is unavailable for this agent.
+The page will not send credentials or call an agent whose scheme it cannot satisfy. That refusal stays visible on Logs, Metrics, Tasks, Images, Videos, and Chat. Chat stays disabled, and the status says chat is unavailable for this agent. Clip and live downloads use the same `Authorization` header. The media URL never includes the token. The page never puts clip bytes, live bytes, or a bearer token in a query string, in markup, or in `localStorage`, `sessionStorage`, or cookies.
 
 A rejected bearer token shows Unauthorized on the command that was sent. A token that lacks the required scope shows Forbidden. A chat send that is unauthorized or forbidden reports that failure and leaves the draft available for retry.
 

@@ -14,7 +14,9 @@ use crate::page::PageRequest;
 use crate::service::{A2aLabApi, A2aLabCommand, A2aLabResult};
 use crate::sila::binary::BinaryStore;
 use crate::sila::errors::{defined, reject_metadata, undefined, validation};
-use crate::sila::values::{sila_bool, sila_string, timestamp_of};
+use crate::sila::values::{
+    optional_sila_text, required_sila_text, sila_bool, sila_string, timestamp_of,
+};
 use crate::sila::wire::sila2::com::a3analytics::lab::labimages::v1::data_type_image_source::ImageSourceStruct;
 use crate::sila::wire::sila2::com::a3analytics::lab::labimages::v1::lab_images_server::LabImages;
 use crate::sila::wire::sila2::com::a3analytics::lab::labimages::v1::{
@@ -135,8 +137,8 @@ impl ImageFeature {
 }
 
 fn source_message(source: &crate::images::ImageSource) -> DataTypeImageSource {
-    let (has_asset, asset) = optional_text(source.asset_id.as_deref());
-    let (has_semantic, semantic) = optional_text(source.semantic_id.as_deref());
+    let (has_asset, asset) = optional_sila_text(source.asset_id.as_deref());
+    let (has_semantic, semantic) = optional_sila_text(source.semantic_id.as_deref());
     DataTypeImageSource {
         image_source: Some(ImageSourceStruct {
             id: Some(sila_string(source.id.as_str())),
@@ -148,13 +150,6 @@ fn source_message(source: &crate::images::ImageSource) -> DataTypeImageSource {
             semantic_id: Some(semantic),
         }),
     }
-}
-
-fn optional_text(value: Option<&str>) -> (Boolean, SilaString) {
-    (
-        sila_bool(value.is_some()),
-        sila_string(value.unwrap_or_default()),
-    )
 }
 
 fn caption_fields(caption: Option<&str>) -> (Boolean, SilaString) {
@@ -194,22 +189,15 @@ fn page_from(page: Option<&DataTypePageRequest>) -> Result<PageRequest, Status> 
 }
 
 fn read_image_id(value: Option<&SilaString>) -> Result<ImageId, Status> {
-    let text = required_text(value, "GetImage", "ImageId")?;
+    let text = required_sila_text(value, parameter("GetImage", "ImageId"))?;
     ImageId::new(text)
         .map_err(|error| validation(parameter("GetImage", "ImageId"), error.to_string()))
 }
 
 fn read_source_id(value: Option<&SilaString>) -> Result<ImageSourceId, Status> {
-    let text = required_text(value, "GetCurrentImage", "SourceId")?;
+    let text = required_sila_text(value, parameter("GetCurrentImage", "SourceId"))?;
     ImageSourceId::new(text)
         .map_err(|error| validation(parameter("GetCurrentImage", "SourceId"), error.to_string()))
-}
-
-fn required_text(value: Option<&SilaString>, command: &str, name: &str) -> Result<String, Status> {
-    value
-        .map(|item| item.value.clone())
-        .filter(|text| !text.is_empty())
-        .ok_or_else(|| validation(parameter(command, name), "is required"))
 }
 
 fn parameter(command: &str, name: &str) -> String {
@@ -218,7 +206,6 @@ fn parameter(command: &str, name: &str) -> String {
 
 fn image_error(error: A2aLabError) -> Status {
     match error {
-        A2aLabError::Invalid { message, .. } => undefined(message),
         A2aLabError::NotFound { kind, id } => {
             let identifier = if kind == "image source" {
                 "ImageSourceNotFound"
@@ -232,8 +219,9 @@ fn image_error(error: A2aLabError) -> Status {
             )
         }
         A2aLabError::Unavailable { message } => defined(LAB_IMAGES, "ProviderUnavailable", message),
-        A2aLabError::Transport { message } | A2aLabError::Protocol { message } => {
-            undefined(message)
-        }
+        A2aLabError::Invalid { message, .. }
+        | A2aLabError::Transport { message }
+        | A2aLabError::Protocol { message }
+        | A2aLabError::Video { message, .. } => undefined(message),
     }
 }

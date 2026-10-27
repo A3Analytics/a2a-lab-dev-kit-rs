@@ -1,4 +1,4 @@
-//! Inventory of the four provider-backed list commands.
+//! Inventory of the five provider-backed list commands.
 //!
 //! Chat context ids and protocol task ids are not read.
 
@@ -18,6 +18,7 @@ pub enum Primitive {
     Metrics,
     Tasks,
     Images,
+    Videos,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -72,6 +73,9 @@ pub struct Item {
     pub name: String,
     pub description: String,
     pub details: Vec<(&'static str, String)>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub fps: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +94,13 @@ pub enum Fault {
 }
 
 impl Primitive {
-    pub const ALL: [Self; 4] = [Self::Logs, Self::Metrics, Self::Tasks, Self::Images];
+    pub const ALL: [Self; 5] = [
+        Self::Logs,
+        Self::Metrics,
+        Self::Tasks,
+        Self::Images,
+        Self::Videos,
+    ];
 
     pub const fn spec(self) -> Spec {
         match self {
@@ -157,6 +167,22 @@ impl Primitive {
                 limit_label: "Image source limit",
                 cursor_label: "Image source cursor",
                 more_label: "More image sources",
+            },
+            Self::Videos => Spec {
+                section: "inventory-videos",
+                status: "inventory-videos-status",
+                alert: "inventory-videos-alert",
+                limit: "inventory-videos-limit",
+                cursor: "inventory-videos-cursor",
+                more: "inventory-videos-more",
+                items: "inventory-videos-items",
+                heading: "Video sources",
+                operation: "list_video_sources",
+                skill: "list-video-sources",
+                noun: "Video sources",
+                limit_label: "Video source limit",
+                cursor_label: "Video source cursor",
+                more_label: "More video sources",
             },
         }
     }
@@ -407,12 +433,46 @@ fn parse_item(primitive: Primitive, value: &Value) -> Result<Item, Fault> {
         push_optional(&mut details, "Input schema", object, "input_schema")?;
         push_optional(&mut details, "Output schema", object, "output_schema")?;
     }
+    let (width, height, fps) = if primitive == Primitive::Videos {
+        video_measure(object)
+    } else {
+        (None, None, None)
+    };
     Ok(Item {
         id,
         name,
         description,
         details,
+        width,
+        height,
+        fps,
     })
+}
+
+fn video_measure(object: &Map<String, Value>) -> (Option<u32>, Option<u32>, Option<u32>) {
+    match (
+        positive_u32(object, "width"),
+        positive_u32(object, "height"),
+        positive_u32(object, "fps"),
+    ) {
+        (Some(width), Some(height), Some(fps)) => (Some(width), Some(height), Some(fps)),
+        _ => (None, None, None),
+    }
+}
+
+fn positive_u32(object: &Map<String, Value>, key: &str) -> Option<u32> {
+    let number = object.get(key)?;
+    let value = if let Some(value) = number.as_u64() {
+        value
+    } else {
+        let float = number.as_f64()?;
+        if !float.is_finite() || float < 1.0 || float.fract() != 0.0 {
+            return None;
+        }
+        float as u64
+    };
+    let value = u32::try_from(value).ok()?;
+    (value > 0).then_some(value)
 }
 
 fn required_string(object: &Map<String, Value>, key: &str) -> Result<String, Fault> {
@@ -448,7 +508,8 @@ mod tests {
     const MARKUP: &str = r#"<img id="inventory-xss" src=x onerror="window.__inventoryXss=1">"#;
 
     #[test]
-    fn commands_use_the_four_list_operations_and_valid_pages() {
+    fn commands_use_the_five_list_operations_and_valid_pages() {
+        assert_eq!(Primitive::ALL.len(), 5);
         let first = field_query("", "1").unwrap();
         assert!(first.cursor.is_none());
         assert_eq!(first.limit, 1);
@@ -502,6 +563,82 @@ mod tests {
         assert!(!Primitive::Metrics.is_advertised(&card));
         assert!(Primitive::Tasks.is_advertised(&card));
         assert!(!Primitive::Images.is_advertised(&card));
+        assert!(!Primitive::Videos.is_advertised(&card));
+        let videos = interpret(
+            Primitive::Videos,
+            &page_reply(vec![json!({
+                "operation": "list_video_sources",
+                "result": {"items": [{
+                    "id": "cam",
+                    "name": "Camera A",
+                    "description": "deck",
+                    "width": 320,
+                    "height": 180,
+                    "fps": 12
+                }]}
+            })]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(videos.items[0].width, Some(320));
+        assert_eq!(videos.items[0].height, Some(180));
+        assert_eq!(videos.items[0].fps, Some(12));
+        assert!(videos.items[0].details.is_empty());
+        let partial = interpret(
+            Primitive::Videos,
+            &page_reply(vec![json!({
+                "operation": "list_video_sources",
+                "result": {"items": [{
+                    "id": "cam",
+                    "name": "Camera A",
+                    "description": "deck",
+                    "width": 320,
+                    "height": 0,
+                    "fps": 12
+                }]}
+            })]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(partial.items[0].width, None);
+        assert_eq!(partial.items[0].height, None);
+        assert_eq!(partial.items[0].fps, None);
+        let decimal = interpret(
+            Primitive::Videos,
+            &page_reply(vec![json!({
+                "operation": "list_video_sources",
+                "result": {"items": [{
+                    "id": "cam",
+                    "name": "Camera A",
+                    "description": "deck",
+                    "width": 320.0,
+                    "height": 180.0,
+                    "fps": 1.0
+                }]}
+            })]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(decimal.items[0].width, Some(320));
+        assert_eq!(decimal.items[0].height, Some(180));
+        assert_eq!(decimal.items[0].fps, Some(1));
+        let fraction = interpret(
+            Primitive::Videos,
+            &page_reply(vec![json!({
+                "operation": "list_video_sources",
+                "result": {"items": [{
+                    "id": "cam",
+                    "name": "Camera A",
+                    "description": "deck",
+                    "width": 320.5,
+                    "height": 180.0,
+                    "fps": 1.0
+                }]}
+            })]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(fraction.items[0].width, None);
         assert!(!Kind::Advertised.configured());
         assert!(!Kind::Unadvertised.configured());
         assert!(Kind::Empty.configured());

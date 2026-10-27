@@ -523,6 +523,9 @@ fn sync_targets(ui: &mut WorkbenchUi) {
                 name: chosen.clone(),
                 description: String::new(),
                 details: Vec::new(),
+                width: None,
+                height: None,
+                fps: None,
             },
         );
     }

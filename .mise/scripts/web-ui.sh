@@ -106,6 +106,7 @@ watch() {
   exec watchexec \
     --watch web-ui \
     --watch examples/web_ui.rs \
+    --watch examples/bench_jpeg.rs \
     --watch src \
     --watch build.rs \
     --watch Cargo.toml \

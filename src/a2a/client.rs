@@ -13,6 +13,7 @@ use a2a_types::{
 use futures_util::StreamExt;
 
 use crate::error::A2aLabError;
+use crate::id::{VideoClipId, VideoFollowId};
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
     ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
@@ -23,6 +24,11 @@ use crate::page::Page;
 use crate::service::{A2aLabCommand, A2aLabResult, TaskSnapshot};
 use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
+};
+use crate::videos::{
+    DEFAULT_MJPEG_BOUNDARY, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip,
+    VideoClipStream, VideoFollow, VideoSource, VideoTimeline, decode_mjpeg_multipart,
 };
 
 use super::wire::{self, LAB_MEDIA_TYPE};
@@ -43,6 +49,7 @@ pub struct A2aClient {
     inner: A2AClient<RestTransport>,
     base: String,
     image_transport: ImageTransportConfig,
+    bearer: Option<String>,
 }
 
 impl A2aClient {
@@ -53,6 +60,7 @@ impl A2aClient {
             inner: A2AClient::new(RestTransport::new(http, base_url.to_owned())),
             base: base_url.trim_end_matches('/').to_owned(),
             image_transport: ImageTransportConfig::default(),
+            bearer: None,
         })
     }
 
@@ -63,13 +71,16 @@ impl A2aClient {
             inner,
             base,
             image_transport,
+            ..
         } = self;
+        let token = token.into();
         Self {
             inner: inner.with_interceptors(vec![Arc::new(
-                a2a_client::auth::AuthInterceptor::bearer(token),
+                a2a_client::auth::AuthInterceptor::bearer(token.clone()),
             )]),
             base,
             image_transport,
+            bearer: Some(token),
         }
     }
 
@@ -228,6 +239,112 @@ impl A2aClient {
             },
         )
         .await
+    }
+
+    /// Lists video sources.
+    pub async fn list_video_sources(
+        &self,
+        request: ListVideoSourcesRequest,
+    ) -> Result<Page<VideoSource>, A2aLabError> {
+        self.result(
+            A2aLabCommand::ListVideoSources(request),
+            |result| match result {
+                A2aLabResult::ListVideoSources(page) => Some(page),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Reads the retained frame at a UTC instant.
+    ///
+    /// The operation name remains `get_video_frame_at`.
+    pub async fn get_video_frame_at(
+        &self,
+        request: GetVideoFrameAtRequest,
+    ) -> Result<GetVideoFrameAtResult, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetVideoFrameAt(request),
+            |result| match result {
+                A2aLabResult::GetVideoFrameAt(frame) => Some(frame),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Prepares a bounded MJPEG clip handle. JSON never includes video bytes.
+    pub async fn get_video_clip(
+        &self,
+        request: GetVideoClipRequest,
+    ) -> Result<VideoClip, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetVideoClip(request),
+            |result| match result {
+                A2aLabResult::GetVideoClip(clip) => Some(clip),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Reads ordered retained coverage for one source. JSON never includes media bytes.
+    pub async fn get_video_timeline(
+        &self,
+        request: GetVideoTimelineRequest,
+    ) -> Result<VideoTimeline, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetVideoTimeline(request),
+            |result| match result {
+                A2aLabResult::GetVideoTimeline(timeline) => Some(timeline),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Prepares a live-follow handle. JSON never includes frame bytes.
+    pub async fn follow_video(
+        &self,
+        request: FollowVideoRequest,
+    ) -> Result<VideoFollow, A2aLabError> {
+        self.result(A2aLabCommand::FollowVideo(request), |result| match result {
+            A2aLabResult::FollowVideo(follow) => Some(follow),
+            _ => None,
+        })
+        .await
+    }
+
+    /// Origin-qualified URL for `GET` of a live-follow handle.
+    ///
+    /// The handle's own path stays relative. This joins that path to the client origin.
+    #[must_use]
+    pub fn video_live_url(&self, id: &VideoFollowId) -> String {
+        crate::videos::http::live_url(&self.base, id)
+    }
+
+    /// Downloads a prepared clip over `GET /media/video-clips/{id}` using protocol auth.
+    pub async fn open_video_clip(&self, id: &VideoClipId) -> Result<VideoClipStream, A2aLabError> {
+        let mut request = reqwest::Client::new().get(crate::videos::http::clip_url(&self.base, id));
+        if let Some(token) = &self.bearer {
+            request = request.bearer_auth(token);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        let status = response.status();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(clip_http_error(status, &body));
+        }
+        let frames = decode_mjpeg_multipart(&body, DEFAULT_MJPEG_BOUNDARY)?;
+        Ok(Box::pin(futures_util::stream::iter(
+            frames.into_iter().map(Ok),
+        )))
     }
 
     /// Reads a started lab run through the `get_task_status` skill.
@@ -565,6 +682,26 @@ fn expect_variant(
         Ok(snapshot)
     } else {
         Err(A2aLabError::protocol("unexpected result variant"))
+    }
+}
+
+fn clip_http_error(status: reqwest::StatusCode, body: &[u8]) -> A2aLabError {
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+        && let Some(code) = value
+            .pointer("/error/code")
+            .and_then(serde_json::Value::as_str)
+    {
+        let message = value
+            .pointer("/error/message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(code);
+        return A2aLabError::from_code(code, message);
+    }
+    match status.as_u16() {
+        401 | 403 => A2aLabError::invalid("authorization", status.to_string()),
+        404 => A2aLabError::not_found("video clip", status.to_string()),
+        400 => A2aLabError::invalid("id", status.to_string()),
+        _ => A2aLabError::transport(status.to_string()),
     }
 }
 

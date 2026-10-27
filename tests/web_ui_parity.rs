@@ -34,7 +34,7 @@ const NOSCOPE: &str = "noscope-token";
 const START: &str = "2020-06-01T00:00:00Z";
 const END: &str = "2020-06-02T00:00:00Z";
 const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-const OPERATIONS: [&str; 12] = [
+const OPERATIONS: [&str; 15] = [
     "list_log_sources",
     "query_logs",
     "list_metrics",
@@ -47,6 +47,9 @@ const OPERATIONS: [&str; 12] = [
     "search_images",
     "get_image",
     "get_current_image",
+    "list_video_sources",
+    "get_video_frame_at",
+    "get_video_clip",
 ];
 
 struct Lab {
@@ -208,6 +211,7 @@ fn drive(mut script: Script) -> Result<(), String> {
         "inventory-metrics",
         "inventory-tasks",
         "inventory-images",
+        "inventory-videos",
     ] {
         let slug = panel.trim_start_matches("inventory-");
         page.show(&format!("#inventory/{slug}"));
@@ -328,14 +332,17 @@ fn compare_success(page: &mut Browser, base: &str, case: &Success) {
         Some(size) => {
             let image = observed["image"].as_str().unwrap_or("");
             let preview = observed["preview"].as_str().unwrap_or("");
-            if !image.contains("image/png")
+            let raster = image.contains("image/png") || image.contains("image/jpeg");
+            let data_url = preview.starts_with("data:image/png;base64,")
+                || preview.starts_with("data:image/jpeg;base64,");
+            if !raster
                 || !image.contains(&format!("Decoded bytes {size}"))
                 || image.contains("exceeds")
-                || !preview.starts_with("data:image/png;base64,")
+                || !data_url
             {
                 diverge(
                     &label,
-                    &format!("png preview of {size} bytes"),
+                    &format!("raster preview of {size} bytes"),
                     &format!("{image} {preview}"),
                 );
             }
@@ -480,6 +487,7 @@ fn send_command(page: &mut Browser, command: &Value) -> Value {
         "list_tasks" | "start_task" | "get_task_status" => "#tasks",
         "list_image_sources" | "list_images" | "search_images" | "get_image"
         | "get_current_image" => "#images",
+        "list_video_sources" | "get_video_frame_at" | "get_video_clip" => "#videos",
         _ => "#logs",
     };
     page.show(hash);
@@ -760,6 +768,7 @@ fn access(page: &mut Browser, status: &str) {
                     "nav-metrics",
                     "nav-tasks",
                     "nav-images",
+                    "nav-videos",
                 ],
             );
             page.eval(
@@ -778,6 +787,7 @@ fn access(page: &mut Browser, status: &str) {
                     "nav-metrics",
                     "nav-tasks",
                     "nav-images",
+                    "nav-videos",
                 ],
             );
             assert_unreachable(page, "shell", &["nav-toggle"]);
@@ -921,6 +931,7 @@ fn assert_status(page: &mut Browser, workbench: &str) {
         ("#metrics", "inventory-metrics", "view-metrics"),
         ("#tasks", "inventory-tasks", "view-tasks"),
         ("#images", "inventory-images", "view-images"),
+        ("#videos", "inventory-videos", "view-videos"),
     ] {
         page.show(hash);
         assert_names(page);
@@ -940,6 +951,7 @@ fn assert_status(page: &mut Browser, workbench: &str) {
             "inventory-metrics",
             "inventory-tasks",
             "inventory-images",
+            "inventory-videos",
         ]
         .into_iter()
         .filter(|id| *id != section)
@@ -1096,6 +1108,10 @@ fn text(page: &mut Browser, expression: &str) -> String {
     page.eval(expression).as_str().unwrap_or("").to_owned()
 }
 
+fn minted_clip(text: &str) -> bool {
+    text.starts_with("clip-") || text.starts_with("/media/video-clips/")
+}
+
 fn needles(result: &Value) -> Vec<String> {
     let mut found = Vec::new();
     walk(result, &mut found);
@@ -1118,7 +1134,9 @@ fn walk(value: &Value, found: &mut Vec<String>) {
                 walk(item, found);
             }
         }
-        Value::String(text) if text.chars().count() <= 80 => found.push(text.clone()),
+        Value::String(text) if text.chars().count() <= 80 && !minted_clip(text) => {
+            found.push(text.clone());
+        }
         Value::Number(number) => found.push(number.to_string()),
         Value::Bool(flag) => found.push(flag.to_string()),
         _ => {}
@@ -1151,6 +1169,7 @@ fn reader_of(operation: &str) -> &'static str {
         "list_log_sources" | "query_logs" => "Logs",
         "list_image_sources" | "list_images" | "search_images" | "get_image"
         | "get_current_image" => "Images",
+        "list_video_sources" | "get_video_frame_at" | "get_video_clip" => "Videos",
         _ => "browser",
     }
 }

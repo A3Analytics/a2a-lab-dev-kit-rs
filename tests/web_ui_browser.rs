@@ -290,7 +290,14 @@ fn route_scroll_flow(base: &str) {
     page.wait_until("document.getElementById('shell')");
     page.viewport(1843, 768);
     assert_bootstrap(&mut page);
-    for hash in ["#overview", "#logs", "#metrics", "#tasks", "#images"] {
+    for hash in [
+        "#overview",
+        "#logs",
+        "#metrics",
+        "#tasks",
+        "#images",
+        "#videos",
+    ] {
         page.show(hash);
         assert_route_scroll(&mut page, hash);
     }

@@ -1,4 +1,4 @@
-//! Workbench behavior for the twelve lab commands.
+//! Workbench behavior for the fifteen lab commands.
 
 use serde_json::{Value, json};
 
@@ -17,7 +17,7 @@ const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z
 
 #[test]
 fn every_command_has_an_editable_object_template_and_no_context_id() {
-    assert_eq!(Operation::ALL.len(), 12);
+    assert_eq!(Operation::ALL.len(), 15);
     for operation in Operation::ALL {
         let params = operation.template();
         assert!(params.is_object(), "{}", operation.name());
@@ -74,6 +74,10 @@ fn inventory_entries_prefill_stable_identifiers() {
         let params = operation.prefill("image-a");
         assert_eq!(params["source_id"], "image-a", "{}", operation.name());
     }
+    for operation in openings(Primitive::Videos) {
+        let params = operation.prefill("cam-a");
+        assert_eq!(params["source_id"], "cam-a", "{}", operation.name());
+    }
     assert_eq!(openings(Primitive::Logs), &[Operation::QueryLogs]);
     assert_eq!(openings(Primitive::Metrics), &[Operation::QueryMetric]);
     assert_eq!(openings(Primitive::Tasks), &[Operation::StartTask]);
@@ -119,6 +123,7 @@ fn chunked_lists_keep_items_in_order_and_the_last_cursor() {
         Operation::ListImageSources,
         Operation::ListImages,
         Operation::SearchImages,
+        Operation::ListVideoSources,
     ] {
         let reply = Reply {
             status: 200,
@@ -436,6 +441,25 @@ fn success_reply(operation: Operation) -> Reply {
         json!({
             "descriptor": {"media_type": "image/png", "id": "frame-1"},
             "data": PNG
+        })
+    } else if operation == Operation::GetVideoFrameAt {
+        json!({
+            "requested_at": "2024-01-01T00:00:00Z",
+            "actual_captured_at": "2024-01-01T00:00:00Z",
+            "delta_us": 0,
+            "image": {
+                "descriptor": {"media_type": "image/jpeg", "id": "frame-1"},
+                "data": PNG
+            }
+        })
+    } else if operation == Operation::GetVideoClip {
+        json!({
+            "id": "clip-1",
+            "source_id": "cam",
+            "requested_range": {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:00:01Z"},
+            "effective_range": {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:00:01Z"},
+            "media_type": "multipart/x-mixed-replace; type=image/jpeg",
+            "path": "/media/video-clips/clip-1"
         })
     } else {
         json!({"items": [{"id": "item-1", "name": MARKUP}]})

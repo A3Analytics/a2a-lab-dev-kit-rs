@@ -7,8 +7,9 @@ use std::sync::Arc;
 use a2a_lab_dev_kit::{
     A2aLabError, A2aLabService, A2aServer, AgentMessageFuture, AgentMessageHandler,
     AgentMessageReply, AgentMessageRequest, ImageSource, ImageSourceId, JsonObject, LogLevel,
-    LogRecord, LogSource, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor,
-    MetricId, MetricPoint, SourceId, TaskDefinition, TaskId, UtcTimestamp, bind_local,
+    LogRecord, LogSource, MJPEG_MEDIA_TYPE, MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks,
+    MemoryVideos, MetricDescriptor, MetricId, MetricPoint, SourceId, TaskDefinition, TaskId,
+    UtcTimestamp, VideoSource, VideoSourceId, bind_local,
 };
 use serde_json::Value;
 
@@ -18,7 +19,7 @@ mod browser;
 
 use browser::Browser;
 
-const ROUTES: [Route; 6] = [
+const ROUTES: [Route; 7] = [
     Route {
         hash: "#logs",
         title: "Logs",
@@ -44,6 +45,12 @@ const ROUTES: [Route; 6] = [
         ready: "document.getElementById('image-history-status')?.dataset.state === 'empty'",
     },
     Route {
+        hash: "#videos",
+        title: "Videos",
+        kind: Kind::Videos,
+        ready: "document.getElementById('video-source') instanceof HTMLSelectElement && document.getElementById('video-player')",
+    },
+    Route {
         hash: "#chat",
         title: "Chat",
         kind: Kind::Chat,
@@ -65,6 +72,7 @@ enum Kind {
     Metrics,
     Tasks,
     Images,
+    Videos,
     Chat,
     Workbench,
 }
@@ -449,6 +457,7 @@ fn shared_differences(problems: &mut Vec<String>, report: &Value) {
         || !flag(report, "catalogMetrics")
         || !flag(report, "catalogTasks")
         || !flag(report, "catalogImages")
+        || !flag(report, "catalogVideos")
     {
         problems.push("a catalog is visible".to_owned());
     }
@@ -467,6 +476,9 @@ fn route_differences(problems: &mut Vec<String>, spec: &Spec, report: &Value) {
     if spec.route.kind == Kind::Images {
         image_differences(problems, report);
     }
+    if spec.route.kind == Kind::Videos {
+        video_differences(problems, report);
+    }
 }
 
 fn image_differences(problems: &mut Vec<String>, report: &Value) {
@@ -478,6 +490,15 @@ fn image_differences(problems: &mut Vec<String>, report: &Value) {
     }
     if !flag(report, "imageCapture") {
         problems.push("Images is missing current-image capture".to_owned());
+    }
+}
+
+fn video_differences(problems: &mut Vec<String>, report: &Value) {
+    if !flag(report, "runnerHidden") {
+        problems.push("command runner is visible on Videos".to_owned());
+    }
+    if !flag(report, "videoParts") {
+        problems.push("Videos is missing its source rail and playback stage".to_owned());
     }
 }
 
@@ -702,7 +723,12 @@ impl Kind {
     const fn has_list(self) -> bool {
         matches!(
             self,
-            Self::Logs | Self::Metrics | Self::Tasks | Self::Images | Self::Workbench
+            Self::Logs
+                | Self::Metrics
+                | Self::Tasks
+                | Self::Images
+                | Self::Videos
+                | Self::Workbench
         )
     }
 
@@ -712,6 +738,7 @@ impl Kind {
             Self::Metrics => &["Latency", "Data CSV", "ms"],
             Self::Tasks => &["Home", "This task has no input fields."],
             Self::Images => &["Bench", "No images for this source."],
+            Self::Videos => &["Frame at time", "Cam"],
             Self::Chat => &["visual row", "echo:visual row"],
             Self::Workbench => &["pump ready", "Command"],
         }
@@ -723,12 +750,20 @@ impl Kind {
             Self::Metrics => METRIC_FORBIDDEN,
             Self::Tasks => TASK_FORBIDDEN,
             Self::Images => IMAGE_FORBIDDEN,
+            Self::Videos => VIDEO_FORBIDDEN,
             Self::Chat => CHAT_FORBIDDEN,
         }
     }
 }
 
-const NAV: [&str; 5] = ["/ui/chat", "/ui/logs", "/ui/metrics", "/ui/tasks", "/ui/images"];
+const NAV: [&str; 6] = [
+    "/ui/chat",
+    "/ui/logs",
+    "/ui/metrics",
+    "/ui/tasks",
+    "/ui/images",
+    "/ui/videos",
+];
 const LOG_FORBIDDEN: &[&str] = &[
     "Loading the lab interface.",
     "Loading logs.",
@@ -755,6 +790,12 @@ const IMAGE_FORBIDDEN: &[&str] = &[
     "Loading images.",
     "No images match this search.",
     "Images could not be read.",
+];
+const VIDEO_FORBIDDEN: &[&str] = &[
+    "Loading video sources.",
+    "No video sources.",
+    "Video sources could not be read.",
+    "Connecting.",
 ];
 const CHAT_FORBIDDEN: &[&str] = &[
     "Send a message to start.",
@@ -788,9 +829,9 @@ const PROBE: &str = r#"(() => {
     const data = ctx.getImageData(0, 0, 1, 1).data;
     return data[0] * 0.2126 + data[1] * 0.7152 + data[2] * 0.0722;
   };
-  const names = new Set(['Logs', 'Metrics', 'Tasks', 'Images', 'Chat']);
+  const names = new Set(['Logs', 'Metrics', 'Tasks', 'Images', 'Videos', 'Chat']);
   const view = document.querySelector('#main > .view:not([hidden])');
-  const rail = view ? view.querySelector('#log-filters, #metric-filters, #task-filters, #image-filters') : null;
+  const rail = view ? view.querySelector('#log-filters, #metric-filters, #task-filters, #image-filters, #video-filters') : null;
   const railBox = rail ? rail.getBoundingClientRect() : null;
   const card = document.getElementById('metric-chart-card');
   const cardStyle = card ? getComputedStyle(card) : null;
@@ -857,14 +898,16 @@ const PROBE: &str = r#"(() => {
     account: !!document.querySelector('footer') || /log out/i.test(document.body.innerText),
     cookie: document.cookie,
     nav: [...document.querySelectorAll('#primary-nav > a')].map((node) => node.getAttribute('href')),
-    chartJs: typeof window.Chart === 'function' || !!document.querySelector('canvas, script[src*="chart.js"]'),
+    chartJs: typeof window.Chart === 'function' || !!document.querySelector('script[src*="chart.js"], canvas:not(#video-canvas)'),
     dioxusLine: !!path,
     catalogLogs: document.getElementById('inventory-logs')?.hasAttribute('hidden') === true,
     catalogMetrics: document.getElementById('inventory-metrics')?.hasAttribute('hidden') === true,
     catalogTasks: document.getElementById('inventory-tasks')?.hasAttribute('hidden') === true,
     catalogImages: document.getElementById('inventory-images')?.hasAttribute('hidden') === true,
+    catalogVideos: document.getElementById('inventory-videos')?.hasAttribute('hidden') === true,
     imageParts: ['image-filters', 'image-results'].every((id) => !!document.getElementById(id)) && !document.getElementById('image-inspector'),
     imageCapture: !!document.getElementById('image-current') && !!document.getElementById('image-current-source') && document.getElementById('image-current-actions')?.parentElement?.id === 'image-view' && document.getElementById('image-current-actions')?.nextElementSibling?.id === 'image-browser' && !document.querySelector('#image-filters .log-actions') && !document.getElementById('image-refresh') && !document.getElementById('image-clear') && document.querySelector('#image-filters > .log-filter-group') === document.getElementById('image-sources') && (document.getElementById('image-sources')?.querySelectorAll('.log-facet').length || 0) > 0,
+    videoParts: ['video-filters', 'video-results', 'video-canvas', 'video-player'].every((id) => !!document.getElementById(id)),
     current: document.getElementById('nav-logs')?.getAttribute('aria-current') || '',
     runnerHidden: document.getElementById('workbench')?.hasAttribute('hidden') === true,
     command: document.getElementById('workbench-heading')?.textContent || ''
@@ -932,8 +975,27 @@ async fn lab() -> String {
         })
         .await
         .unwrap();
+    let videos = MemoryVideos::new();
+    videos
+        .insert_source(
+            VideoSource::new(
+                VideoSourceId::new("cam").unwrap(),
+                "Cam",
+                "Deck camera",
+                None,
+                None,
+                1,
+                1,
+                1,
+                MJPEG_MEDIA_TYPE,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
     let service = A2aLabService::new(logs, metrics, tasks)
         .with_images(images)
+        .with_videos(videos)
         .share();
     let (listener, address) = bind_local().await.unwrap();
     let server = A2aServer::new(&service)

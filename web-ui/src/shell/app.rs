@@ -19,6 +19,7 @@ use crate::shell::metric_chart::MetricView;
 use crate::shell::nav::{self, Route};
 use crate::shell::session::{self, CardLoad, SessionUi};
 use crate::shell::tasks::{self, TaskUi, TaskView};
+use crate::shell::videos::{self as video_ui, VideoUi, VideoView};
 use crate::shell::workbench::{self, WorkbenchUi, WorkbenchView};
 
 pub fn start() {
@@ -48,8 +49,10 @@ fn Shell() -> Element {
     let metrics = use_signal(InventoryUi::pending);
     let tasks = use_signal(InventoryUi::pending);
     let images = use_signal(InventoryUi::pending);
+    let videos = use_signal(InventoryUi::pending);
     let log_view = use_signal(LogUi::new);
     let image_view = use_signal(ImageUi::new);
+    let video_view = use_signal(VideoUi::new);
     let task_view = use_signal(TaskUi::new);
     let workbench = use_signal(WorkbenchUi::new);
     let ready = use_signal(|| false);
@@ -58,9 +61,10 @@ fn Shell() -> Element {
         nav::bind(path, menu, mobile);
         nav::apply_theme(theme());
         session::bind(session);
-        inventory::bind(logs, metrics, tasks, images);
+        inventory::bind(logs, metrics, tasks, images, videos);
         logs::bind(log_view);
         image_ui::bind(image_view);
+        video_ui::bind(video_view);
         tasks::bind(task_view);
         workbench::bind(workbench);
     });
@@ -148,6 +152,7 @@ fn Shell() -> Element {
                     NavLink { id: "nav-metrics", href: "/ui/metrics", route, label: "Metrics", glyph: "M" }
                     NavLink { id: "nav-tasks", href: "/ui/tasks", route, label: "Tasks", glyph: "T" }
                     NavLink { id: "nav-images", href: "/ui/images", route, label: "Images", glyph: "I" }
+                    NavLink { id: "nav-videos", href: "/ui/videos", route, label: "Videos", glyph: "V" }
                 }
             }
             div { class: "shell-main",
@@ -264,6 +269,17 @@ fn Shell() -> Element {
                     }
                 }
                 div {
+                    id: "view-videos",
+                    class: "view",
+                    hidden: panes.videos,
+                    VideoView { ui: video_view, visible: route.view == "view-videos" }
+                    InventoryView {
+                        primitive: Primitive::Videos,
+                        ui: videos,
+                        visible: route.primitive == Some(Primitive::Videos),
+                    }
+                }
+                div {
                     id: "view-chat",
                     class: "view",
                     hidden: panes.chat,
@@ -345,6 +361,7 @@ struct PaneHidden {
     metrics: bool,
     tasks: bool,
     images: bool,
+    videos: bool,
     chat: bool,
     workbench: bool,
     loading: bool,
@@ -357,6 +374,7 @@ fn pane_hidden(loading: bool, route: Route, path: &str) -> PaneHidden {
         metrics: loading || route.view != "view-metrics",
         tasks: loading || route.view != "view-tasks",
         images: loading || route.view != "view-images",
+        videos: loading || route.view != "view-videos",
         chat: loading || route.view != "view-chat",
         workbench: loading || path != "workbench",
     }

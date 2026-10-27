@@ -1,11 +1,13 @@
 //! Lab DataPart codec over official A2A 1.0 types.
 
+use std::collections::HashMap;
+
 use a2a_types::{
     A2AError, Artifact, Message, Part, PartContent, StreamResponse, Task, TaskArtifactUpdateEvent,
-    TaskStatus, TaskStatusUpdateEvent, error_code,
+    TaskStatus, TaskStatusUpdateEvent, TypedDetail, error_code,
 };
 
-use crate::error::A2aLabError;
+use crate::error::{A2aLabError, VideoAvailability};
 use crate::images::{Image, ImageTransportConfig};
 use crate::page::Page;
 use crate::service::{A2aLabCommand, A2aLabResult, TaskSnapshot};
@@ -102,6 +104,9 @@ pub(crate) fn chunks(result: &A2aLabResult) -> Vec<A2aLabResult> {
         }
         A2aLabResult::SearchImages(page) if !page.items().is_empty() => {
             chunk_items(page, A2aLabResult::SearchImages)
+        }
+        A2aLabResult::ListVideoSources(page) if !page.items().is_empty() => {
+            chunk_items(page, A2aLabResult::ListVideoSources)
         }
         other => vec![other.clone()],
     }
@@ -212,6 +217,7 @@ fn decode_part(
     // the caller's limit so a raised maximum applies while the JSON is decoded.
     match value.get("operation").and_then(serde_json::Value::as_str) {
         Some("get_image" | "get_current_image") => decode_image_result(&value, transport).map(Some),
+        Some("get_video_frame_at") => decode_video_frame_at(&value, transport).map(Some),
         _ => Ok(serde_json::from_value(value).ok()),
     }
 }
@@ -245,6 +251,41 @@ fn decode_image_result(
         "get_current_image" => Ok(A2aLabResult::GetCurrentImage(image)),
         _ => Err(A2aLabError::protocol("unexpected image operation")),
     }
+}
+
+fn decode_video_frame_at(
+    value: &serde_json::Value,
+    transport: ImageTransportConfig,
+) -> Result<A2aLabResult, A2aLabError> {
+    let result = value
+        .get("result")
+        .cloned()
+        .ok_or_else(|| A2aLabError::protocol("video frame result is missing"))?;
+    let requested_at = serde_json::from_value(
+        result
+            .get("requested_at")
+            .cloned()
+            .ok_or_else(|| A2aLabError::protocol("requested_at is missing"))?,
+    )
+    .map_err(|error| A2aLabError::protocol(error.to_string()))?;
+    let image_value = result
+        .get("image")
+        .ok_or_else(|| A2aLabError::protocol("video frame image is missing"))?;
+    let descriptor = serde_json::from_value(
+        image_value
+            .get("descriptor")
+            .cloned()
+            .ok_or_else(|| A2aLabError::protocol("image descriptor is missing"))?,
+    )
+    .map_err(|error| A2aLabError::protocol(error.to_string()))?;
+    let encoded = image_value
+        .get("data")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| A2aLabError::protocol("image data is missing"))?;
+    let image = Image::from_base64(descriptor, encoded, transport)?;
+    Ok(A2aLabResult::GetVideoFrameAt(
+        crate::videos::GetVideoFrameAtResult::new(requested_at, image),
+    ))
 }
 
 fn merge_results(results: Vec<A2aLabResult>) -> Result<A2aLabResult, A2aLabError> {
@@ -292,6 +333,14 @@ fn merge_results(results: Vec<A2aLabResult>) -> Result<A2aLabResult, A2aLabError
             },
             A2aLabResult::SearchImages,
         )),
+        [A2aLabResult::ListVideoSources(_), ..] => Ok(merge_page(
+            results,
+            |result| match result {
+                A2aLabResult::ListVideoSources(page) => Some(page),
+                _ => None,
+            },
+            A2aLabResult::ListVideoSources,
+        )),
         [first, ..] => Ok(first.clone()),
     }
 }
@@ -331,9 +380,26 @@ pub(crate) fn sdk_error(error: A2AError) -> A2aLabError {
         | error_code::INVALID_REQUEST
         | error_code::PARSE_ERROR
         | error_code::CONTENT_TYPE_NOT_SUPPORTED => A2aLabError::invalid("request", error.message),
-        error_code::INTERNAL_ERROR => A2aLabError::unavailable(error.message),
+        error_code::INTERNAL_ERROR => match video_reason(&error) {
+            Some(reason) => A2aLabError::from_code(reason, error.message),
+            None => A2aLabError::unavailable(error.message),
+        },
         _ => A2aLabError::protocol(error.message),
     }
+}
+
+fn video_reason(error: &A2AError) -> Option<&'static str> {
+    let code = error.details.as_ref()?.iter().find_map(|detail| {
+        if detail.type_url != a2a_types::ERROR_INFO_TYPE {
+            return None;
+        }
+        detail
+            .value
+            .get("metadata")
+            .and_then(|metadata| metadata.get("code"))
+            .and_then(serde_json::Value::as_str)
+    })?;
+    VideoAvailability::parse(code).map(VideoAvailability::as_str)
 }
 
 pub(crate) fn a2a_error(error: &A2aLabError) -> A2AError {
@@ -350,6 +416,16 @@ pub(crate) fn a2a_error(error: &A2aLabError) -> A2AError {
             A2AError::content_type_not_supported()
         }
         A2aLabError::Protocol { message } => A2AError::invalid_request(message.clone()),
+        A2aLabError::Video { .. } => {
+            A2AError::internal(error.to_string()).with_details(vec![TypedDetail::error_info(
+                "INTERNAL_ERROR",
+                a2a_types::PROTOCOL_DOMAIN,
+                Some(HashMap::from([(
+                    "code".to_owned(),
+                    error.code().to_owned(),
+                )])),
+            )])
+        }
     }
 }
 

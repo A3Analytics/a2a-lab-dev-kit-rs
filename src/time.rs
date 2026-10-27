@@ -14,6 +14,12 @@ use crate::error::A2aLabError;
 pub struct UtcTimestamp(Timestamp);
 
 impl UtcTimestamp {
+    /// Returns the current UTC time.
+    #[must_use]
+    pub fn now() -> Self {
+        Self(Timestamp::now())
+    }
+
     /// Parses an RFC 3339 timestamp whose offset is UTC.
     pub fn parse(value: &str) -> Result<Self, A2aLabError> {
         let timestamp = Timestamp::from_str(value)
@@ -29,6 +35,19 @@ impl UtcTimestamp {
     #[must_use]
     pub fn to_rfc3339(&self) -> String {
         self.0.to_string()
+    }
+
+    /// Microseconds since the Unix epoch.
+    #[must_use]
+    pub fn as_micros(self) -> i64 {
+        self.0.as_microsecond()
+    }
+
+    /// Adds `delta_us` microseconds, saturating at the representable range.
+    #[must_use]
+    pub fn saturating_add_micros(self, delta_us: i64) -> Self {
+        let micros = self.as_micros().saturating_add(delta_us);
+        Timestamp::from_microsecond(micros).map_or(self, Self)
     }
 }
 
@@ -103,5 +122,18 @@ impl TimeRange {
     #[must_use]
     pub fn contains(self, timestamp: UtcTimestamp) -> bool {
         timestamp >= self.start && timestamp < self.end
+    }
+
+    /// Duration of `[start, end)` in microseconds.
+    ///
+    /// Callers must [`check`](Self::check) first so `end` is after `start`.
+    #[must_use]
+    pub fn duration_us(self) -> u64 {
+        u64::try_from(self.end.as_micros().saturating_sub(self.start.as_micros())).unwrap_or(0)
+    }
+
+    /// Builds a range without validating order. Reserved for TCK fixtures.
+    pub(crate) const fn tck_unchecked(start: UtcTimestamp, end: UtcTimestamp) -> Self {
+        Self { start, end }
     }
 }

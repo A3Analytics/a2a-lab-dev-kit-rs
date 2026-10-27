@@ -1,6 +1,6 @@
 //! SiLA 2 interface and remote provider.
 //!
-//! `SilaServer` serves `SiLAService`, `LabOperations`, `LabImages`, `BinaryDownload`, and
+//! `SilaServer` serves `SiLAService`, `LabOperations`, `LabImages`, `LabVideos`, `BinaryDownload`, and
 //! `CancelController` over the same [`A2aLabApi`](crate::service::A2aLabApi) used by A2A and MCP.
 //! Image pixel bytes always use binary download. `SilaProvider` connects to a remote SiLA server
 //! and fulfills logs, metrics, and tasks.
@@ -21,6 +21,7 @@ mod images;
 mod lab;
 mod server;
 mod values;
+mod videos;
 mod wire;
 
 pub use cert::{SilaCertificate, certificate_contains_uuid, certificate_matches_profile};
@@ -38,6 +39,14 @@ pub mod api {
         DataTypePageRequest as ImagePageRequest, GetCurrentImageParameters, GetImageParameters,
         ListImageSourcesParameters, data_type_page_request::PageRequestStruct as ImagePageStruct,
         lab_images_client::LabImagesClient,
+    };
+    pub use crate::sila::wire::sila2::com::a3analytics::lab::labvideos::v1::{
+        DataTypePageRequest as VideoPageRequest, DataTypeTimeRange as VideoTimeRange,
+        GetVideoClipParameters, GetVideoFrameAtParameters, GetVideoTimelineParameters,
+        ListVideoSourcesParameters,
+        data_type_page_request::PageRequestStruct as VideoPageStruct,
+        data_type_time_range::TimeRangeStruct as VideoTimeStruct,
+        lab_videos_client::LabVideosClient,
     };
     pub use crate::sila::wire::sila2::com::a3analytics::lab::laboperations::v1::{
         DataTypePageRequest, DataTypeTimeRange, GetTaskStatusParameters, ListLogSourcesParameters,
@@ -63,6 +72,6 @@ pub mod api {
     pub use crate::sila::wire::sila2::org::silastandard::binary_download_client::BinaryDownloadClient;
     pub use crate::sila::wire::sila2::org::silastandard::{
         Binary, Boolean, CommandExecutionUuid, DeleteBinaryRequest, GetBinaryInfoRequest,
-        GetChunkRequest, Integer, String as SilaString, Timestamp,
+        GetChunkRequest, Integer, String as SilaString, Timestamp, Timezone,
     };
 }

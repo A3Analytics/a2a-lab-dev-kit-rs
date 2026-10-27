@@ -299,6 +299,9 @@ fn missing_schema_submits_empty_object() {
         name: "Build".to_owned(),
         description: "Build".to_owned(),
         details: Vec::new(),
+        width: None,
+        height: None,
+        fps: None,
     };
     assert!(schema_of(&item).is_none());
     let mut from_item = form_for(&item, None);
@@ -334,6 +337,9 @@ fn provider_text_is_inert_and_bearer_is_redacted() {
         name: MARKUP.to_owned(),
         description: "Build".to_owned(),
         details: vec![("Input schema", schema)],
+        width: None,
+        height: None,
+        fps: None,
     };
     let mut form = form_for(&item, Some(SECRET));
     {

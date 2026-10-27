@@ -142,6 +142,7 @@ fn assert_style_contract(css_body: &str) {
         "fragment:logs",
         "fragment:metrics",
         "fragment:tasks",
+        "fragment:videos",
         "fragment:chat",
         "fragment:inventory",
         "fragment:workbench",

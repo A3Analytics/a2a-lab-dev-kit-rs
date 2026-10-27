@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+import "SiLAFramework.proto";
+
+package sila2.com.a3analytics.lab.labvideos.v1;
+
+/* Lists video sources, returns retained timeline coverage, returns a still JPEG at a UTC instant, and serves a finite bounded MJPEG clip. Pixel and clip bytes always use SiLA binary download. No command delivers frames added after the call. */
+service LabVideos {
+  /* Returns one page of video sources. */
+  rpc ListVideoSources (sila2.com.a3analytics.lab.labvideos.v1.ListVideoSources_Parameters) returns (sila2.com.a3analytics.lab.labvideos.v1.ListVideoSources_Responses) {}
+  /* Returns the nearest retained JPEG at a UTC instant, including its pixel bytes. */
+  rpc GetVideoFrameAt (sila2.com.a3analytics.lab.labvideos.v1.GetVideoFrameAt_Parameters) returns (sila2.com.a3analytics.lab.labvideos.v1.GetVideoFrameAt_Responses) {}
+  /* Returns ordered half-open retained intervals, the newest retained timestamp when one exists, and provider live-availability metadata. The response does not open a stream and does not deliver frames added after the call. */
+  rpc GetVideoTimeline (sila2.com.a3analytics.lab.labvideos.v1.GetVideoTimeline_Parameters) returns (sila2.com.a3analytics.lab.labvideos.v1.GetVideoTimeline_Responses) {}
+  /* Returns a bounded MJPEG clip handle and a binary download identifier for the finite multipart body. The body does not include frames added after the call. */
+  rpc GetVideoClip (sila2.com.a3analytics.lab.labvideos.v1.GetVideoClip_Parameters) returns (sila2.com.a3analytics.lab.labvideos.v1.GetVideoClip_Responses) {}
+}
+
+/* Cursor and page size. */
+message DataType_PageRequest {
+  message PageRequest_Struct {
+    sila2.org.silastandard.Boolean HasCursor = 1;  /* True when Cursor is set. */
+    sila2.org.silastandard.String Cursor = 2;  /* Opaque numeric cursor. Empty when HasCursor is false. */
+    sila2.org.silastandard.Integer Limit = 3;  /* Page size from 1 to 1000. */
+  }
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_PageRequest.PageRequest_Struct PageRequest = 1;  /* Cursor and page size. */
+}
+
+/* Half-open UTC interval. */
+message DataType_TimeRange {
+  message TimeRange_Struct {
+    sila2.org.silastandard.Timestamp Start = 1;  /* Inclusive start. */
+    sila2.org.silastandard.Timestamp End = 2;  /* Exclusive end. */
+  }
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_TimeRange.TimeRange_Struct TimeRange = 1;  /* Half-open UTC interval. */
+}
+
+/* A named source that can supply timestamped MJPEG. */
+message DataType_VideoSource {
+  message VideoSource_Struct {
+    sila2.org.silastandard.String Id = 1;  /* Source identifier. */
+    sila2.org.silastandard.String Name = 2;  /* Human-readable name. */
+    sila2.org.silastandard.String Description = 3;  /* What the source records. */
+    sila2.org.silastandard.Boolean HasAssetId = 4;  /* True when AssetId is set. */
+    sila2.org.silastandard.String AssetId = 5;  /* Optional asset identifier. */
+    sila2.org.silastandard.Boolean HasSemanticId = 6;  /* True when SemanticId is set. */
+    sila2.org.silastandard.String SemanticId = 7;  /* Optional semantic identifier. */
+    sila2.org.silastandard.Integer Width = 8;  /* Frame width in pixels. */
+    sila2.org.silastandard.Integer Height = 9;  /* Frame height in pixels. */
+    sila2.org.silastandard.Integer Fps = 10;  /* Nominal frames per second. */
+    sila2.org.silastandard.String MediaType = 11;  /* MJPEG multipart media type. */
+  }
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_VideoSource.VideoSource_Struct VideoSource = 1;  /* A named source that can supply timestamped MJPEG. */
+}
+
+message ListVideoSources_Parameters {
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_PageRequest Page = 1;  /* Page bounds. */
+}
+
+message ListVideoSources_Responses {
+  repeated sila2.com.a3analytics.lab.labvideos.v1.DataType_VideoSource Sources = 1;  /* Video sources on this page. */
+  sila2.org.silastandard.Boolean HasNextCursor = 2;  /* True when another page exists. */
+  sila2.org.silastandard.String NextCursor = 3;  /* Cursor for the next page. */
+}
+
+message GetVideoFrameAt_Parameters {
+  sila2.org.silastandard.String SourceId = 1;  /* Video source identifier. */
+  sila2.org.silastandard.Timestamp At = 2;  /* UTC instant to look up. */
+  sila2.org.silastandard.Boolean HasMaxDeltaUs = 3;  /* True when MaxDeltaUs is set. */
+  sila2.org.silastandard.Integer MaxDeltaUs = 4;  /* Maximum absolute delta from At, in microseconds. */
+}
+
+message GetVideoFrameAt_Responses {
+  sila2.org.silastandard.Timestamp RequestedAt = 1;  /* UTC instant the caller asked for. */
+  sila2.org.silastandard.Timestamp ActualCapturedAt = 2;  /* UTC capture time of the selected frame. */
+  sila2.org.silastandard.Integer DeltaUs = 3;  /* Signed delta actual minus requested, in microseconds. */
+  sila2.org.silastandard.String ImageId = 4;  /* Still identifier. */
+  sila2.org.silastandard.String SourceId = 5;  /* Source that supplied the still. */
+  sila2.org.silastandard.String MediaType = 6;  /* Image media type. */
+  sila2.org.silastandard.Integer Width = 7;  /* Width in pixels. */
+  sila2.org.silastandard.Integer Height = 8;  /* Height in pixels. */
+  sila2.org.silastandard.Binary Image = 9;  /* Binary download identifier for the JPEG bytes. */
+}
+
+message GetVideoTimeline_Parameters {
+  sila2.org.silastandard.String SourceId = 1;  /* Video source identifier. */
+}
+
+message GetVideoTimeline_Responses {
+  sila2.org.silastandard.String SourceId = 1;  /* Source whose retained coverage was requested. */
+  repeated sila2.com.a3analytics.lab.labvideos.v1.DataType_TimeRange Intervals = 2;  /* Ordered half-open retained intervals. A genuine temporal gap is a later interval. Recording files and storage partitions are not represented. */
+  sila2.org.silastandard.Boolean HasNewestAt = 3;  /* True when NewestAt is set. */
+  sila2.org.silastandard.Timestamp NewestAt = 4;  /* Newest retained timestamp. Ignored when HasNewestAt is false. */
+  sila2.org.silastandard.Boolean LiveAvailable = 5;  /* Provider live-availability metadata. True when the provider reports live follow is currently available. This value does not open a stream. */
+}
+
+message GetVideoClip_Parameters {
+  sila2.org.silastandard.String SourceId = 1;  /* Video source identifier. */
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_TimeRange Range = 2;  /* Half-open UTC interval to clip. */
+}
+
+message GetVideoClip_Responses {
+  sila2.org.silastandard.String ClipId = 1;  /* Clip identifier. */
+  sila2.org.silastandard.String SourceId = 2;  /* Source the clip was cut from. */
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_TimeRange RequestedRange = 3;  /* Range the caller requested. */
+  sila2.com.a3analytics.lab.labvideos.v1.DataType_TimeRange EffectiveRange = 4;  /* Range actually covered by retained frames. */
+  sila2.org.silastandard.String MediaType = 5;  /* MJPEG multipart media type. */
+  sila2.org.silastandard.String Path = 6;  /* Relative download path. Never a URL and never bytes. */
+  sila2.org.silastandard.Binary Clip = 7;  /* Binary download identifier for the finite MJPEG multipart body. */
+}

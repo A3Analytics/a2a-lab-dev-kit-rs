@@ -42,6 +42,9 @@ pub enum Operation {
     SearchImages,
     GetImage,
     GetCurrentImage,
+    ListVideoSources,
+    GetVideoFrameAt,
+    GetVideoClip,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +61,7 @@ pub struct HistoryItem {
 }
 
 impl Operation {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 15] = [
         Self::ListLogSources,
         Self::QueryLogs,
         Self::ListMetrics,
@@ -71,6 +74,9 @@ impl Operation {
         Self::SearchImages,
         Self::GetImage,
         Self::GetCurrentImage,
+        Self::ListVideoSources,
+        Self::GetVideoFrameAt,
+        Self::GetVideoClip,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -87,6 +93,9 @@ impl Operation {
             Self::SearchImages => "search_images",
             Self::GetImage => "get_image",
             Self::GetCurrentImage => "get_current_image",
+            Self::ListVideoSources => "list_video_sources",
+            Self::GetVideoFrameAt => "get_video_frame_at",
+            Self::GetVideoClip => "get_video_clip",
         }
     }
 
@@ -104,6 +113,9 @@ impl Operation {
             Self::SearchImages => "Search images",
             Self::GetImage => "Get image",
             Self::GetCurrentImage => "Current image",
+            Self::ListVideoSources => "List video sources",
+            Self::GetVideoFrameAt => "Get video frame at",
+            Self::GetVideoClip => "Get video clip",
         }
     }
 
@@ -115,6 +127,8 @@ impl Operation {
             Self::ListImages => "List images",
             Self::SearchImages => "Search images",
             Self::GetCurrentImage => "Current image",
+            Self::GetVideoFrameAt => "Get video frame at",
+            Self::GetVideoClip => "Get video clip",
             _ => self.label(),
         }
     }
@@ -131,9 +145,11 @@ impl Operation {
 
     pub fn template(self) -> Value {
         match self {
-            Self::ListLogSources | Self::ListMetrics | Self::ListTasks | Self::ListImageSources => {
-                page_params()
-            }
+            Self::ListLogSources
+            | Self::ListMetrics
+            | Self::ListTasks
+            | Self::ListImageSources
+            | Self::ListVideoSources => page_params(),
             Self::QueryLogs => identified("source_id", "", query_body()),
             Self::QueryMetric => identified("metric_id", "", query_body()),
             Self::StartTask => json_object(&[("task_id", ""), ("input", "")]),
@@ -141,6 +157,8 @@ impl Operation {
             Self::ListImages => identified("source_id", "", page_params()),
             Self::SearchImages => page_params(),
             Self::GetCurrentImage => json_object(&[("source_id", "")]),
+            Self::GetVideoFrameAt => json_object(&[("source_id", ""), ("at", "")]),
+            Self::GetVideoClip => identified("source_id", "", clip_body()),
         }
     }
 
@@ -156,23 +174,31 @@ impl Operation {
 
     const fn id_field(self) -> Option<&'static str> {
         match self {
-            Self::QueryLogs | Self::ListImages | Self::SearchImages | Self::GetCurrentImage => {
-                Some("source_id")
-            }
+            Self::QueryLogs
+            | Self::ListImages
+            | Self::SearchImages
+            | Self::GetCurrentImage
+            | Self::GetVideoFrameAt
+            | Self::GetVideoClip => Some("source_id"),
             Self::QueryMetric => Some("metric_id"),
             Self::StartTask => Some("task_id"),
             Self::GetTaskStatus | Self::GetImage => Some("id"),
-            Self::ListLogSources | Self::ListMetrics | Self::ListTasks | Self::ListImageSources => {
-                None
-            }
+            Self::ListLogSources
+            | Self::ListMetrics
+            | Self::ListTasks
+            | Self::ListImageSources
+            | Self::ListVideoSources => None,
         }
     }
 
     pub const fn target_field(self) -> Option<&'static str> {
         match self {
-            Self::QueryLogs | Self::ListImages | Self::SearchImages | Self::GetCurrentImage => {
-                Some("source_id")
-            }
+            Self::QueryLogs
+            | Self::ListImages
+            | Self::SearchImages
+            | Self::GetCurrentImage
+            | Self::GetVideoFrameAt
+            | Self::GetVideoClip => Some("source_id"),
             Self::QueryMetric => Some("metric_id"),
             Self::StartTask => Some("task_id"),
             _ => None,
@@ -185,6 +211,7 @@ impl Operation {
             Self::QueryMetric => Some("Metric"),
             Self::StartTask => Some("Task"),
             Self::ListImages | Self::SearchImages | Self::GetCurrentImage => Some("Image source"),
+            Self::GetVideoFrameAt | Self::GetVideoClip => Some("Video source"),
             _ => None,
         }
     }
@@ -209,6 +236,7 @@ pub fn openings(primitive: Primitive) -> &'static [Operation] {
             Operation::SearchImages,
             Operation::GetCurrentImage,
         ],
+        Primitive::Videos => &[Operation::GetVideoClip, Operation::GetVideoFrameAt],
     }
 }
 
@@ -227,6 +255,11 @@ pub fn commands(primitive: Primitive) -> &'static [Operation] {
             Operation::SearchImages,
             Operation::GetImage,
             Operation::GetCurrentImage,
+        ],
+        Primitive::Videos => &[
+            Operation::ListVideoSources,
+            Operation::GetVideoFrameAt,
+            Operation::GetVideoClip,
         ],
     }
 }
@@ -270,6 +303,15 @@ fn query_body() -> Value {
         "end": "2020-01-01T01:00:00Z"
     });
     params
+}
+
+fn clip_body() -> Value {
+    serde_json::json!({
+        "range": {
+            "start": "2020-01-01T00:00:00Z",
+            "end": "2020-01-01T00:00:10Z"
+        }
+    })
 }
 
 fn identified(field: &str, identifier: &str, mut params: Value) -> Value {

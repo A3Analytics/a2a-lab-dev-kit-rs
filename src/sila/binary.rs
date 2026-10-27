@@ -1,7 +1,7 @@
-//! SiLA binary download for lab images.
+//! SiLA binary download for lab images and video clips.
 //!
-//! Every image is stored here and returned as a transfer identifier. The command
-//! response never embeds pixel bytes.
+//! Payloads are stored as shared buffers. `GetChunk` slices without cloning
+//! the whole blob. Images may still copy once on insert.
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -28,7 +28,7 @@ pub(crate) struct BinaryStore {
 }
 
 struct Stored {
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     expires: Instant,
 }
 
@@ -38,12 +38,16 @@ impl BinaryStore {
     }
 
     pub(crate) fn insert(&self, bytes: &[u8]) -> Result<String, Status> {
+        self.insert_shared(Arc::from(bytes))
+    }
+
+    pub(crate) fn insert_shared(&self, bytes: Arc<[u8]>) -> Result<String, Status> {
         let id = uuid::Uuid::new_v4().to_string();
         let mut binaries = self.lock()?;
         binaries.insert(
             id.clone(),
             Stored {
-                bytes: bytes.to_vec(),
+                bytes,
                 expires: Instant::now() + Duration::from_secs(lifetime_seconds()),
             },
         );
@@ -109,7 +113,7 @@ impl BinaryDownload for DownloadFeature {
     }
 }
 
-fn require(store: &BinaryStore, id: &str) -> Result<Vec<u8>, Status> {
+fn require(store: &BinaryStore, id: &str) -> Result<Arc<[u8]>, Status> {
     let _ = parsed_id(id)?;
     let mut binaries = store.lock()?;
     let Some(stored) = binaries.get(id) else {
@@ -119,7 +123,7 @@ fn require(store: &BinaryStore, id: &str) -> Result<Vec<u8>, Status> {
         binaries.remove(id);
         return Err(unknown_transfer(id));
     }
-    Ok(stored.bytes.clone())
+    Ok(Arc::clone(&stored.bytes))
 }
 
 fn remove(store: &BinaryStore, id: &str) -> Result<(), Status> {

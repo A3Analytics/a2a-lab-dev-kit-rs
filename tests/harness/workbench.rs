@@ -44,7 +44,7 @@ fn assert_commands(page: &mut Browser) {
         Value::Bool(true)
     );
     let mut values = Vec::new();
-    for hash in ["#logs", "#metrics", "#tasks", "#images"] {
+    for hash in ["#logs", "#metrics", "#tasks", "#images", "#videos"] {
         page.show(hash);
         let options = page.eval(
             "[...document.getElementById('workbench-operation').options].map(option => option.value)",
@@ -71,6 +71,9 @@ fn assert_commands(page: &mut Browser) {
         "search_images",
         "get_image",
         "get_current_image",
+        "list_video_sources",
+        "get_video_frame_at",
+        "get_video_clip",
     ] {
         assert!(values.iter().any(|value| value == name), "{name}");
     }

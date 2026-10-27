@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::A2aLabError;
-use crate::id::RunId;
+use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageProvider, ImageSource,
     ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
@@ -24,6 +24,11 @@ use crate::page::{Page, PageRequest};
 use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
     TaskRun, TaskState,
+};
+use crate::videos::{
+    FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
+    GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip, VideoClipStream, VideoFollow,
+    VideoLiveStream, VideoProvider, VideoSource, VideoTimeline,
 };
 
 /// Future returned by [`A2aLabApi`].
@@ -57,6 +62,18 @@ pub enum A2aLabCommand {
     GetImage(GetImageRequest),
     /// Read the current image for one source.
     GetCurrentImage(GetCurrentImageRequest),
+    /// List video sources.
+    ListVideoSources(ListVideoSourcesRequest),
+    /// Read the retained frame at a UTC instant.
+    ///
+    /// The operation name remains `get_video_frame_at`.
+    GetVideoFrameAt(GetVideoFrameAtRequest),
+    /// Prepare a bounded MJPEG clip handle.
+    GetVideoClip(GetVideoClipRequest),
+    /// Read ordered retained coverage for one source.
+    GetVideoTimeline(GetVideoTimelineRequest),
+    /// Prepare a live-follow handle. JSON never includes frame bytes.
+    FollowVideo(FollowVideoRequest),
 }
 
 /// Tagged result envelope shared by A2A and MCP.
@@ -87,6 +104,18 @@ pub enum A2aLabResult {
     GetImage(Image),
     /// The current image for one source, including its inline bytes.
     GetCurrentImage(Image),
+    /// A page of video sources.
+    ListVideoSources(Page<VideoSource>),
+    /// The retained frame at a UTC instant.
+    ///
+    /// The result type remains [`GetVideoFrameAtResult`].
+    GetVideoFrameAt(GetVideoFrameAtResult),
+    /// A short-lived clip handle. JSON never includes video bytes.
+    GetVideoClip(VideoClip),
+    /// Ordered retained coverage for one source.
+    GetVideoTimeline(VideoTimeline),
+    /// A live-follow handle. JSON never includes frame bytes.
+    FollowVideo(VideoFollow),
 }
 
 /// Stored view of an A2A task.
@@ -125,6 +154,28 @@ pub trait A2aLabApi: Send + Sync {
         &self,
         request: GetTaskStatusRequest,
     ) -> A2aLabFuture<'_, Result<TaskSnapshot, A2aLabError>>;
+
+    /// Opens a bounded JPEG frame stream for a previously prepared clip.
+    ///
+    /// HTTP adapters can mount `GET /media/video-clips/{id}` on this method.
+    fn open_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> A2aLabFuture<'_, Result<VideoClipStream, A2aLabError>>;
+
+    /// Opens the JPEG frame stream for a previously prepared live-follow handle.
+    ///
+    /// HTTP adapters can mount `GET /media/video-live/{id}` on this method.
+    /// The default is unavailable until an implementor provides a stream.
+    fn open_video_follow(
+        &self,
+        id: &VideoFollowId,
+    ) -> A2aLabFuture<'_, Result<VideoLiveStream, A2aLabError>> {
+        let _ = (self, id);
+        Box::pin(std::future::ready(Err(A2aLabError::unavailable(
+            "live follow is not available",
+        ))))
+    }
 }
 
 #[derive(Clone)]
@@ -187,18 +238,78 @@ fn images_unavailable() -> A2aLabError {
     A2aLabError::unavailable("image provider is not configured")
 }
 
+/// Video provider used when a service is built without [`A2aLabService::with_videos`].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct EmptyVideos;
+
+impl VideoProvider for EmptyVideos {
+    fn list_video_sources(
+        &self,
+        _request: ListVideoSourcesRequest,
+    ) -> impl Future<Output = Result<Page<VideoSource>, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+
+    fn get_video_frame_at(
+        &self,
+        _request: GetVideoFrameAtRequest,
+    ) -> impl Future<Output = Result<GetVideoFrameAtResult, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+
+    fn get_video_clip(
+        &self,
+        _request: GetVideoClipRequest,
+    ) -> impl Future<Output = Result<VideoClip, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+
+    fn open_video_clip(
+        &self,
+        _id: &VideoClipId,
+    ) -> impl Future<Output = Result<VideoClipStream, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+
+    fn get_video_timeline(
+        &self,
+        _request: GetVideoTimelineRequest,
+    ) -> impl Future<Output = Result<VideoTimeline, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+
+    fn follow_video(
+        &self,
+        _request: FollowVideoRequest,
+    ) -> impl Future<Output = Result<VideoFollow, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+
+    fn open_video_follow(
+        &self,
+        _id: &VideoFollowId,
+    ) -> impl Future<Output = Result<VideoLiveStream, A2aLabError>> + Send {
+        std::future::ready(Err(videos_unavailable()))
+    }
+}
+
+fn videos_unavailable() -> A2aLabError {
+    A2aLabError::unavailable("video provider is not configured")
+}
+
 /// Routes lab commands to provider traits.
-pub struct A2aLabService<L, M, W, I = EmptyImages> {
+pub struct A2aLabService<L, M, W, I = EmptyImages, V = EmptyVideos> {
     logs: L,
     metrics: M,
     tasks: W,
     images: I,
+    videos: V,
     image_transport: ImageTransportConfig,
     task_store: Mutex<BTreeMap<String, StoredTask>>,
     ids: AtomicU64,
 }
 
-impl<L, M, W> A2aLabService<L, M, W, EmptyImages>
+impl<L, M, W> A2aLabService<L, M, W, EmptyImages, EmptyVideos>
 where
     L: LogProvider,
     M: MetricProvider,
@@ -207,6 +318,7 @@ where
     /// Creates a service over log, metric, and task providers.
     ///
     /// Image operations stay unavailable until [`Self::with_images`].
+    /// Video operations stay unavailable until [`Self::with_videos`].
     #[must_use]
     pub const fn new(logs: L, metrics: M, tasks: W) -> Self {
         Self {
@@ -214,6 +326,7 @@ where
             metrics,
             tasks,
             images: EmptyImages,
+            videos: EmptyVideos,
             image_transport: ImageTransportConfig::from_default(),
             task_store: Mutex::const_new(BTreeMap::new()),
             ids: AtomicU64::new(0),
@@ -221,16 +334,17 @@ where
     }
 }
 
-impl<L, M, W, I> A2aLabService<L, M, W, I>
+impl<L, M, W, I, V> A2aLabService<L, M, W, I, V>
 where
     L: LogProvider,
     M: MetricProvider,
     W: TaskProvider,
     I: ImageProvider,
+    V: VideoProvider,
 {
     /// Replaces the image provider without changing the three-provider constructor.
     #[must_use]
-    pub fn with_images<P>(self, images: P) -> A2aLabService<L, M, W, P>
+    pub fn with_images<P>(self, images: P) -> A2aLabService<L, M, W, P, V>
     where
         P: ImageProvider,
     {
@@ -239,6 +353,25 @@ where
             metrics: self.metrics,
             tasks: self.tasks,
             images,
+            videos: self.videos,
+            image_transport: self.image_transport,
+            task_store: self.task_store,
+            ids: self.ids,
+        }
+    }
+
+    /// Replaces the video provider without changing the three-provider constructor.
+    #[must_use]
+    pub fn with_videos<P>(self, videos: P) -> A2aLabService<L, M, W, I, P>
+    where
+        P: VideoProvider,
+    {
+        A2aLabService {
+            logs: self.logs,
+            metrics: self.metrics,
+            tasks: self.tasks,
+            images: self.images,
+            videos,
             image_transport: self.image_transport,
             task_store: self.task_store,
             ids: self.ids,
@@ -260,27 +393,49 @@ where
         M: 'static,
         W: 'static,
         I: 'static,
+        V: 'static,
     {
         Arc::new(self)
     }
 
     /// Executes a command and stores the resulting task.
     pub async fn execute(&self, command: A2aLabCommand) -> Result<A2aLabOutcome, A2aLabError> {
-        let task = match command {
-            A2aLabCommand::ListLogSources(request) => self.list_sources(request).await?,
-            A2aLabCommand::QueryLogs(request) => self.query_logs(request).await?,
-            A2aLabCommand::ListMetrics(request) => self.list_metrics(request).await?,
-            A2aLabCommand::QueryMetric(request) => self.query_metric(request).await?,
-            A2aLabCommand::ListTasks(request) => self.list_tasks(request).await?,
-            A2aLabCommand::StartTask(request) => self.start_task(request).await?,
-            A2aLabCommand::GetTaskStatus(request) => self.task_status(request).await?,
-            A2aLabCommand::ListImageSources(request) => self.list_image_sources(request).await?,
-            A2aLabCommand::ListImages(request) => self.list_images(request).await?,
-            A2aLabCommand::SearchImages(request) => self.search_images(request).await?,
-            A2aLabCommand::GetImage(request) => self.get_image(request).await?,
-            A2aLabCommand::GetCurrentImage(request) => self.get_current_image(request).await?,
-        };
-        Ok(A2aLabOutcome { task })
+        Ok(A2aLabOutcome {
+            task: self.run(command).await?,
+        })
+    }
+
+    async fn run(&self, command: A2aLabCommand) -> Result<TaskSnapshot, A2aLabError> {
+        match command {
+            A2aLabCommand::ListVideoSources(request) => self.list_video_sources(request).await,
+            A2aLabCommand::GetVideoFrameAt(request) => self.get_video_frame_at(request).await,
+            A2aLabCommand::GetVideoClip(request) => self.get_video_clip(request).await,
+            A2aLabCommand::GetVideoTimeline(request) => self.get_video_timeline(request).await,
+            A2aLabCommand::FollowVideo(request) => self.follow_video(request).await,
+            other => self.run_lab(other).await,
+        }
+    }
+
+    async fn run_lab(&self, command: A2aLabCommand) -> Result<TaskSnapshot, A2aLabError> {
+        match command {
+            A2aLabCommand::ListLogSources(request) => self.list_sources(request).await,
+            A2aLabCommand::QueryLogs(request) => self.query_logs(request).await,
+            A2aLabCommand::ListMetrics(request) => self.list_metrics(request).await,
+            A2aLabCommand::QueryMetric(request) => self.query_metric(request).await,
+            A2aLabCommand::ListTasks(request) => self.list_tasks(request).await,
+            A2aLabCommand::StartTask(request) => self.start_task(request).await,
+            A2aLabCommand::GetTaskStatus(request) => self.task_status(request).await,
+            A2aLabCommand::ListImageSources(request) => self.list_image_sources(request).await,
+            A2aLabCommand::ListImages(request) => self.list_images(request).await,
+            A2aLabCommand::SearchImages(request) => self.search_images(request).await,
+            A2aLabCommand::GetImage(request) => self.get_image(request).await,
+            A2aLabCommand::GetCurrentImage(request) => self.get_current_image(request).await,
+            A2aLabCommand::ListVideoSources(_)
+            | A2aLabCommand::GetVideoFrameAt(_)
+            | A2aLabCommand::GetVideoClip(_)
+            | A2aLabCommand::GetVideoTimeline(_)
+            | A2aLabCommand::FollowVideo(_) => unreachable!("video commands run separately"),
+        }
     }
 
     /// Cancels a started lab run.
@@ -403,6 +558,62 @@ where
             .await
     }
 
+    async fn list_video_sources(
+        &self,
+        request: ListVideoSourcesRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        check_page(request.page())?;
+        let page = self.videos.list_video_sources(request).await?;
+        self.store_snapshot(A2aLabResult::ListVideoSources(page))
+            .await
+    }
+
+    async fn get_video_frame_at(
+        &self,
+        request: GetVideoFrameAtRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        let result = self.videos.get_video_frame_at(request).await?;
+        self.image_transport.check_payload(result.image().data())?;
+        self.store_snapshot(A2aLabResult::GetVideoFrameAt(result))
+            .await
+    }
+
+    async fn get_video_clip(
+        &self,
+        request: GetVideoClipRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        request.check()?;
+        let clip = self.videos.get_video_clip(request).await?;
+        self.store_snapshot(A2aLabResult::GetVideoClip(clip)).await
+    }
+
+    /// Opens a bounded JPEG frame stream for a previously prepared clip.
+    pub async fn open_video_clip(&self, id: &VideoClipId) -> Result<VideoClipStream, A2aLabError> {
+        self.videos.open_video_clip(id).await
+    }
+
+    async fn get_video_timeline(
+        &self,
+        request: GetVideoTimelineRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        let timeline = self.videos.get_video_timeline(request).await?;
+        self.store_snapshot(A2aLabResult::GetVideoTimeline(timeline))
+            .await
+    }
+
+    async fn follow_video(&self, request: FollowVideoRequest) -> Result<TaskSnapshot, A2aLabError> {
+        let follow = self.videos.follow_video(request).await?;
+        self.store_snapshot(A2aLabResult::FollowVideo(follow)).await
+    }
+
+    /// Opens the JPEG frame stream for a previously prepared live-follow handle.
+    pub async fn open_video_follow(
+        &self,
+        id: &VideoFollowId,
+    ) -> Result<VideoLiveStream, A2aLabError> {
+        self.videos.open_video_follow(id).await
+    }
+
     fn accepted_image(&self, image: Image) -> Result<Image, A2aLabError> {
         self.image_transport.check_payload(image.data())?;
         Ok(image)
@@ -446,12 +657,13 @@ where
     }
 }
 
-impl<L, M, W, I> A2aLabApi for A2aLabService<L, M, W, I>
+impl<L, M, W, I, V> A2aLabApi for A2aLabService<L, M, W, I, V>
 where
     L: LogProvider + 'static,
     M: MetricProvider + 'static,
     W: TaskProvider + 'static,
     I: ImageProvider + 'static,
+    V: VideoProvider + 'static,
 {
     fn execute(
         &self,
@@ -470,6 +682,22 @@ where
         request: GetTaskStatusRequest,
     ) -> A2aLabFuture<'_, Result<TaskSnapshot, A2aLabError>> {
         Box::pin(A2aLabService::cancel(self, request))
+    }
+
+    fn open_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> A2aLabFuture<'_, Result<VideoClipStream, A2aLabError>> {
+        let id = id.clone();
+        Box::pin(async move { A2aLabService::open_video_clip(self, &id).await })
+    }
+
+    fn open_video_follow(
+        &self,
+        id: &VideoFollowId,
+    ) -> A2aLabFuture<'_, Result<VideoLiveStream, A2aLabError>> {
+        let id = id.clone();
+        Box::pin(async move { A2aLabService::open_video_follow(self, &id).await })
     }
 }
 
