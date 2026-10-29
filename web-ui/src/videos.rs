@@ -22,6 +22,8 @@ pub use domain::{
 
 use crate::images::SourcePhase;
 
+use track::{coverage_track, format_utc, newest_retained_window};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Playback {
     Idle,
@@ -69,6 +71,12 @@ pub struct Details {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AutoPlayback {
+    Follow(Ticket),
+    Clip(Ticket),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reader {
     pub generation: u32,
     pub source_id: String,
@@ -83,6 +91,7 @@ pub struct Reader {
     pub loading: bool,
     pub fault: String,
     pub validation: String,
+    pub playback_note: String,
     pub details_open: bool,
     expected: Option<Ticket>,
     last: Option<Kind>,
@@ -106,6 +115,7 @@ impl Reader {
             loading: false,
             fault: String::new(),
             validation: String::new(),
+            playback_note: String::new(),
             details_open: false,
             expected: None,
             last: None,
@@ -152,6 +162,18 @@ impl Reader {
         Ok(self.issue(Kind::Timeline {
             source_id: self.source_id.clone(),
         }))
+    }
+
+    pub fn install_timeline(&mut self, timeline: Timeline) -> bool {
+        if timeline.source_id != self.source_id {
+            return false;
+        }
+        self.timeline = Some(timeline);
+        true
+    }
+
+    pub fn expects(&self, ticket: &Ticket) -> bool {
+        self.matches(ticket)
     }
 
     pub fn accept_timeline(&mut self, ticket: &Ticket, timeline: Timeline) -> bool {
@@ -310,6 +332,14 @@ impl Reader {
         true
     }
 
+    pub fn note_gap_skipped(&mut self, generation: u32) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.playback_note = "Skipped gap.".to_owned();
+        true
+    }
+
     pub fn finish(&mut self, generation: u32) -> bool {
         if self.generation != generation {
             return false;
@@ -339,6 +369,15 @@ impl Reader {
         let Some(failure) = stable_failure(body) else {
             return false;
         };
+        if failure == Failure::RecordingGap
+            && matches!(
+                self.playback,
+                Playback::Connecting | Playback::Playing | Playback::Paused
+            )
+        {
+            self.playback_note = "Skipped gap.".to_owned();
+            return true;
+        }
         settle_failure(self, failure);
         true
     }
@@ -350,6 +389,7 @@ impl Reader {
         self.playback = Playback::Stopped;
         self.fault.clear();
         self.failure = None;
+        self.playback_note.clear();
     }
 
     pub fn retry(&mut self) -> Option<Ticket> {
@@ -412,7 +452,7 @@ impl Reader {
             && self
                 .timeline
                 .as_ref()
-                .is_some_and(|timeline| timeline.newest_at.is_some())
+                .is_some_and(|timeline| timeline.live_available || timeline.newest_at.is_some())
     }
 
     pub fn has_media(&self) -> bool {
@@ -424,38 +464,15 @@ impl Reader {
     }
 
     pub fn details(&self) -> Details {
-        let mut facts = Vec::new();
-        if !self.source_id.is_empty() {
-            facts.push(fact("Source", self.source_label()));
-            if let Some(capability) = self.capability() {
-                facts.push(fact(
-                    "Resolution",
-                    format!("{}x{}", capability.width, capability.height),
-                ));
-                facts.push(fact("FPS", capability.fps.to_string()));
-            }
-        }
-        if let Some(connection) = connection_label(self.playback) {
-            facts.push(fact("Connection", connection));
-        }
-        if let Some(playback) = playback_fact(self.playback) {
-            facts.push(fact("Playback", playback));
-        }
-        push_ranges(self, &mut facts);
-        if !self.frame_time.is_empty() {
-            facts.push(fact("Frame at time", self.frame_time.clone()));
-        }
-        if let Some(timeline) = &self.timeline {
-            for interval in &timeline.intervals {
-                facts.push(fact(
-                    "Retained interval",
-                    format!("{}..{}", interval.start, interval.end),
-                ));
-            }
-        }
+        let Some((start, end)) = video_range(self) else {
+            return Details {
+                open: false,
+                facts: Vec::new(),
+            };
+        };
         Details {
-            open: self.details_open,
-            facts,
+            open: true,
+            facts: vec![fact("Start time", start), fact("End time", end)],
         }
     }
 
@@ -464,7 +481,7 @@ impl Reader {
         if self
             .timeline
             .as_ref()
-            .is_some_and(|timeline| timeline.newest_at.is_none())
+            .is_some_and(|timeline| !timeline.live_available && timeline.newest_at.is_none())
         {
             self.validation = "There is no newest point.".to_owned();
             return Err("There is no newest point.");
@@ -512,6 +529,7 @@ impl Reader {
         self.last = None;
         self.fault.clear();
         self.validation.clear();
+        self.playback_note.clear();
     }
 
     fn clear(&mut self) {
@@ -520,26 +538,12 @@ impl Reader {
         self.details_open = false;
         self.capabilities.clear();
     }
-
-    fn capability(&self) -> Option<&SourceCapability> {
-        self.capabilities
-            .iter()
-            .find(|item| item.id == self.source_id)
-    }
-
-    fn source_label(&self) -> String {
-        match self.capability() {
-            Some(capability) if !capability.name.is_empty() => {
-                format!("{} · {}", capability.name, capability.id)
-            }
-            _ => self.source_id.clone(),
-        }
-    }
 }
 
 fn prepare_media(reader: &mut Reader, playback: Playback) {
     reader.fault.clear();
     reader.failure = None;
+    reader.playback_note.clear();
     reader.clip = None;
     reader.live = None;
     reader.frame = None;
@@ -575,46 +579,20 @@ fn settle_failure(reader: &mut Reader, failure: Failure) {
     reader.validation.clear();
 }
 
-fn push_ranges(reader: &Reader, facts: &mut Vec<DetailFact>) {
+fn video_range(reader: &Reader) -> Option<(String, String)> {
     if let Some(clip) = &reader.clip {
-        facts.push(fact(
-            "Requested range",
-            format!("{}..{}", clip.requested_start, clip.requested_end),
-        ));
-        facts.push(fact(
-            "Effective range",
-            format!("{}..{}", clip.effective_start, clip.effective_end),
-        ));
-        return;
+        return Some((clip.effective_start.clone(), clip.effective_end.clone()));
     }
     if let Selection::Recorded { start, end, .. } = &reader.selection {
-        facts.push(fact("Requested range", format!("{start}..{end}")));
+        return Some((start.clone(), end.clone()));
     }
+    None
 }
 
 fn fact(label: &'static str, value: impl Into<String>) -> DetailFact {
     DetailFact {
         label,
         value: value.into(),
-    }
-}
-
-fn connection_label(playback: Playback) -> Option<&'static str> {
-    match playback {
-        Playback::Idle => None,
-        Playback::Connecting => Some("connecting"),
-        Playback::Playing | Playback::Paused => Some("open"),
-        Playback::Stopped => Some("closed"),
-    }
-}
-
-fn playback_fact(playback: Playback) -> Option<&'static str> {
-    match playback {
-        Playback::Idle => None,
-        Playback::Connecting => Some("connecting"),
-        Playback::Playing => Some("playing"),
-        Playback::Paused => Some("paused"),
-        Playback::Stopped => Some("stopped"),
     }
 }
 
@@ -635,13 +613,41 @@ pub fn source_copy(phase: SourcePhase) -> &'static str {
     }
 }
 
-pub fn playback_status(playback: Playback) -> &'static str {
-    match playback {
-        Playback::Idle => "",
-        Playback::Connecting => "Connecting.",
-        Playback::Playing => "Playing.",
-        Playback::Paused => "Paused.",
-        Playback::Stopped => "Stopped.",
+pub fn live_button_label(_reader: &Reader) -> &'static str {
+    "LIVE"
+}
+
+pub fn begin_auto_playback(reader: &mut Reader) -> Option<AutoPlayback> {
+    if reader.selection != Selection::Empty {
+        return None;
+    }
+    let timeline = reader.timeline.clone()?;
+    if timeline.live_available {
+        return reader.follow_newest().ok().map(AutoPlayback::Follow);
+    }
+    if timeline.intervals.is_empty() {
+        return None;
+    }
+    let track = coverage_track(&timeline);
+    let window = newest_retained_window(&track, timeline.newest_us)?;
+    let start = format_utc(window.start_us);
+    let end = format_utc(window.end_us);
+    reader
+        .select_range(&start, &end)
+        .ok()
+        .map(AutoPlayback::Clip)
+}
+
+pub fn playback_status(reader: &Reader) -> String {
+    if !reader.playback_note.is_empty() {
+        return reader.playback_note.clone();
+    }
+    match reader.playback {
+        Playback::Idle => String::new(),
+        Playback::Connecting => "Connecting.".to_owned(),
+        Playback::Playing => "Playing.".to_owned(),
+        Playback::Paused => "Paused.".to_owned(),
+        Playback::Stopped => "Stopped.".to_owned(),
     }
 }
 

@@ -296,7 +296,7 @@ async fn empty_coverage_is_not_found_not_clamped() {
 }
 
 #[tokio::test]
-async fn clip_uses_half_open_bounds_and_rejects_gaps() {
+async fn clip_uses_half_open_bounds_and_tolerates_gaps() {
     let videos = fixture().await;
     let first_two = videos
         .get_video_clip(
@@ -346,17 +346,29 @@ async fn clip_uses_half_open_bounds_and_rejects_gaps() {
         )
         .await
         .unwrap();
-    let gap = videos
-        .get_video_clip(
-            GetVideoClipRequest::new(
-                source_id("gappy"),
-                range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z"),
-            )
-            .unwrap(),
-        )
+    let requested = range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z");
+    let spanning = videos
+        .get_video_clip(GetVideoClipRequest::new(source_id("gappy"), requested).unwrap())
         .await
-        .unwrap_err();
-    assert_eq!(gap.code(), "recording_gap");
+        .unwrap();
+    assert_eq!(spanning.requested_range(), requested);
+    assert_eq!(
+        spanning.effective_range(),
+        range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z")
+    );
+    let mut stream = videos.open_video_clip(spanning.id()).await.unwrap();
+    let mut stamps = Vec::new();
+    while let Some(frame) = stream.next().await {
+        stamps.push(frame.unwrap().captured_at().to_rfc3339());
+    }
+    assert_eq!(
+        stamps,
+        vec![
+            "2024-01-01T00:00:00Z".to_owned(),
+            "2024-01-01T00:00:01Z".to_owned(),
+            "2024-01-01T00:00:10Z".to_owned(),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -809,17 +821,30 @@ async fn memory_clips_report_coverage_reasons_and_keep_the_sixty_second_limit() 
         )
         .await
         .unwrap();
-    let gap = videos
-        .get_video_clip(
-            GetVideoClipRequest::new(
-                source_id("cam"),
-                range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z"),
-            )
-            .unwrap(),
-        )
+    let requested = range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z");
+    let spanning = videos
+        .get_video_clip(GetVideoClipRequest::new(source_id("cam"), requested).unwrap())
         .await
-        .unwrap_err();
-    assert_eq!(gap.code(), "recording_gap");
+        .unwrap();
+    assert_eq!(spanning.requested_range(), requested);
+    assert_eq!(
+        spanning.effective_range(),
+        range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z")
+    );
+    let mut gap_stream = videos.open_video_clip(spanning.id()).await.unwrap();
+    let mut gap_stamps = Vec::new();
+    while let Some(frame) = gap_stream.next().await {
+        gap_stamps.push(frame.unwrap().captured_at().to_rfc3339());
+    }
+    assert_eq!(
+        gap_stamps,
+        vec![
+            "2024-01-01T00:00:00Z".to_owned(),
+            "2024-01-01T00:00:01Z".to_owned(),
+            "2024-01-01T00:00:02Z".to_owned(),
+            "2024-01-01T00:00:10Z".to_owned(),
+        ]
+    );
     let hole = videos
         .get_video_clip(
             GetVideoClipRequest::new(
@@ -905,6 +930,25 @@ async fn forget_before_drops_old_frames_without_touching_later_ones() {
         timeline.intervals()[0].start(),
         timestamp("2024-01-01T00:02:00Z")
     );
+
+    let requested = range("2024-01-01T00:01:30Z", "2024-01-01T00:02:30Z");
+    let trimmed = videos
+        .get_video_clip(GetVideoClipRequest::new(source_id("bench"), requested).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(trimmed.requested_range(), requested);
+    assert_eq!(
+        trimmed.effective_range(),
+        TimeRange::new(
+            timestamp("2024-01-01T00:02:00Z"),
+            timestamp("2024-01-01T00:02:00Z").saturating_add_micros(250_000),
+        )
+        .unwrap()
+    );
+    let mut stream = videos.open_video_clip(trimmed.id()).await.unwrap();
+    let frame = stream.next().await.unwrap().unwrap();
+    assert_eq!(frame.captured_at(), timestamp("2024-01-01T00:02:00Z"));
+    assert!(stream.next().await.is_none());
 }
 
 #[test]

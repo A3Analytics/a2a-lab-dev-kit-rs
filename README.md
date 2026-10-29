@@ -71,7 +71,7 @@ Run the [web interface example](examples/web_ui.rs) from the repository root:
 mise exec -- cargo run --example web_ui --features web-ui
 ```
 
-The example listens on `http://127.0.0.1:3847/ui/` unless `WEB_UI_BIND` is set. To rebuild and restart that process when `web-ui/`, `examples/web_ui.rs`, or the crate sources change:
+The example listens on `http://127.0.0.1:3847/ui/` unless `WEB_UI_BIND` is set. To use the local webcam as the video source instead of the synthetic bench recording, run `mise run web-ui-webcam`. `WEB_UI_WEBCAM_INDEX` selects another camera, starting at `0`. To rebuild and restart the bench example when `web-ui/`, `examples/web_ui.rs`, or the crate sources change:
 
 ```bash
 mise run web-ui-watch

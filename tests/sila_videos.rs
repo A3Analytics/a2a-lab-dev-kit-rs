@@ -450,15 +450,8 @@ async fn sila_videos_map_availability_without_collapsing_lookup_errors() {
     assert!(!defined(&uncovered, "VideoClipNotFound"));
     assert!(decoded(&uncovered).contains("no retained recording"));
 
-    let gap = client
-        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
-            source_id: Some(text("cam")),
-            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 0, 11))),
-        })
-        .await
-        .unwrap_err();
-    assert!(defined(&gap, "RecordingGap"));
-    assert!(!defined(&gap, "NoRecording"));
+    assert_sila_gap_spanning_clip_succeeds(&mut client).await;
+    assert_sila_maps_recording_gap_from_provider().await;
 
     let frame = client
         .get_video_frame_at(a2a_lab_dev_kit::sila::api::GetVideoFrameAtParameters {
@@ -575,6 +568,79 @@ async fn sila_lab_videos_minor_version_matches_proto() {
         .unwrap()
         .value;
     assert_eq!(definition, xml);
+}
+
+async fn assert_sila_gap_spanning_clip_succeeds(
+    client: &mut LabVideosClient<tonic::transport::Channel>,
+) {
+    let spanning = client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("cam")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 0, 11))),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(
+        spanning
+            .path
+            .unwrap()
+            .value
+            .starts_with("/media/video-clips/")
+    );
+    assert!(spanning.clip.is_some());
+}
+
+async fn assert_sila_maps_recording_gap_from_provider() {
+    let gap_server = serve_videos_lab(
+        A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+            .with_videos(ClipGapRefused)
+            .share(),
+    )
+    .await;
+    let gap = LabVideosClient::new(channel_of(&gap_server).await)
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("cam")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 0, 1))),
+        })
+        .await
+        .unwrap_err();
+    assert!(defined(&gap, "RecordingGap"));
+    assert!(!defined(&gap, "NoRecording"));
+}
+
+struct ClipGapRefused;
+
+impl VideoProvider for ClipGapRefused {
+    fn list_video_sources(
+        &self,
+        _request: ListVideoSourcesRequest,
+    ) -> impl Future<Output = Result<Page<VideoSource>, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::unavailable("unused")))
+    }
+
+    fn get_video_frame_at(
+        &self,
+        _request: GetVideoFrameAtRequest,
+    ) -> impl Future<Output = Result<GetVideoFrameAtResult, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::unavailable("unused")))
+    }
+
+    fn get_video_clip(
+        &self,
+        _request: GetVideoClipRequest,
+    ) -> impl Future<Output = Result<VideoClip, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::recording_gap(
+            "requested range crosses a recording gap",
+        )))
+    }
+
+    fn open_video_clip(
+        &self,
+        _id: &VideoClipId,
+    ) -> impl Future<Output = Result<VideoClipStream, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::unavailable("unused")))
+    }
 }
 
 struct LiveRefused;

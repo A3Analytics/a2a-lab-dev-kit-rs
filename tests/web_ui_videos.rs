@@ -164,7 +164,7 @@ fn flow(filled: &str, empty: &str, videos: &MemoryVideos, handle: &tokio::runtim
     page.wait_until(
         "document.getElementById('video-interval-0') && document.getElementById('video-source') instanceof HTMLSelectElement && typeof window.__a2aNativePlay === 'function'",
     );
-    assert_empty_media(&mut page);
+    assert_auto_playback_started(&mut page);
     assert_typed_range(&mut page);
     play_coverage(&mut page);
     page.wait_until("document.getElementById('video-status')?.dataset.state === 'playing'");
@@ -439,7 +439,7 @@ fn timeline_flow(base: &str) {
         page.eval("document.querySelectorAll('#video-timeline .video-gap').length"),
         serde_json::json!(0)
     );
-    assert_empty_media(&mut page);
+    assert_auto_playback_started(&mut page);
     assert_live_hidden_boundary(&mut page, base);
     assert_playback_abort(&mut page);
     page.show("#videos");
@@ -530,7 +530,7 @@ fn assert_live_hidden_boundary(page: &mut Browser, base: &str) {
     );
     assert_eq!(
         page.eval("document.getElementById('video-follow-newest')?.textContent.trim()"),
-        serde_json::json!("Return to newest")
+        serde_json::json!("LIVE")
     );
 }
 
@@ -678,16 +678,13 @@ fn timeline_prelude() -> String {
         .to_owned()
 }
 
-fn assert_empty_media(page: &mut Browser) {
-    let hint = text(page, "video-empty");
-    assert!(hint.contains("Select a source and a time"), "{hint}");
-    assert_eq!(
-        page.eval("document.getElementById('video-player')?.hasAttribute('controls')"),
-        serde_json::json!(false)
+fn assert_auto_playback_started(page: &mut Browser) {
+    page.wait_until(
+        "document.getElementById('video-player')?.hasAttribute('controls') && !document.getElementById('video-player')?.hasAttribute('hidden')",
     );
     assert_eq!(
-        page.eval("document.getElementById('video-player')?.hasAttribute('hidden')"),
-        serde_json::json!(true)
+        page.eval("!!document.getElementById('video-empty')"),
+        serde_json::json!(false)
     );
 }
 
@@ -696,7 +693,6 @@ fn assert_typed_range(page: &mut Browser) {
         "(() => { const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement)) return false; start.value = '2024-01-01T00:00:00Z'; end.value = '2024-01-01T00:00:02Z'; start.dispatchEvent(new Event('input', { bubbles: true })); end.dispatchEvent(new Event('input', { bubbles: true })); return true; })()",
     );
     assert_eq!(entered, serde_json::json!(true), "range fields missing");
-    page.click("video-load-range");
     page.wait_until(
         "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:00') && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && document.getElementById('video-player')?.hasAttribute('controls')",
     );

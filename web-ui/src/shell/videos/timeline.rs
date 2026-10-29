@@ -69,6 +69,10 @@ pub(super) fn reselect_range() {
 }
 
 pub(super) fn commit_at(at_us: i64) {
+    super::fetch_timeline(move |_| play_at(at_us));
+}
+
+fn play_at(at_us: i64) {
     let Some(track) = current_track() else {
         return;
     };
@@ -76,6 +80,18 @@ pub(super) fn commit_at(at_us: i64) {
         return;
     };
     commit_window(window);
+}
+
+pub(super) fn replay_retained_start() {
+    super::fetch_timeline(move |_| {
+        let Some(track) = current_track() else {
+            return;
+        };
+        let Some(window) = track::initial_window(&track) else {
+            return;
+        };
+        commit_window(window);
+    });
 }
 
 pub(super) fn commit_established() {
@@ -100,6 +116,7 @@ pub(super) fn commit_window(window: Window) {
     playback::abort();
     abort_commands();
     playback::set_paused(false);
+    playback::play_element();
     let ticket = match next.reader.select_range(&start, &end) {
         Ok(ticket) => ticket,
         Err(_) => {
@@ -248,17 +265,29 @@ pub(super) fn set_draft(window: Window) {
 }
 
 pub(super) fn commit_typed_range() {
-    let start = session::control_value("video-range-start");
-    let end = session::control_value("video-range-end");
+    let start = field_to_utc(&session::control_value("video-range-start"));
+    let end = field_to_utc(&session::control_value("video-range-end"));
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
+    if let Ok(range) = videos::check_range(&start, &end)
+        && let Selection::Recorded {
+            start_us, end_us, ..
+        } = next.reader.selection
+        && start_us == range.start_us
+        && end_us == range.end_us
+    {
+        remember(&mut next, Window { start_us, end_us });
+        ui.set(next);
+        return;
+    }
     next.range_start = start.clone();
     next.range_end = end.clone();
     playback::abort();
     abort_commands();
     playback::set_paused(false);
+    playback::play_element();
     let ticket = match next.reader.select_range(&start, &end) {
         Ok(ticket) => ticket,
         Err(_) => {
@@ -271,13 +300,7 @@ pub(super) fn commit_typed_range() {
         start_us, end_us, ..
     } = next.reader.selection
     {
-        remember(
-            &mut next,
-            Window {
-                start_us,
-                end_us,
-            },
-        );
+        remember(&mut next, Window { start_us, end_us });
     }
     ui.set(next);
     launch_clip(ticket);
@@ -360,6 +383,16 @@ pub(super) fn bands(track: &Track) -> Vec<Band> {
                 ("video-gap", "gap", id)
             }
         };
+        let duration_us = span.end_us.saturating_sub(span.start_us);
+        let start = format_local(span.start_us);
+        let end = format_local(span.end_us);
+        let seconds = duration_us as f64 / 1_000_000.0;
+        let label = match span.kind {
+            SpanKind::Retained => format!("Retained recording from {start} to {end}"),
+            SpanKind::Gap => {
+                format!("Recording gap from {start} to {end} ({seconds:.3} seconds unplayable)")
+            }
+        };
         items.push(Band {
             id,
             class,
@@ -367,6 +400,9 @@ pub(super) fn bands(track: &Track) -> Vec<Band> {
             start: span.start.clone(),
             end: span.end.clone(),
             start_us: span.start_us,
+            end_us: span.end_us,
+            duration_us,
+            label,
             style: band_style(track, span.start_us, span.end_us),
         });
     }
@@ -397,19 +433,123 @@ pub(super) fn slider_text(window: Option<Window>) -> String {
     match window {
         Some(window) => format!(
             "{} to {}",
-            track::format_utc(window.start_us),
-            track::format_utc(window.end_us)
+            format_local(window.start_us),
+            format_local(window.end_us)
         ),
         None => "No selection".to_owned(),
     }
 }
 
-pub(super) fn follow_label(selection: &Selection) -> &'static str {
-    if matches!(selection, Selection::Recorded { .. }) {
-        "Return to newest"
-    } else {
-        "Follow newest"
+pub(super) fn format_local(us: i64) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(us as f64 / 1_000.0));
+        if date.get_time().is_nan() {
+            return track::format_utc(us);
+        }
+        let year = date.get_full_year() as i32;
+        let month = date.get_month() as u32 + 1;
+        let day = date.get_date() as u32;
+        let hour = date.get_hours() as u32;
+        let minute = date.get_minutes() as u32;
+        let second = date.get_seconds() as u32;
+        format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        track::format_utc(us)
+    }
+}
+
+pub(super) fn display_instant(stored: &str) -> String {
+    if stored.is_empty() {
+        return String::new();
+    }
+    crate::videos::mjpeg::captured_us(stored)
+        .map(format_local)
+        .unwrap_or_else(|| stored.to_owned())
+}
+
+pub(super) fn field_to_utc(value: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        return String::new();
+    }
+    if let Some(us) = crate::videos::mjpeg::captured_us(value) {
+        return track::format_utc(us);
+    }
+    local_text_to_utc(value).unwrap_or_else(|| value.to_owned())
+}
+
+fn local_text_to_utc(value: &str) -> Option<String> {
+    let (date, time) = value.split_once('T').or_else(|| value.split_once(' '))?;
+    let mut date_parts = date.split('-');
+    let year: u32 = date_parts.next()?.parse().ok()?;
+    let month: i32 = date_parts.next()?.parse().ok()?;
+    let day: i32 = date_parts.next()?.parse().ok()?;
+    if date_parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let (clock, fraction) = match time.split_once('.') {
+        Some((clock, fraction)) => (clock, fraction),
+        None => (time, ""),
+    };
+    let mut clock_parts = clock.split(':');
+    let hour: i32 = clock_parts.next()?.parse().ok()?;
+    let minute: i32 = clock_parts.next()?.parse().ok()?;
+    let second: i32 = clock_parts.next()?.parse().ok()?;
+    if clock_parts.next().is_some()
+        || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute)
+        || !(0..=59).contains(&second)
+    {
+        return None;
+    }
+    let digits: String = fraction
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.len() != fraction.len() || digits.len() > 6 {
+        return None;
+    }
+    let padded = format!("{digits:0<6}");
+    let millis: i32 = padded.get(0..3)?.parse().ok()?;
+    let extra: i32 = padded.get(3..6)?.parse().ok()?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new_with_year_month_day_hr_min_sec_milli(
+            year,
+            month - 1,
+            day,
+            hour,
+            minute,
+            second,
+            millis,
+        );
+        if date.get_time().is_nan() {
+            return None;
+        }
+        let us = (date.get_time().round() as i64)
+            .saturating_mul(1_000)
+            .saturating_add(extra as i64);
+        Some(track::format_utc(us))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (year, month, day, hour, minute, second, millis, extra);
+        None
+    }
+}
+
+pub(super) fn playhead_style(state: &VideoUi) -> Option<String> {
+    let frame_time = state.reader.frame_time.as_str();
+    if frame_time.is_empty() {
+        return None;
+    }
+    let timeline = state.reader.timeline.as_ref()?;
+    let track = track::coverage_track(timeline);
+    let percent = track::playhead_percent(&track, frame_time)?;
+    Some(format!("left:{percent:.2}%"))
 }
 
 pub(super) fn selection_slug(selection: &Selection) -> &'static str {

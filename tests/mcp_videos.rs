@@ -369,20 +369,44 @@ async fn mcp_preserves_video_availability_codes() {
         VideoAvailability::NoRecording,
     )
     .await;
+    let requested = range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z");
+    let spanning = lab
+        .execute(A2aLabCommand::GetVideoClip(
+            GetVideoClipRequest::new(VideoSourceId::new("cam").unwrap(), requested).unwrap(),
+        ))
+        .await
+        .unwrap();
+    let A2aLabResult::GetVideoClip(clip) = spanning.task.result else {
+        panic!("get_video_clip");
+    };
+    assert_eq!(clip.requested_range(), requested);
+    assert_eq!(
+        clip.effective_range(),
+        range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z")
+    );
+
+    let gap_origin = serve_http(
+        A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+            .with_videos(ClipGapRefused)
+            .share(),
+    )
+    .await;
+    let gap_mcp_url = format!("{gap_origin}/mcp");
+    let gap_lab = McpLab::connect(&gap_mcp_url).await.unwrap();
     assert_tool_availability(
-        &lab,
-        &mcp_url,
+        &gap_lab,
+        &gap_mcp_url,
         A2aLabCommand::GetVideoClip(
             GetVideoClipRequest::new(
                 VideoSourceId::new("cam").unwrap(),
-                range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z"),
+                range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"),
             )
             .unwrap(),
         ),
         "get_video_clip",
         serde_json::json!({
             "source_id": "cam",
-            "range": {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:00:11Z"}
+            "range": {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:00:01Z"}
         }),
         VideoAvailability::RecordingGap,
     )
@@ -989,6 +1013,40 @@ async fn live_next(state: LiveState) -> Option<(Result<VideoFrame, A2aLabError>,
 
 async fn wait_flag(probe: &ProbeVideos) {
     wait_until(|| probe.dropped()).await;
+}
+
+struct ClipGapRefused;
+
+impl VideoProvider for ClipGapRefused {
+    fn list_video_sources(
+        &self,
+        _request: ListVideoSourcesRequest,
+    ) -> impl Future<Output = Result<Page<VideoSource>, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::unavailable("unused")))
+    }
+
+    fn get_video_frame_at(
+        &self,
+        _request: GetVideoFrameAtRequest,
+    ) -> impl Future<Output = Result<GetVideoFrameAtResult, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::unavailable("unused")))
+    }
+
+    fn get_video_clip(
+        &self,
+        _request: GetVideoClipRequest,
+    ) -> impl Future<Output = Result<VideoClip, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::recording_gap(
+            "requested range crosses a recording gap",
+        )))
+    }
+
+    fn open_video_clip(
+        &self,
+        _id: &VideoClipId,
+    ) -> impl Future<Output = Result<VideoClipStream, A2aLabError>> + Send {
+        std::future::ready(Err(A2aLabError::unavailable("unused")))
+    }
 }
 
 async fn wait_until(mut ready: impl FnMut() -> bool) {

@@ -4,6 +4,7 @@ async fn availability_outcomes_stay_distinct_across_transports() {
     compare_coverage_outcomes().await;
     compare_expired_reads().await;
     compare_refused_live_read().await;
+    compare_recording_gap_outcomes().await;
     compare_fixed_outcomes().await;
 }
 
@@ -105,37 +106,32 @@ async fn compare_coverage_outcomes() {
         "NoRecording",
     );
 
-    let gap =
+    let spanning =
         GetVideoClipRequest::new(cam(), range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z"))
             .unwrap();
-    expect_a2a_video(
-        "recording_gap",
-        &base,
-        &a2a,
-        A2aLabCommand::GetVideoClip(gap.clone()),
-        "recording_gap",
-    )
-    .await;
-    expect_mcp(
-        "recording_gap",
-        &mcp_url,
-        &mcp,
-        A2aLabCommand::GetVideoClip(gap),
-        "recording_gap",
-    )
-    .await;
-    expect_code(
-        "recording_gap",
-        "SiLA",
-        &sila
-            .defined_clip(
-                "cam",
-                sila_utc(2024, 1, 1, 0, 0, 0),
-                sila_utc(2024, 1, 1, 0, 0, 11),
-            )
-            .await,
-        "RecordingGap",
+    let requested = spanning.range();
+    let clip = a2a.get_video_clip(spanning.clone()).await.unwrap();
+    assert_eq!(clip.requested_range(), requested);
+    assert_eq!(
+        clip.effective_range(),
+        range("2024-01-01T00:00:00Z", "2024-01-01T00:00:11Z")
     );
+    assert_no_media_bytes(&serde_json::to_value(&clip).unwrap());
+    let mcp_clip = mcp
+        .execute(A2aLabCommand::GetVideoClip(spanning))
+        .await
+        .unwrap();
+    let A2aLabResult::GetVideoClip(mcp_meta) = mcp_clip.task.result else {
+        diverge("gap-spanning clip", "MCP", "unexpected result");
+    };
+    assert_eq!(mcp_meta.effective_range(), clip.effective_range());
+    sila
+        .clip_bytes(
+            "cam",
+            sila_utc(2024, 1, 1, 0, 0, 0),
+            sila_utc(2024, 1, 1, 0, 0, 11),
+        )
+        .await;
 
     let frame = GetVideoFrameAtRequest::new(cam(), timestamp("2025-01-01T00:00:00Z"), None);
     expect_a2a_status(
@@ -400,6 +396,49 @@ async fn compare_refused_live_read() {
     if quiet.live {
         diverge("live off is LiveAvailable=false", "SiLA", &quiet.render());
     }
+}
+
+#[cfg(feature = "sila2")]
+async fn compare_recording_gap_outcomes() {
+    let gap_provider = share(FixedVideoError(A2aLabError::recording_gap(
+        "requested range crosses a recording gap",
+    )));
+    let base = listen_a2a(Arc::clone(&gap_provider)).await;
+    let (mcp_url, _) = listen_mcp(Arc::clone(&gap_provider)).await;
+    let a2a = A2aClient::new(&base).unwrap();
+    let mcp = McpLab::connect(&mcp_url).await.unwrap();
+    let gap_request =
+        GetVideoClipRequest::new(cam(), range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"))
+            .unwrap();
+    expect_a2a_video(
+        "recording_gap",
+        &base,
+        &a2a,
+        A2aLabCommand::GetVideoClip(gap_request.clone()),
+        "recording_gap",
+    )
+    .await;
+    expect_mcp(
+        "recording_gap",
+        &mcp_url,
+        &mcp,
+        A2aLabCommand::GetVideoClip(gap_request),
+        "recording_gap",
+    )
+    .await;
+    let mut sila = SilaVideos::start(gap_provider).await;
+    expect_code(
+        "recording_gap",
+        "SiLA",
+        &sila
+            .defined_clip(
+                "cam",
+                sila_utc(2024, 1, 1, 0, 0, 0),
+                sila_utc(2024, 1, 1, 0, 0, 1),
+            )
+            .await,
+        "RecordingGap",
+    );
 }
 
 #[cfg(feature = "sila2")]

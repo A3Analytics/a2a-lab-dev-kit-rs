@@ -82,7 +82,7 @@ fn rejects_malformed_intervals_and_capability_metadata() {
 }
 
 #[test]
-fn range_selection_spans_continuous_coverage_and_stops_at_gaps() {
+fn range_selection_spans_gaps_when_retained_coverage_overlaps() {
     let mut reader = ready(&["cam"]);
     accept(&mut reader, continuous_timeline());
     let spanning = reader
@@ -94,21 +94,16 @@ fn range_selection_spans_continuous_coverage_and_stops_at_gaps() {
 
     let mut reader = ready(&["cam"]);
     accept(&mut reader, gapped_timeline());
-    let err = reader
+    let gapped = reader
         .select_range("2024-01-01T00:00:05", "2024-01-01T00:00:25")
-        .unwrap_err();
-    assert_eq!(err, "recording_gap");
-    assert_eq!(reader.failure, Some(Failure::RecordingGap));
-    assert!(reader.validation.is_empty());
-    assert_eq!(
-        reader.failure.map(Failure::message),
-        Some("The recording contains a gap.")
-    );
-    assert!(reader.can_reselect());
-    assert!(reader.reselect());
-    assert_eq!(reader.source_id, "cam");
-    assert!(reader.timeline.is_some());
+        .unwrap();
+    assert!(matches!(gapped.kind, Kind::Clip { .. }));
     assert!(reader.failure.is_none());
+    assert!(reader.validation.is_empty());
+    let timeline = reader.timeline.as_ref().unwrap();
+    let overlap_start = crate::videos::mjpeg::captured_us("2024-01-01T00:00:05Z").unwrap();
+    let overlap_end = crate::videos::mjpeg::captured_us("2024-01-01T00:00:25Z").unwrap();
+    assert!(check_coverage(timeline, overlap_start, overlap_end).is_ok());
 
     let miss = reader
         .select_range("2024-01-01T00:00:12", "2024-01-01T00:00:15")
@@ -121,6 +116,18 @@ fn range_selection_spans_continuous_coverage_and_stops_at_gaps() {
         Some("No recording covers the requested range.")
     );
     assert!(!reader.can_retry());
+
+    let clip = reader
+        .select_range("2024-01-01T00:00:00", "2024-01-01T00:00:02")
+        .unwrap();
+    assert!(reader.accept_clip(&clip, sample_clip("clip-gap")));
+    assert!(reader.playing(clip.generation));
+    assert!(reader.fail_media(clip.generation, &media_error("recording_gap", "ignored")));
+    assert_eq!(reader.failure, None);
+    assert_eq!(reader.playback_note, "Skipped gap.");
+    assert_eq!(reader.playback, Playback::Playing);
+    assert!(reader.note_gap_skipped(clip.generation));
+    assert_eq!(playback_status(&reader), "Skipped gap.");
 }
 
 #[test]
@@ -274,7 +281,7 @@ fn frame_at_time_keeps_the_public_operation_and_details_start_closed() {
     let mut reader = ready(&["cam"]);
     assert!(!reader.details().open);
     assert!(!reader.has_media());
-    assert_eq!(reader.details().facts.len(), 1);
+    assert!(reader.details().facts.is_empty());
     reader.note_capability(SourceCapability {
         id: "cam".to_owned(),
         name: "Camera A".to_owned(),
@@ -286,41 +293,42 @@ fn frame_at_time_keeps_the_public_operation_and_details_start_closed() {
     let ticket = reader.frame_at_time("2024-01-01T00:00:00").unwrap();
     assert!(matches!(ticket.kind, Kind::FrameAtTime { .. }));
     assert!(reader.accept_frame(&ticket, frame));
-    reader.set_details_open(true);
-    let labels: Vec<_> = reader
-        .details()
-        .facts
-        .iter()
-        .map(|item| item.label)
-        .collect();
-    assert!(reader.details().open);
-    assert_eq!(
-        labels,
-        [
-            "Source",
-            "Resolution",
-            "FPS",
-            "Frame at time",
-            "Retained interval",
-            "Retained interval",
-        ]
-    );
-    assert!(
-        reader
-            .details()
-            .facts
-            .iter()
-            .any(|item| item.value == "640x360")
-    );
-    assert!(
-        reader
-            .details()
-            .facts
-            .iter()
-            .all(|item| item.label != "Image")
-    );
-    reader.set_details_open(false);
     assert!(!reader.details().open);
+    assert!(reader.details().facts.is_empty());
+}
+
+#[test]
+fn auto_playback_starts_live_or_newest_retained_clip() {
+    let mut reader = ready(&["cam"]);
+    accept(&mut reader, continuous_timeline());
+    let live = begin_auto_playback(&mut reader).unwrap();
+    assert!(matches!(live, AutoPlayback::Follow(_)));
+    assert!(matches!(reader.selection, Selection::Live));
+
+    let mut reader = ready(&["cam"]);
+    accept(&mut reader, long_timeline());
+    let clip = begin_auto_playback(&mut reader).unwrap();
+    assert!(matches!(clip, AutoPlayback::Clip(_)));
+    assert!(matches!(reader.selection, Selection::Recorded { .. }));
+
+    let mut reader = ready(&["cam"]);
+    let ticket = reader.load_timeline().unwrap();
+    let empty = interpret_timeline(&reply(empty_timeline()), None).unwrap();
+    assert!(reader.accept_timeline(&ticket, empty));
+    assert!(begin_auto_playback(&mut reader).is_none());
+    assert!(matches!(reader.selection, Selection::Empty));
+}
+
+#[test]
+fn playhead_percent_tracks_frame_time() {
+    use crate::videos::track::{coverage_track, playhead_percent};
+
+    let timeline = interpret_timeline(&reply(gapped_timeline()), None).unwrap();
+    let track = coverage_track(&timeline);
+    let early = playhead_percent(&track, "2024-01-01T00:00:05Z").unwrap();
+    let later = playhead_percent(&track, "2024-01-01T00:00:25Z").unwrap();
+    assert!(later > early);
+    assert_eq!(live_button_label(&Reader::new()), "LIVE");
 }
 
 #[test]
@@ -354,38 +362,22 @@ fn failure_sentences_stay_distinct_from_codes_and_saved_stills() {
 fn details_omit_facts_that_are_not_available() {
     let mut reader = ready(&["cam"]);
     accept(&mut reader, gapped_timeline());
-    let labels = labels_of(&reader);
-    assert!(labels.contains(&"Source"));
-    assert!(labels.contains(&"Retained interval"));
-    assert!(!labels.contains(&"Resolution"));
-    assert!(!labels.contains(&"FPS"));
-    assert!(!labels.contains(&"Connection"));
-    assert!(!labels.contains(&"Playback"));
-    assert!(!labels.contains(&"Requested range"));
-    assert!(!labels.contains(&"Effective range"));
-    assert!(!labels.contains(&"Frame at time"));
+    assert!(labels_of(&reader).is_empty());
 
     let clip = reader
         .select_range("2024-01-01T00:00:00", "2024-01-01T00:00:02")
         .unwrap();
+    assert_eq!(labels_of(&reader), ["Start time", "End time"]);
     assert!(reader.accept_clip(&clip, sample_clip("clip-1")));
     assert!(reader.playing(clip.generation));
-    let labels = labels_of(&reader);
-    assert!(!labels.contains(&"Resolution"));
-    assert!(labels.contains(&"Connection"));
-    assert!(labels.contains(&"Playback"));
-    assert!(labels.contains(&"Requested range"));
-    assert!(labels.contains(&"Effective range"));
-    assert!(labels.iter().all(|label| *label != "Image"));
+    let facts = reader.details().facts;
     assert_eq!(
-        reader
-            .details()
-            .facts
-            .iter()
-            .find(|item| item.label == "Playback")
-            .map(|item| item.value.as_str()),
-        Some("playing")
+        facts.iter().map(|item| item.label).collect::<Vec<_>>(),
+        ["Start time", "End time"]
     );
+    assert_eq!(facts[0].value, "2024-01-01T00:00:00Z");
+    assert_eq!(facts[1].value, "2024-01-01T00:00:02Z");
+    assert!(facts.iter().all(|item| item.label != "Image"));
 }
 
 fn labels_of(reader: &Reader) -> Vec<&str> {

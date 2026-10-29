@@ -106,18 +106,10 @@ fn judge_focus(page: &mut Browser, scheme: &str, failures: &mut Vec<String>) {
     );
 }
 
-fn close_details(page: &mut Browser) {
-    if page.eval("!!document.getElementById('video-details')") == Value::Bool(true) {
-        page.click("video-details-toggle");
-        page.wait_until("!document.getElementById('video-details')");
-    }
-}
+fn close_details(_page: &mut Browser) {}
 
 fn open_details(page: &mut Browser) {
-    if page.eval("!!document.getElementById('video-details')") != Value::Bool(true) {
-        page.click("video-details-toggle");
-        page.wait_until("document.getElementById('video-details')");
-    }
+    page.wait_until("document.getElementById('video-details')");
 }
 
 fn error_matrix(
@@ -328,8 +320,10 @@ fn judge_details(failures: &mut Vec<String>, case: &str, report: &Value) {
             && flag(report, "detailsInside")
             && !flag(report, "detailsOverlap")
             && !flag(report, "detailsClip")
-            && text_value(report, "detailsText").contains("Source")
-            && text_value(report, "detailsText").contains("Retained interval"),
+            && text_value(report, "detailsText").contains("Start time")
+            && text_value(report, "detailsText").contains("End time")
+            && !text_value(report, "detailsText").contains("Connection")
+            && !text_value(report, "detailsText").contains("Playback"),
         "open details stay inside the scrollport without overlap or clipped facts",
         &format!(
             "open {} inside {} overlap {} clip {} text {}",
@@ -488,6 +482,12 @@ const VISUAL: &str = r"( () => {
     const port = scroll.getBoundingClientRect();
     return panel.top >= port.top - 1 && panel.bottom <= port.bottom + 1 && panel.left >= -1 && panel.right <= window.innerWidth + 1;
   };
+  const insideFilters = (panel) => {
+    const rail = document.getElementById('video-filters');
+    if (!panel || !rail || panel.height < 8) return false;
+    const port = rail.getBoundingClientRect();
+    return panel.top >= port.top - 1 && panel.bottom <= port.bottom + 1 && panel.left >= port.left - 1 && panel.right <= port.right + 1;
+  };
   const detailsBox = details ? details.getBoundingClientRect() : null;
   const alertBox = alert ? alert.getBoundingClientRect() : null;
   const timelineBox = document.getElementById('video-timeline')?.getBoundingClientRect() || null;
@@ -523,7 +523,7 @@ const VISUAL: &str = r"( () => {
     inventory: document.getElementById('inventory-videos')?.hasAttribute('hidden') === true,
     runner: document.getElementById('workbench')?.hasAttribute('hidden') === true,
     detailsOpen: !!details,
-    detailsInside: inside(detailsBox),
+    detailsInside: insideFilters(detailsBox),
     detailsOverlap: overlaps(detailsBox, timelineBox),
     detailsClip: details ? [...details.querySelectorAll('dt, dd')].some((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) : false,
     detailsText: details?.innerText.trim() || '',

@@ -18,11 +18,13 @@ use crate::videos::mjpeg::{self, Event as MjpegEvent, Frame as MjpegFrame, Parse
 const CANVAS: &str = "video-canvas";
 const PLAYER: &str = "video-player";
 const BOUND: &str = "__a2aMediaBound";
+const GAP_THRESHOLD_US: i64 = 1_500_000;
 
 type MediaListener = Closure<dyn FnMut(Event)>;
 
 type PlayingCallback = fn(u32);
 type FrameCallback = fn(u32, &str);
+type GapSkippedCallback = fn(u32);
 
 #[derive(Clone, Copy)]
 pub struct StreamTicket {
@@ -50,15 +52,17 @@ thread_local! {
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
     static ON_PLAYING: RefCell<Option<PlayingCallback>> = const { RefCell::new(None) };
     static ON_FRAME: RefCell<Option<FrameCallback>> = const { RefCell::new(None) };
+    static ON_GAP_SKIPPED: RefCell<Option<GapSkippedCallback>> = const { RefCell::new(None) };
     static START_PAUSED: Cell<bool> = const { Cell::new(false) };
     static IGNORE_PAUSE: Cell<u32> = const { Cell::new(0) };
     static PLAY_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
     static PAUSE_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
 }
 
-pub fn bind(playing: PlayingCallback, frame: FrameCallback) {
+pub fn bind(playing: PlayingCallback, frame: FrameCallback, gap_skipped: GapSkippedCallback) {
     ON_PLAYING.with(|slot| *slot.borrow_mut() = Some(playing));
     ON_FRAME.with(|slot| *slot.borrow_mut() = Some(frame));
+    ON_GAP_SKIPPED.with(|slot| *slot.borrow_mut() = Some(gap_skipped));
 }
 
 pub fn bind_media(on_play: fn(), on_pause: fn()) {
@@ -122,6 +126,16 @@ pub fn attach_player() {
     }
 }
 
+pub fn play_element() {
+    if START_PAUSED.with(Cell::get) {
+        return;
+    }
+    let Some(video) = player() else {
+        return;
+    };
+    let _ = video.play();
+}
+
 pub fn pause_element() {
     bump_ignore_pause();
     if let Some(video) = player() {
@@ -178,7 +192,15 @@ pub async fn run(ticket: StreamTicket, path: String, secret: Option<String>) -> 
             paused,
         });
     });
-    let outcome = play(ticket.generation, &path, secret.as_deref(), &abort).await;
+    let from_start = path.starts_with(crate::videos::CLIP_PATH_PREFIX);
+    let outcome = play(
+        ticket.generation,
+        &path,
+        secret.as_deref(),
+        &abort,
+        from_start,
+    )
+    .await;
     SESSION.with(|slot| {
         if slot
             .borrow()
@@ -201,11 +223,12 @@ async fn play(
     path: &str,
     secret: Option<&str>,
     abort: &AbortController,
+    from_start: bool,
 ) -> StreamOutcome {
     match open_reader(generation, path, secret, abort).await {
         Ok(reader) => {
             notify_playing(generation);
-            consume(generation, reader).await
+            consume(generation, reader, from_start).await
         }
         Err(outcome) => outcome,
     }
@@ -256,12 +279,17 @@ async fn open_reader(
         .map_err(|_| failed(generation, "The clip stream could not be read."))
 }
 
-async fn consume(generation: u32, reader: ReadableStreamDefaultReader) -> StreamOutcome {
+async fn consume(
+    generation: u32,
+    reader: ReadableStreamDefaultReader,
+    from_start: bool,
+) -> StreamOutcome {
     let reduced = prefers_reduced_motion();
     let mut parser = MjpegParser::new();
     let mut queue = VecDeque::new();
     let mut origin_capture = None;
     let mut origin_wall = None;
+    let mut prev_capture = None;
     let mut painted = false;
     loop {
         if let Some(outcome) = halted(generation, &mut queue) {
@@ -282,8 +310,10 @@ async fn consume(generation: u32, reader: ReadableStreamDefaultReader) -> Stream
                             &mut queue,
                             &mut origin_capture,
                             &mut origin_wall,
+                            &mut prev_capture,
                             &mut painted,
                             reduced,
+                            from_start,
                         )
                         .await
                         {
@@ -306,6 +336,7 @@ async fn consume(generation: u32, reader: ReadableStreamDefaultReader) -> Stream
             &mut queue,
             &mut origin_capture,
             &mut origin_wall,
+            &mut prev_capture,
             &mut painted,
             reduced,
         )
@@ -324,13 +355,30 @@ async fn enqueue(
     queue: &mut VecDeque<MjpegFrame>,
     origin_capture: &mut Option<i64>,
     origin_wall: &mut Option<f64>,
+    prev_capture: &mut Option<i64>,
     painted: &mut bool,
     reduced: bool,
+    from_start: bool,
 ) -> Option<StreamOutcome> {
     for event in events {
         match event {
             MjpegEvent::Frame(frame) => {
-                if queue.len() >= mjpeg::MAX_QUEUE {
+                if from_start && queue.len() >= mjpeg::MAX_QUEUE {
+                    if let Err(outcome) = drain(
+                        generation,
+                        queue,
+                        origin_capture,
+                        origin_wall,
+                        prev_capture,
+                        painted,
+                        reduced,
+                    )
+                    .await
+                    {
+                        queue.clear();
+                        return Some(outcome);
+                    }
+                } else if queue.len() >= mjpeg::MAX_QUEUE {
                     queue.pop_front();
                 }
                 queue.push_back(frame);
@@ -341,6 +389,7 @@ async fn enqueue(
                     queue,
                     origin_capture,
                     origin_wall,
+                    prev_capture,
                     painted,
                     reduced,
                 )
@@ -378,6 +427,7 @@ async fn drain(
     queue: &mut VecDeque<MjpegFrame>,
     origin_capture: &mut Option<i64>,
     origin_wall: &mut Option<f64>,
+    prev_capture: &mut Option<i64>,
     painted: &mut bool,
     reduced: bool,
 ) -> Result<(), StreamOutcome> {
@@ -391,22 +441,34 @@ async fn drain(
             queue.clear();
             return Err(StreamOutcome::Stopped { generation });
         }
+        let jumped = prev_capture
+            .map(|previous| frame.captured_us.saturating_sub(previous) > GAP_THRESHOLD_US)
+            .unwrap_or(false);
+        if jumped {
+            *origin_capture = Some(frame.captured_us);
+            *origin_wall = Some(js_sys::Date::now());
+            notify_gap_skipped(generation);
+        }
         let capture = *origin_capture.get_or_insert(frame.captured_us);
         let wall = *origin_wall.get_or_insert_with(js_sys::Date::now);
-        if reduced && *painted {
+        if reduced && *painted && !jumped {
             notify_frame(generation, &frame.captured_at);
+            *prev_capture = Some(frame.captured_us);
             continue;
         }
-        let due = wall + ((frame.captured_us - capture) as f64 / 1_000.0);
-        sleep_until(due).await;
-        if !live(generation) {
-            queue.clear();
-            return Err(StreamOutcome::Stopped { generation });
+        if !jumped {
+            let due = wall + ((frame.captured_us - capture) as f64 / 1_000.0);
+            sleep_until(due).await;
+            if !live(generation) {
+                queue.clear();
+                return Err(StreamOutcome::Stopped { generation });
+            }
         }
         if paint_jpeg(&frame.jpeg).await {
             *painted = true;
             notify_frame(generation, &frame.captured_at);
         }
+        *prev_capture = Some(frame.captured_us);
     }
     Ok(())
 }
@@ -559,6 +621,14 @@ fn prefers_reduced_motion() -> bool {
 
 fn notify_playing(generation: u32) {
     ON_PLAYING.with(|slot| {
+        if let Some(callback) = *slot.borrow() {
+            callback(generation);
+        }
+    });
+}
+
+fn notify_gap_skipped(generation: u32) {
+    ON_GAP_SKIPPED.with(|slot| {
         if let Some(callback) = *slot.borrow() {
             callback(generation);
         }

@@ -36,6 +36,10 @@
   background: #000;
 }
 
+.video-player[hidden] {
+  display: none;
+}
+
 .video-empty {
   position: absolute;
   inset: 0;
@@ -107,14 +111,23 @@
 }
 
 .video-interval {
+  cursor: pointer;
   border: 2px solid var(--foreground);
   border-radius: 2px;
   background: color-mix(in oklab, var(--foreground) 72%, var(--primary));
 }
 
 .video-gap {
-  background: transparent;
-  border-bottom: 1px dashed color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+  cursor: pointer;
+  border: 1px dashed color-mix(in oklab, var(--destructive) 55%, var(--muted-foreground));
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--muted-foreground) 12%, transparent),
+    color-mix(in oklab, var(--muted-foreground) 12%, transparent) 5px,
+    color-mix(in oklab, var(--destructive) 18%, transparent) 5px,
+    color-mix(in oklab, var(--destructive) 18%, transparent) 10px
+  );
 }
 
 .video-selection {
@@ -135,9 +148,30 @@
   pointer-events: none;
 }
 
+.video-playhead {
+  position: absolute;
+  top: 0.125rem;
+  bottom: 0.125rem;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--destructive);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--background) 80%, transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+#video-follow-newest.video-live-active {
+  border-color: var(--destructive);
+  background: color-mix(in oklab, var(--destructive) 18%, var(--background));
+  color: var(--destructive);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .video-range {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem;
   align-items: end;
   margin-top: 0.5rem;
@@ -190,6 +224,12 @@
 
 .video-details dl {
   margin: 0;
+  grid-template-columns: 1fr;
+}
+
+.video-details dd {
+  overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: reduce) {

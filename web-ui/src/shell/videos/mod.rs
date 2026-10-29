@@ -8,20 +8,21 @@ use crate::shell::playback::{self, StreamOutcome, StreamTicket};
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 use crate::videos::track::{self, Track, Window};
 use crate::videos::{
-    self, ClipHandle, Failure, FrameAtTime, Kind, LiveHandle, Playback, Selection, Ticket, Timeline,
+    self, AutoPlayback, ClipHandle, Failure, FrameAtTime, Kind, LiveHandle, Playback, Selection,
+    Ticket, Timeline,
 };
 use dioxus::core::{Runtime, RuntimeGuard, ScopeId, current_scope_id};
 use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{AbortController, HtmlElement};
+use web_sys::AbortController;
 
 mod timeline;
 use timeline::{
     abort_commands, alert_text, band_style, bands, begin_command, commit_at, commit_typed_range,
-    displayed_window,
-    ensure_timeline, follow_label, follow_newest, frame_cursor, frame_cursor_now, newest_style,
-    reselect_range, selection_slug, slider_now, slider_text, timeline_click, timeline_down,
-    timeline_key, timeline_move, timeline_up,
+    display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest, frame_cursor,
+    frame_cursor_now, newest_style, playhead_style, replay_retained_start, reselect_range,
+    selection_slug, slider_now, slider_text, timeline_click, timeline_down, timeline_key,
+    timeline_move, timeline_up,
 };
 
 #[derive(Clone, PartialEq)]
@@ -109,6 +110,8 @@ thread_local! {
     static COMMANDS: RefCell<Option<CommandFlight>> = const { RefCell::new(None) };
     static DRAG: RefCell<Option<Drag>> = const { RefCell::new(None) };
     static SUPPRESS_CLICK: Cell<bool> = const { Cell::new(false) };
+    static REPLAY: Cell<bool> = const { Cell::new(false) };
+    static REFRESH: Cell<Option<i32>> = const { Cell::new(None) };
 }
 
 pub fn bind(ui: Signal<VideoUi>) {
@@ -167,7 +170,7 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
     use_hook(|| {
         RUNTIME.with(|slot| *slot.borrow_mut() = Some(Runtime::current()));
         SCOPE.with(|slot| *slot.borrow_mut() = Some(current_scope_id()));
-        playback::bind(on_playing, on_frame);
+        playback::bind(on_playing, on_frame, on_gap_skipped);
         LOADER.with(|slot| {
             *slot.borrow_mut() = Some(Loader {
                 clip,
@@ -184,6 +187,7 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
         if shown() {
             playback::bind_media(native_play, native_pause);
             ensure_timeline();
+            start_coverage_refresh();
         } else {
             stop_playback();
         }
@@ -213,7 +217,7 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
             state.reader.playback,
             Playback::Connecting | Playback::Playing
         );
-    let status = videos::playback_status(state.reader.playback);
+    let status = videos::playback_status(&state.reader);
     let alert = alert_text(&state.reader);
     rsx! {
         section {
@@ -261,12 +265,15 @@ fn FilterRail(state: VideoUi) -> Element {
                     }
                 }
             }
+            if !state.reader.source_id.is_empty() {
+                VideoDetails { details: state.reader.details() }
+            }
         }
     }
 }
 
 #[component]
-fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
+fn Results(state: VideoUi, status: String, alert: String) -> Element {
     use_effect(move || {
         playback::bind_media(native_play, native_pause);
     });
@@ -284,25 +291,24 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
         .map(|(item, selected)| band_style(item, selected.start_us, selected.end_us));
     let newest_style = newest_style(track.as_ref(), state.reader.timeline.as_ref());
     let frame_ready = frame_cursor(&state).is_some();
-    let follow = follow_label(&state.reader.selection);
+    let follow = videos::live_button_label(&state.reader);
+    let playhead_style = playhead_style(&state);
     let failure = state.reader.failure.map(|item| item.code()).unwrap_or("");
     let ready = state.reader.timeline.is_some();
     let empty_track = track.as_ref().is_some_and(|item| item.spans.is_empty());
     let value_now = slider_now(track.as_ref(), window);
     let value_max = track.as_ref().map(Track::span_us).unwrap_or(0);
-    let available_start = track
+    let available_start_utc = track
         .as_ref()
         .filter(|item| item.span_us() > 0)
         .map(|item| track::format_utc(item.origin_us));
-    let available_end = track
+    let available_end_utc = track
         .as_ref()
         .filter(|item| item.span_us() > 0)
         .map(|item| track::format_utc(item.end_us));
-    let value_text = match (
-        window,
-        available_start.as_deref(),
-        available_end.as_deref(),
-    ) {
+    let available_start = available_start_utc.as_deref().map(display_instant);
+    let available_end = available_end_utc.as_deref().map(display_instant);
+    let value_text = match (window, available_start.as_deref(), available_end.as_deref()) {
         (None, Some(start), Some(end)) => format!("Available from {start} to {end}"),
         _ => slider_text(window),
     };
@@ -328,32 +334,21 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
                         if show_empty {
                             p { id: "video-empty", "Select a source and a time." }
                         }
-                        if media {
-                            video {
-                                id: "video-player",
-                                class: "video-player",
-                                controls: true,
-                                muted: true,
-                                playsinline: true,
-                                preload: "none",
-                                "aria-label": "Video playback",
-                                onmounted: move |_| playback::bind_media(native_play, native_pause),
-                                onplay: move |_| native_play(),
-                                onpause: move |_| native_pause(),
-                            }
-                        } else {
-                            video {
-                                id: "video-player",
-                                class: "video-player",
-                                hidden: true,
-                                muted: true,
-                                playsinline: true,
-                                preload: "none",
-                                "aria-label": "Video playback",
-                                onmounted: move |_| playback::bind_media(native_play, native_pause),
-                                onplay: move |_| native_play(),
-                                onpause: move |_| native_pause(),
-                            }
+                        video {
+                            id: "video-player",
+                            class: "video-player",
+                            controls: media,
+                            hidden: !media,
+                            muted: true,
+                            playsinline: true,
+                            preload: "none",
+                            "aria-label": "Video playback",
+                            onmounted: move |_| {
+                                playback::bind_media(native_play, native_pause);
+                                playback::play_element();
+                            },
+                            onplay: move |_| native_play(),
+                            onpause: move |_| native_pause(),
                         }
                     }
                 }
@@ -362,6 +357,7 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
                     role: "status",
                     aria_live: "polite",
                     "data-state": playback_slug(state.reader.playback),
+                    "data-frame-time": "{state.reader.frame_time}",
                     "{status}"
                 }
                 div {
@@ -391,11 +387,16 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
                         }
                     }
                 }
-                if let (Some(start), Some(end)) = (available_start.as_ref(), available_end.as_ref()) {
+                if let (Some(start_utc), Some(end_utc), Some(start), Some(end)) = (
+                    available_start_utc.as_ref(),
+                    available_end_utc.as_ref(),
+                    available_start.as_ref(),
+                    available_end.as_ref(),
+                ) {
                     div { id: "video-available", class: "video-available",
-                        time { id: "video-available-start", datetime: "{start}", "{start}" }
+                        time { id: "video-available-start", datetime: "{start_utc}", "{start}" }
                         span { class: "video-available-label", "Available" }
-                        time { id: "video-available-end", datetime: "{end}", "{end}" }
+                        time { id: "video-available-end", datetime: "{end_utc}", "{end}" }
                     }
                 }
                 div {
@@ -435,51 +436,45 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
                             if let Some(style) = newest_style.clone() {
                                 Placed { key: "newest-{style}", id: "video-newest".to_owned(), class: "video-newest", style }
                             }
+                            if let Some(style) = playhead_style.clone() {
+                                Placed { key: "playhead-{style}", id: "video-playhead".to_owned(), class: "video-playhead", style }
+                            }
                         }
                     }
                     p { id: "video-timeline-hint", class: "video-timeline-hint",
-                        "Select up to 60 seconds of continuous coverage, or follow the newest point."
+                        "Click or drag the timeline to scrub recorded video (gaps are skipped). Use LIVE to return to the live edge."
                     }
                 }
                 div { class: "video-range",
                     div {
-                        label { r#for: "video-range-start", "Start (UTC)" }
+                        label { r#for: "video-range-start", "Start" }
                         input {
                             id: "video-range-start",
                             r#type: "text",
                             spellcheck: false,
                             autocomplete: "off",
-                            placeholder: "2024-01-01T00:00:00Z",
-                            value: "{state.range_start}",
+                            placeholder: "2024-01-01 00:00:00",
+                            value: "{display_instant(&state.range_start)}",
                             oninput: move |_| edit_range(true),
-                            onkeydown: load_on_enter,
                         }
                     }
                     div {
-                        label { r#for: "video-range-end", "End (UTC)" }
+                        label { r#for: "video-range-end", "End" }
                         input {
                             id: "video-range-end",
                             r#type: "text",
                             spellcheck: false,
                             autocomplete: "off",
-                            placeholder: "2024-01-01T00:00:02Z",
-                            value: "{state.range_end}",
+                            placeholder: "2024-01-01 00:00:02",
+                            value: "{display_instant(&state.range_end)}",
                             oninput: move |_| edit_range(false),
-                            onkeydown: load_on_enter,
                         }
-                    }
-                    button {
-                        id: "video-load-range",
-                        class: "log-outline",
-                        r#type: "button",
-                        disabled: state.reader.source_id.is_empty(),
-                        onclick: move |_| commit_typed_range(),
-                        "Load clip"
                     }
                 }
                 div { class: "video-actions",
                     button {
                         id: "video-follow-newest",
+                        class: if matches!(state.reader.selection, Selection::Live) { "video-live-active" } else { "" },
                         r#type: "button",
                         disabled: !state.reader.can_return_to_newest(),
                         aria_pressed: if matches!(state.reader.selection, Selection::Live) { "true" } else { "false" },
@@ -493,18 +488,7 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
                         onclick: move |_| view_frame_at_time(),
                         "{videos::frame_at_time_label()}"
                     }
-                    button {
-                        id: "video-details-toggle",
-                        class: "video-tertiary",
-                        r#type: "button",
-                        aria_expanded: if state.reader.details().open { "true" } else { "false" },
-                        aria_controls: "video-details",
-                        onclick: move |_| toggle_details(),
-                        onkeydown: close_details_key,
-                        "Details"
-                    }
                 }
-                VideoDetails { details: state.reader.details() }
             }
         }
     }
@@ -512,21 +496,22 @@ fn Results(state: VideoUi, status: &'static str, alert: String) -> Element {
 
 #[component]
 fn VideoDetails(details: videos::Details) -> Element {
-    let open = details.open;
     let facts = details.facts;
     rsx! {
-        if open {
+        if details.open {
             div {
                 id: "video-details",
                 class: "video-details",
                 role: "region",
-                aria_labelledby: "video-details-toggle",
-                tabindex: "-1",
-                onkeydown: close_details_key,
+                aria_label: "Video details",
                 dl {
                     for (index, fact) in facts.iter().enumerate() {
                         dt { key: "video-detail-{index}", "{fact.label}" }
-                        dd { "data-label": "{fact.label}", "{fact.value}" }
+                        dd {
+                            "data-label": "{fact.label}",
+                            "data-utc": "{fact.value}",
+                            "{display_instant(&fact.value)}"
+                        }
                     }
                 }
             }
@@ -542,28 +527,36 @@ struct Band {
     start: String,
     end: String,
     start_us: i64,
+    end_us: i64,
+    duration_us: i64,
+    label: String,
     style: String,
 }
 
 #[component]
 fn BandMark(band: Band) -> Element {
     let start_us = band.start_us;
-    let retained = band.kind == "retained";
     let id = band.id.clone();
     let style = band.style.clone();
+    let label = band.label.clone();
     rsx! {
         div {
             id: "{band.id}",
             class: "{band.class}",
+            role: "img",
+            aria_label: "{label}",
             "data-kind": "{band.kind}",
             "data-start": "{band.start}",
             "data-end": "{band.end}",
+            "data-duration-us": "{band.duration_us}",
+            title: "{label}",
             onmounted: move |_| place_style(&id, &style),
             onclick: move |event| {
                 event.stop_propagation();
-                if retained {
-                    commit_at(start_us);
+                if SUPPRESS_CLICK.with(|cell| cell.replace(false)) {
+                    return;
                 }
+                commit_at(start_us);
             },
         }
     }
@@ -611,52 +604,6 @@ fn source_capability(item: &Item) -> Option<videos::SourceCapability> {
     })
 }
 
-fn toggle_details() {
-    let Some(mut ui) = bound() else {
-        return;
-    };
-    let mut next = ui.peek().clone();
-    let open = !next.reader.details().open;
-    next.reader.set_details_open(open);
-    ui.set(next);
-    if !open {
-        focus_id("video-details-toggle");
-    }
-}
-
-fn close_details() {
-    let Some(mut ui) = bound() else {
-        return;
-    };
-    let mut next = ui.peek().clone();
-    if !next.reader.details().open {
-        return;
-    }
-    next.reader.set_details_open(false);
-    ui.set(next);
-    focus_id("video-details-toggle");
-}
-
-fn close_details_key(event: KeyboardEvent) {
-    if event.key() != Key::Escape {
-        return;
-    }
-    event.prevent_default();
-    close_details();
-}
-
-fn focus_id(id: &str) {
-    let Some(element) = web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.get_element_by_id(id))
-    else {
-        return;
-    };
-    if let Ok(html) = element.dyn_into::<HtmlElement>() {
-        let _ = html.focus();
-    }
-}
-
 fn source_slug(phase: SourcePhase) -> &'static str {
     match phase {
         SourcePhase::Loading => "loading",
@@ -685,29 +632,36 @@ fn source_option(item: &Item) -> String {
 }
 
 fn edit_range(start: bool) {
-    let id = if start {
-        "video-range-start"
-    } else {
-        "video-range-end"
-    };
-    let value = session::control_value(id);
+    let start_raw = session::control_value("video-range-start");
+    let end_raw = session::control_value("video-range-end");
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
     if start {
-        next.range_start = value;
+        next.range_start = field_to_utc(&start_raw);
     } else {
-        next.range_end = value;
+        next.range_end = field_to_utc(&end_raw);
     }
     ui.set(next);
-}
-
-fn load_on_enter(event: KeyboardEvent) {
-    if event.key() == Key::Enter {
-        event.prevent_default();
+    if complete_clock(&start_raw) && complete_clock(&end_raw) {
         commit_typed_range();
     }
+}
+
+fn complete_clock(value: &str) -> bool {
+    let Some(time) = value.trim().split(['T', ' ']).nth(1) else {
+        return false;
+    };
+    let clock = time.split(['.', 'Z', '+']).next().unwrap_or(time);
+    let mut parts = clock.split(':');
+    let hour = parts.next().unwrap_or("");
+    let minute = parts.next().unwrap_or("");
+    let second = parts.next().unwrap_or("");
+    parts.next().is_none()
+        && [hour, minute, second]
+            .iter()
+            .all(|part| part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn choose_listed_source() {
@@ -887,6 +841,7 @@ fn launch_stream(generation: u32, path: String) {
     if take_secret(&[path.as_str()]).is_err() {
         return;
     }
+    playback::play_element();
     wasm_bindgen_futures::spawn_local(async move {
         let outcome = playback::run(StreamTicket { generation }, path, secret).await;
         apply_stream(outcome);
@@ -952,6 +907,88 @@ async fn run_frame_at_time(job: FrameJob, secret: Option<String>) -> FrameOutcom
     }
 }
 
+fn fetch_timeline(done: impl FnOnce(Option<Timeline>) + 'static) {
+    let Some(ui) = bound() else {
+        done(None);
+        return;
+    };
+    let source_id = ui.peek().reader.source_id.clone();
+    if source_id.is_empty() || !calls_allowed() || take_secret(&[source_id.as_str()]).is_err() {
+        done(None);
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        let secret = session::native_secret();
+        let timeline = request_timeline(&source_id, secret).await;
+        run(move || {
+            if let Some(timeline) = timeline.clone()
+                && let Some(mut ui) = bound()
+            {
+                let mut next = ui.peek().clone();
+                if next.reader.install_timeline(timeline) {
+                    ui.set(next);
+                }
+            }
+            done(timeline);
+        });
+    });
+}
+
+async fn request_timeline(source_id: &str, secret: Option<String>) -> Option<Timeline> {
+    let transport = session::transport()?;
+    let command = videos::timeline_command(source_id);
+    let body = crate::codec::command_message(&message_id(), &command, "").ok()?;
+    let reply = transport
+        .send_signaled(&body, secret.as_deref(), None)
+        .await
+        .ok()?;
+    videos::interpret_timeline(&reply, secret.as_deref()).ok()
+}
+
+fn start_coverage_refresh() {
+    REFRESH.with(|slot| {
+        if slot.get().is_some() {
+            return;
+        }
+        let closure = wasm_bindgen::closure::Closure::wrap(Box::new(|| {
+            if videos_visible() {
+                fetch_timeline(|_| {});
+            }
+        }) as Box<dyn FnMut()>);
+        let id = web_sys::window().and_then(|window| {
+            window
+                .set_interval_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().unchecked_ref(),
+                    2000,
+                )
+                .ok()
+        });
+        closure.forget();
+        slot.set(id);
+    });
+}
+
+fn videos_visible() -> bool {
+    web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("view-videos"))
+        .is_some_and(|element| !element.has_attribute("hidden"))
+}
+
+fn take_range_replay() -> bool {
+    REPLAY.with(|slot| {
+        if slot.get() {
+            return false;
+        }
+        slot.set(true);
+        true
+    })
+}
+
+fn clear_range_replay() {
+    REPLAY.with(|slot| slot.set(false));
+}
+
 async fn post(
     command: serde_json::Value,
     secret: Option<String>,
@@ -984,6 +1021,7 @@ fn apply_clip(mut ui: Signal<VideoUi>, outcome: ClipOutcome) {
             if !next.reader.accept_clip(&ticket, clip) {
                 return;
             }
+            clear_range_replay();
             Some((ticket.generation, path))
         }
         ClipOutcome::Failed { ticket, message } => {
@@ -993,6 +1031,13 @@ fn apply_clip(mut ui: Signal<VideoUi>, outcome: ClipOutcome) {
             None
         }
         ClipOutcome::Coded { ticket, failure } => {
+            if failure == Failure::NoRecording
+                && next.reader.expects(&ticket)
+                && take_range_replay()
+            {
+                replay_retained_start();
+                return;
+            }
             if !next.reader.apply_failure(&ticket, failure) {
                 return;
             }
@@ -1101,16 +1146,33 @@ async fn request_meta(ticket: Ticket, secret: Option<String>) -> MetaOutcome {
     }
 }
 
+fn sync_auto_range(next: &mut VideoUi, auto: &Option<AutoPlayback>) {
+    if !matches!(auto, Some(AutoPlayback::Clip(_))) {
+        return;
+    }
+    if let Selection::Recorded {
+        start_us, end_us, ..
+    } = next.reader.selection
+    {
+        next.range_start = track::format_utc(start_us);
+        next.range_end = track::format_utc(end_us);
+        next.draft = Some(Window { start_us, end_us });
+    }
+}
+
 fn apply_meta(outcome: MetaOutcome) {
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
+    let mut auto = None;
     let path = match outcome {
         MetaOutcome::Timeline { ticket, timeline } => {
             if !next.reader.accept_timeline(&ticket, timeline) {
                 return;
             }
+            auto = videos::begin_auto_playback(&mut next.reader);
+            sync_auto_range(&mut next, &auto);
             None
         }
         MetaOutcome::Follow { ticket, follow } => {
@@ -1134,6 +1196,13 @@ fn apply_meta(outcome: MetaOutcome) {
         }
     };
     ui.set(next);
+    if let Some(auto) = auto {
+        match auto {
+            AutoPlayback::Follow(ticket) => launch_meta(ticket),
+            AutoPlayback::Clip(ticket) => launch_clip(ticket),
+        }
+        return;
+    }
     if let Some((generation, path)) = path {
         launch_stream(generation, path);
     } else {
@@ -1188,6 +1257,18 @@ fn on_frame(generation: u32, captured_at: &str) {
         };
         let mut next = ui.peek().clone();
         if next.reader.note_frame(generation, &captured_at) {
+            ui.set(next);
+        }
+    });
+}
+
+fn on_gap_skipped(generation: u32) {
+    run(move || {
+        let Some(mut ui) = bound() else {
+            return;
+        };
+        let mut next = ui.peek().clone();
+        if next.reader.note_gap_skipped(generation) {
             ui.set(next);
         }
     });

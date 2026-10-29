@@ -311,20 +311,13 @@ pub fn frame_instant(at: &str) -> Result<String, &'static str> {
 
 fn coverage(intervals: &[Interval], start_us: i64, end_us: i64) -> Option<Failure> {
     let logical = logical_intervals(intervals);
-    let inside = logical
+    let overlaps = logical
         .iter()
-        .any(|interval| start_us >= interval.start_us && end_us <= interval.end_us);
-    if inside {
-        return None;
-    }
-    let hits = logical
-        .iter()
-        .filter(|interval| start_us < interval.end_us && end_us > interval.start_us)
-        .count();
-    if hits == 0 {
-        Some(Failure::NoRecording)
+        .any(|interval| start_us < interval.end_us && end_us > interval.start_us);
+    if overlaps {
+        None
     } else {
-        Some(Failure::RecordingGap)
+        Some(Failure::NoRecording)
     }
 }
 

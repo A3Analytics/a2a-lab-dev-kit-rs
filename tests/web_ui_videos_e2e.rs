@@ -241,13 +241,9 @@ fn assert_disclosure(page: &mut Browser) {
     );
     assert_eq!(pressed_source(page), "cam-a");
     assert_regions(page);
-    assert_details_closed(page);
-    assert_focus_order(page);
-    open_details_from_keyboard(page);
+    assert_details_visible(page);
     assert_idle_facts(page);
-    close_details_from_panel(page);
-    assert_details_closed(page);
-    open_and_close_details_by_click(page);
+    assert_focus_order(page);
 }
 
 fn assert_playback_details(page: &mut Browser, base: &str) {
@@ -265,26 +261,24 @@ fn assert_playback_details(page: &mut Browser, base: &str) {
     );
     page.eval("clearInterval(window.__videoBusyWatch)");
     pause_player(page);
-    page.click("video-details-toggle");
     page.wait_until("document.getElementById('video-details')");
     assert_playback_facts(page);
     page.wait_until("!document.getElementById('video-frame-at')?.disabled");
     page.click("video-frame-at");
     page.wait_until(
-        "document.querySelector('#video-details dd[data-label=\"Frame at time\"]') && document.getElementById('video-view')?.getAttribute('aria-busy') === 'false'",
+        "document.getElementById('video-status')?.dataset.frameTime?.includes('2024-01-01') && document.getElementById('video-view')?.getAttribute('aria-busy') === 'false'",
     );
-    let frame = detail_values(page, "Frame at time");
-    assert!(
-        frame.iter().any(|value| value.contains("2024-01-01")),
-        "{frame:?}"
-    );
+    let frame = page
+        .eval("document.getElementById('video-status')?.dataset.frameTime ?? ''")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    assert!(frame.contains("2024-01-01"), "{frame}");
     assert_no_saved_stills(page);
     let requests = page.requests(base);
     let bodies = request_bodies(&requests);
     assert!(bodies.contains("get_video_frame_at"), "{bodies}");
     assert!(!bodies.contains("list_images"), "{bodies}");
-    page.click("video-details-toggle");
-    page.wait_until("!document.getElementById('video-details')");
 }
 
 fn assert_regions(page: &mut Browser) {
@@ -310,29 +304,16 @@ fn assert_regions(page: &mut Browser) {
     );
 }
 
-fn assert_details_closed(page: &mut Browser) {
+fn assert_details_visible(page: &mut Browser) {
+    page.wait_until("document.getElementById('video-details')");
     assert_eq!(
-        page.eval("document.getElementById('video-details-toggle')?.textContent.trim()"),
-        serde_json::json!("Details")
-    );
-    assert_eq!(
-        page.eval("document.getElementById('video-details-toggle')?.getAttribute('aria-expanded')"),
-        serde_json::json!("false")
-    );
-    assert_eq!(
-        page.eval("!!document.getElementById('video-details')"),
-        serde_json::json!(false)
-    );
-    assert_eq!(
-        page.eval(
-            "document.getElementById('video-details-toggle')?.classList.contains('video-tertiary')"
-        ),
+        page.eval("document.getElementById('video-filters')?.contains(document.getElementById('video-details'))"),
         serde_json::json!(true)
     );
-    let hidden = page.eval(
-        "(() => { const text = `${document.getElementById('video-stage')?.innerText || ''}\n${document.getElementById('video-status')?.innerText || ''}`; return text.includes('320x180') || text.includes('Retained interval'); })()",
+    assert_eq!(
+        page.eval("!!document.getElementById('video-details-toggle')"),
+        serde_json::json!(false)
     );
-    assert_eq!(hidden, serde_json::json!(false), "{hidden}");
 }
 
 fn assert_focus_order(page: &mut Browser) {
@@ -345,10 +326,8 @@ fn assert_focus_order(page: &mut Browser) {
             "video-timeline",
             "video-range-start",
             "video-range-end",
-            "video-load-range",
             "video-follow-newest",
-            "video-frame-at",
-            "video-details-toggle"
+            "video-frame-at"
         ])
     );
     assert_eq!(
@@ -357,99 +336,49 @@ fn assert_focus_order(page: &mut Browser) {
         ),
         serde_json::json!(true)
     );
-    page.focus("video-frame-at");
-    page.press_tab();
-    assert_eq!(
-        page.eval("document.activeElement?.id ?? ''"),
-        serde_json::json!("video-details-toggle")
-    );
-    let ring = page
-        .eval("getComputedStyle(document.activeElement).outlineWidth")
+    page.focus("video-follow-newest");
+    let live = page
+        .eval("document.getElementById('video-follow-newest')?.textContent.trim()")
         .as_str()
         .unwrap_or("")
         .to_owned();
-    assert!(ring.contains("3px"), "{ring}");
-    let background = page
-        .eval("getComputedStyle(document.getElementById('video-details-toggle')).backgroundColor")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    let follow = page
-        .eval("getComputedStyle(document.getElementById('video-follow-newest')).backgroundColor")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    assert_ne!(background, follow, "{background}");
-}
-
-fn open_details_from_keyboard(page: &mut Browser) {
-    page.focus("video-details-toggle");
-    page.press_enter();
-    page.wait_until(
-        "document.getElementById('video-details') && document.getElementById('video-details-toggle')?.getAttribute('aria-expanded') === 'true' && document.activeElement?.id === 'video-details-toggle'",
-    );
-}
-
-fn close_details_from_panel(page: &mut Browser) {
-    page.focus("video-details");
-    let id = serde_json::to_string("video-details").unwrap_or_default();
-    let sent = page.eval(&format!(
-        "(() => {{ const el = document.getElementById({id}); if (!el) return false; el.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }})); return true; }})()"
-    ));
-    assert_eq!(
-        sent,
-        serde_json::json!(true),
-        "details panel did not take Escape"
-    );
-    page.wait_until(
-        "!document.getElementById('video-details') && document.activeElement?.id === 'video-details-toggle' && document.getElementById('video-details-toggle')?.getAttribute('aria-expanded') === 'false'",
-    );
-}
-
-fn open_and_close_details_by_click(page: &mut Browser) {
-    page.focus("video-timeline");
-    page.click("video-details-toggle");
-    page.wait_until("document.getElementById('video-details')");
-    page.click("video-details-toggle");
-    page.wait_until(
-        "!document.getElementById('video-details') && document.activeElement?.id === 'video-details-toggle'",
-    );
+    assert_eq!(live, "LIVE");
 }
 
 fn assert_idle_facts(page: &mut Browser) {
-    let labels = detail_labels(page);
-    assert_eq!(
-        labels,
-        ["Source", "Resolution", "FPS", "Retained interval"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect::<Vec<_>>()
-    );
-    assert_catalog_values(page);
+    assert_range_facts(page);
 }
 
 fn assert_playback_facts(page: &mut Browser) {
-    let labels = detail_labels(page);
-    assert!(labels.contains(&"Connection".to_owned()), "{labels:?}");
-    assert!(labels.contains(&"Playback".to_owned()), "{labels:?}");
-    assert!(labels.contains(&"Requested range".to_owned()), "{labels:?}");
-    assert!(labels.contains(&"Effective range".to_owned()), "{labels:?}");
-    assert!(!labels.iter().any(|label| label == "Image"), "{labels:?}");
-    assert_catalog_values(page);
-    let requested = detail_values(page, "Requested range");
-    let effective = detail_values(page, "Effective range");
-    assert!(requested[0].contains("2024-01-01"), "{requested:?}");
-    assert!(effective[0].contains("2024-01-01"), "{effective:?}");
+    assert_range_facts(page);
 }
 
-fn assert_catalog_values(page: &mut Browser) {
-    assert_eq!(detail_values(page, "Source"), vec!["Camera A · cam-a"]);
-    assert_eq!(detail_values(page, "Resolution"), vec!["320x180"]);
-    assert_eq!(detail_values(page, "FPS"), vec!["1"]);
-    let retained = detail_values(page, "Retained interval");
-    assert_eq!(retained.len(), 1, "{retained:?}");
-    assert!(retained[0].contains("2024-01-01"), "{retained:?}");
-    assert!(retained[0].contains(".."), "{retained:?}");
+fn assert_range_facts(page: &mut Browser) {
+    let labels = detail_labels(page);
+    assert_eq!(labels, ["Start time", "End time"], "{labels:?}");
+    let text = page
+        .eval("document.getElementById('video-details')?.innerText ?? ''")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    assert!(!text.contains("Connection"), "{text}");
+    assert!(!text.contains("Playback"), "{text}");
+    assert!(!text.contains("Bench"), "{text}");
+    assert!(!text.contains("Camera"), "{text}");
+    let start = detail_utc(page, "Start time");
+    let end = detail_utc(page, "End time");
+    assert!(start.contains("2024-01-01"), "{start}");
+    assert!(end.contains("2024-01-01"), "{end}");
+}
+
+fn detail_utc(page: &mut Browser, label: &str) -> String {
+    let label = serde_json::to_string(label).unwrap_or_default();
+    page.eval(&format!(
+        "document.querySelector('#video-details dd[data-label={label}]')?.dataset.utc ?? ''"
+    ))
+    .as_str()
+    .unwrap_or("")
+    .to_owned()
 }
 
 fn assert_media_code(
@@ -696,19 +625,6 @@ fn detail_labels(page: &mut Browser) -> Vec<String> {
     let value = page.eval(
         "[...document.querySelectorAll('#video-details dt')].map((el) => el.textContent.trim())",
     );
-    value
-        .as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .filter_map(|item| item.as_str().map(str::to_owned))
-        .collect()
-}
-
-fn detail_values(page: &mut Browser, label: &str) -> Vec<String> {
-    let label = serde_json::to_string(label).unwrap_or_default();
-    let value = page.eval(&format!(
-        "[...document.querySelectorAll('#video-details dd')].filter((el) => el.dataset.label === {label}).map((el) => el.textContent.trim())"
-    ));
     value
         .as_array()
         .unwrap_or(&Vec::new())

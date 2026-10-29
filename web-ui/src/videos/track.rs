@@ -1,7 +1,7 @@
 //! Recording-availability geometry.
 //!
 //! Abutting retained intervals are one solid region. A later interval is a gap.
-//! Selection stays inside one region and is at most 60 seconds.
+//! Selection may span gaps when retained coverage overlaps and is at most 60 seconds.
 
 use super::domain::{self, MAX_CLIP_US, Timeline};
 
@@ -100,15 +100,26 @@ pub fn initial_window(track: &Track) -> Option<Window> {
     window_at(track, span.start_us)
 }
 
+pub fn newest_retained_window(track: &Track, newest_us: Option<i64>) -> Option<Window> {
+    let at = newest_us.or_else(|| retained(track).last().map(newest_in_span))?;
+    window_at(track, at)
+}
+
+pub fn playhead_percent(track: &Track, frame_time: &str) -> Option<f64> {
+    let us = super::mjpeg::captured_us(frame_time)?;
+    Some(percent(track, us))
+}
+
 pub fn window_at(track: &Track, at_us: i64) -> Option<Window> {
+    let at_us = snap_retained(track, at_us)?;
     let span = containing(track, at_us)?;
     bounded(span, at_us, MAX_CLIP_US)
 }
 
 pub fn drag_window(track: &Track, anchor_us: i64, point_us: i64) -> Option<Window> {
-    let span = containing(track, anchor_us)?;
-    let mut start = anchor_us.min(point_us).max(span.start_us);
-    let mut end = anchor_us.max(point_us).min(span.end_us);
+    let anchor_us = snap_retained(track, anchor_us)?;
+    let mut start = anchor_us.min(point_us).max(track.origin_us);
+    let mut end = anchor_us.max(point_us).min(track.end_us);
     if end.saturating_sub(start) > MAX_CLIP_US {
         if point_us >= anchor_us {
             end = start.saturating_add(MAX_CLIP_US);
@@ -116,7 +127,7 @@ pub fn drag_window(track: &Track, anchor_us: i64, point_us: i64) -> Option<Windo
             start = end.saturating_sub(MAX_CLIP_US);
         }
     }
-    (end > start).then_some(Window {
+    (end > start && range_overlaps_retained(track, start, end)).then_some(Window {
         start_us: start,
         end_us: end,
     })
@@ -134,11 +145,15 @@ pub fn move_window(track: &Track, window: Window, steps: i64) -> Window {
     let target = window
         .start_us
         .saturating_add(steps.saturating_mul(STEP_US));
-    if target >= span.start_us && target.saturating_add(duration) <= span.end_us {
-        return Window {
-            start_us: target,
-            end_us: target.saturating_add(duration),
-        };
+    let shifted = Window {
+        start_us: target,
+        end_us: target.saturating_add(duration),
+    };
+    if shifted.end_us <= track.end_us
+        && shifted.start_us >= track.origin_us
+        && range_overlaps_retained(track, shifted.start_us, shifted.end_us)
+    {
+        return shifted;
     }
     if steps > 0 {
         if let Some(next) = retained(track).find(|item| item.start_us >= span.end_us) {
@@ -161,14 +176,18 @@ pub fn extend_window(track: &Track, window: Window, steps: i64) -> Window {
         return window;
     };
     let mut end = window.end_us.saturating_add(steps.saturating_mul(STEP_US));
-    let max_end = window.start_us.saturating_add(MAX_CLIP_US).min(span.end_us);
-    let min_end = window.start_us.saturating_add(1).min(span.end_us);
+    let max_end = window
+        .start_us
+        .saturating_add(MAX_CLIP_US)
+        .min(track.end_us);
+    let min_end = window.start_us.saturating_add(1).min(track.end_us);
     if end > max_end {
         end = max_end;
     }
     if end < min_end {
         end = min_end;
     }
+    let _ = span; // start must anchor in retained coverage
     Window {
         start_us: window.start_us,
         end_us: end,
@@ -192,7 +211,7 @@ pub fn jump_window(track: &Track, window: Window, to_start: bool) -> Window {
 }
 
 pub fn retained_instant(track: &Track, at_us: i64) -> Option<String> {
-    containing(track, at_us).map(|_| format_utc(at_us))
+    snap_retained(track, at_us).map(format_utc)
 }
 
 pub fn format_utc(us: i64) -> String {
@@ -233,6 +252,26 @@ fn retained(track: &Track) -> impl DoubleEndedIterator<Item = &Span> {
 
 fn containing(track: &Track, at_us: i64) -> Option<&Span> {
     retained(track).find(|span| at_us >= span.start_us && at_us < span.end_us)
+}
+
+fn snap_retained(track: &Track, at_us: i64) -> Option<i64> {
+    if containing(track, at_us).is_some() {
+        return Some(at_us);
+    }
+    for span in retained(track) {
+        if span.start_us > at_us {
+            return Some(span.start_us);
+        }
+    }
+    retained(track).last().map(newest_in_span)
+}
+
+fn newest_in_span(span: &Span) -> i64 {
+    span.end_us.saturating_sub(1).max(span.start_us)
+}
+
+fn range_overlaps_retained(track: &Track, start_us: i64, end_us: i64) -> bool {
+    retained(track).any(|span| start_us < span.end_us && end_us > span.start_us)
 }
 
 fn bounded(span: &Span, start_us: i64, duration_us: i64) -> Option<Window> {
@@ -324,8 +363,38 @@ mod tests {
             stamp("2024-01-01T00:00:25Z"),
         )
         .unwrap();
-        assert!(dragged.end_us <= stamp("2024-01-01T00:00:10Z"));
+        assert_eq!(dragged.start_us, stamp("2024-01-01T00:00:00Z"));
+        assert_eq!(dragged.end_us, stamp("2024-01-01T00:00:25Z"));
         assert!(dragged.duration_us() <= MAX_CLIP_US);
+
+        let snapped = window_at(&gapped, stamp("2024-01-01T00:00:15Z")).unwrap();
+        assert_eq!(snapped.start_us, stamp("2024-01-01T00:00:20Z"));
+        assert_eq!(
+            retained_instant(&gapped, stamp("2024-01-01T00:00:15Z")).unwrap(),
+            "2024-01-01T00:00:20Z"
+        );
+    }
+
+    #[test]
+    fn gap_spanning_selection_respects_sixty_second_cap() {
+        let gapped = coverage_track(&timeline(&[
+            ("2024-01-01T00:00:00Z", "2024-01-01T00:00:30Z"),
+            ("2024-01-01T00:01:00Z", "2024-01-01T00:02:00Z"),
+        ]));
+        let dragged = drag_window(
+            &gapped,
+            stamp("2024-01-01T00:00:00Z"),
+            stamp("2024-01-01T00:02:00Z"),
+        )
+        .unwrap();
+        assert_eq!(dragged.duration_us(), MAX_CLIP_US);
+        let extended = extend_window(
+            &gapped,
+            window_at(&gapped, stamp("2024-01-01T00:00:00Z")).unwrap(),
+            120,
+        );
+        assert_eq!(extended.duration_us(), MAX_CLIP_US);
+        assert!(extended.end_us > stamp("2024-01-01T00:00:30Z"));
     }
 
     #[test]
@@ -347,7 +416,10 @@ mod tests {
             ("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z"),
             ("2024-01-01T00:00:10Z", "2024-01-01T00:00:12Z"),
         ]));
-        let first = establish(&gapped, None).unwrap();
+        let first = Window {
+            start_us: stamp("2024-01-01T00:00:01Z"),
+            end_us: stamp("2024-01-01T00:00:02Z"),
+        };
         let jumped = move_window(&gapped, first, 1);
         assert_eq!(jumped.start_us, stamp("2024-01-01T00:00:10Z"));
         assert!(jumped.end_us <= stamp("2024-01-01T00:00:12Z"));

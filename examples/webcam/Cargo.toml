@@ -1,0 +1,14 @@
+[workspace]
+
+[package]
+name = "a2a-lab-webcam"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Local webcam source for the optional web interface"
+
+[dependencies]
+a2a-lab-dev-kit = { path = "../..", features = ["web-ui"] }
+image = { version = "0.25.9", default-features = false, features = ["jpeg"] }
+nokhwa = { version = "0.10.10", features = ["input-native"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "time", "net"] }

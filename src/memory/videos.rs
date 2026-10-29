@@ -265,15 +265,17 @@ impl VideoProvider for MemoryVideos {
         request.check()?;
         let mut state = self.lock().await;
         require_available(&state)?;
-        let (frames, intervals) = prepared_coverage(&state, request.source_id())?;
-        let included = clip_frames(&frames, &intervals, request.range())?;
+        let period = find_source(&state, request.source_id())?.frame_period_us();
+        let mut frames = frames_for(&state, request.source_id());
+        frames.sort_by(captured_order);
+        let (included, effective_range) = clip_frames(&frames, request.range(), period)?;
         state.next_clip += 1;
         let id = VideoClipId::new(format!("clip-{}", state.next_clip))?;
         let clip = VideoClip::new(
             id,
             request.source_id().clone(),
             request.range(),
-            request.range(),
+            effective_range,
             MJPEG_MEDIA_TYPE,
         )?;
         let expires_at = Instant::now() + state.ttl;
@@ -480,40 +482,25 @@ fn prepared_coverage(
 
 fn clip_frames(
     frames: &[StoredFrame],
-    intervals: &[TimeRange],
     range: TimeRange,
-) -> Result<Vec<VideoFrame>, A2aLabError> {
-    if let Some(error) = clip_coverage_error(intervals, range) {
-        return Err(error);
-    }
-    frames
+    period_us: u64,
+) -> Result<(Vec<VideoFrame>, TimeRange), A2aLabError> {
+    let included: Vec<VideoFrame> = frames
         .iter()
         .filter(|frame| range.contains(frame.captured_at))
         .map(|frame| VideoFrame::new(frame.captured_at, frame.jpeg.clone()))
-        .collect()
-}
-
-fn clip_coverage_error(intervals: &[TimeRange], range: TimeRange) -> Option<A2aLabError> {
-    let inside = intervals
-        .iter()
-        .any(|interval| range.start() >= interval.start() && range.end() <= interval.end());
-    if inside {
-        return None;
-    }
-    let hits = intervals
-        .iter()
-        .filter(|interval| range.start() < interval.end() && range.end() > interval.start())
-        .count();
-    let label = format!("{}..{}", range.start(), range.end());
-    if hits == 0 {
-        Some(A2aLabError::no_recording(format!(
+        .collect::<Result<Vec<_>, _>>()?;
+    if included.is_empty() {
+        let label = format!("{}..{}", range.start(), range.end());
+        return Err(A2aLabError::no_recording(format!(
             "requested range {label} has no retained recording"
-        )))
-    } else {
-        Some(A2aLabError::recording_gap(format!(
-            "requested range {label} crosses a recording gap"
-        )))
+        )));
     }
+    let period = i64::try_from(period_us.max(1)).unwrap_or(1);
+    let first = included.first().expect("included").captured_at();
+    let last = included.last().expect("included").captured_at();
+    let effective_range = TimeRange::new(first, last.saturating_add_micros(period))?;
+    Ok((included, effective_range))
 }
 
 fn retained_intervals(

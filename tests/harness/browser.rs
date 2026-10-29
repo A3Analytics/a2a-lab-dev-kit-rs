@@ -272,18 +272,39 @@ impl Browser {
             panic!("missing control {id}");
         };
         for kind in ["mousePressed", "mouseReleased"] {
-            self.call(
-                "Input.dispatchMouseEvent",
-                &json!({
-                    "type": kind,
-                    "x": x,
-                    "y": y,
-                    "button": "left",
-                    "clickCount": 1,
-                    "pointerType": "mouse"
-                }),
-            );
+            self.mouse(kind, x, y, 1);
         }
+    }
+
+    pub fn drag(&mut self, from_x: f64, from_y: f64, to_x: f64, to_y: f64) {
+        self.move_mouse(from_x, from_y);
+        self.mouse("mousePressed", from_x, from_y, 1);
+        self.call(
+            "Input.dispatchMouseEvent",
+            &json!({
+                "type": "mouseMoved",
+                "x": to_x,
+                "y": to_y,
+                "button": "left",
+                "buttons": 1,
+                "pointerType": "mouse"
+            }),
+        );
+        self.mouse("mouseReleased", to_x, to_y, 1);
+    }
+
+    fn mouse(&mut self, kind: &str, x: f64, y: f64, click_count: u32) {
+        self.call(
+            "Input.dispatchMouseEvent",
+            &json!({
+                "type": kind,
+                "x": x,
+                "y": y,
+                "button": "left",
+                "clickCount": click_count,
+                "pointerType": "mouse"
+            }),
+        );
     }
 
     pub fn prelude(&mut self, source: &str) -> String {

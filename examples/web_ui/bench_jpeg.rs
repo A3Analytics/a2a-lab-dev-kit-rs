@@ -1,4 +1,11 @@
 //! Small baseline JPEG frames for the example bench recording.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::needless_range_loop,
+    clippy::unreadable_literal,
+    dead_code
+)]
 //!
 //! Each frame is 160 by 96. A bright bar steps across a dark field so playback
 //! is visible. Blocks are solid colors, so only the JPEG DC coefficient and an
@@ -196,10 +203,10 @@ fn paint_clock(
         second / 10,
         second % 10,
     ];
-    let mut column = 2_usize;
+    let mut column = 1_usize;
     for (index, digit) in digits.iter().enumerate() {
         paint_digit(grid, column, 3, *digit);
-        column += 2;
+        column += 3;
         if index == 1 || index == 3 {
             paint_colon(grid, column, 3);
             column += 1;

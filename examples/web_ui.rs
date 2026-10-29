@@ -17,6 +17,7 @@ use a2a_lab_dev_kit::{
 };
 use tokio::net::TcpListener;
 
+#[path = "web_ui/bench_jpeg.rs"]
 mod bench_jpeg;
 
 const DEFAULT_BIND: &str = "127.0.0.1:3847";
