@@ -20,7 +20,7 @@ const JPEG: &[u8] = &[
     0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
 ];
 const READY: &str = "document.getElementById('video-source')?.value === 'cam-a'";
-const POPULATED: &str = "document.getElementById('video-source')?.value === 'cam-a' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped' || document.getElementById('video-canvas')?.width === 1)";
+const POPULATED: &str = "document.getElementById('video-source')?.value === 'cam-a' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped')";
 const EMPTY: &str =
     "document.getElementById('video-source-status')?.textContent.includes('No video sources')";
 
@@ -275,7 +275,7 @@ fn judge_populated(failures: &mut Vec<String>, case: &str, report: &Value) {
         case,
         "player",
         flag(report, "player") && flag(report, "controls"),
-        "playback video and controls visible",
+        "playback video visible, with the controls hidden while it plays",
         &format!(
             "player {} controls {}",
             flag(report, "player"),
@@ -516,7 +516,7 @@ const VISUAL: &str = r"( () => {
     motion: getComputedStyle(document.documentElement).getPropertyValue('--motion-normal').trim(),
     wave: getComputedStyle(document.querySelector('.strand-wave')).animationName,
     player: !!(player && !player.hidden && player.getBoundingClientRect().width > 2),
-    controls: !!(player && !player.hidden && getComputedStyle(document.getElementById('video-timeline')).opacity === '1'),
+    controls: (() => { const timeline = document.getElementById('video-timeline'); if (!player || player.hidden || !timeline) return false; const playing = document.getElementById('video-status')?.dataset.state === 'playing'; const shown = getComputedStyle(timeline).opacity === '1'; return playing ? !shown : shown; })(),
     follow: box('video-follow-newest').width,
     frame: box('video-frame-at').width,
     timeline: box('video-timeline').width,

@@ -358,6 +358,11 @@
   pointer-events: auto;
 }
 
+.video-aspect[data-playback="playing"]:not(:hover):not(:focus-within):not(:active) .video-timeline {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .video-timeline-hint,
 .video-timeline-empty {
   margin: 0;

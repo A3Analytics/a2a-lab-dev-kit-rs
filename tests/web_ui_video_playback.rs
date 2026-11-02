@@ -50,17 +50,17 @@ fn play(base: &str) {
         serde_json::json!(true)
     );
     assert_eq!(
-        page.eval(&local_clock(
-            "document.getElementById('video-available-end')",
-            "2024-01-01T00:05:00Z",
-        )),
-        serde_json::json!(true)
+        page.eval("document.getElementById('video-available-end')?.dataset.live === 'true'"),
+        serde_json::json!(true),
+        "a live source shows Live as the available end"
     );
+    page.wait_until("document.getElementById('video-timeline')?.dataset.selection === 'live'");
     assert_eq!(
         page.eval(
-            "(() => { const utcStamp = (iso) => { const d = new Date(iso); if (Number.isNaN(d.getTime())) return iso; const pad = (n) => String(n).padStart(2, '0'); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`; }; const el = document.getElementById('video-timeline'); const text = el?.getAttribute('aria-valuetext') ?? ''; const start = el?.dataset.start || ''; const end = el?.dataset.end || ''; return start.length > 0 && end.length > 0 && text === `${utcStamp(start)} to ${utcStamp(end)}`; })()"
+            "(() => { const text = document.getElementById('video-timeline')?.getAttribute('aria-valuetext') ?? ''; return text.startsWith('Available from 2024-01-01 00:00:00 UTC to '); })()"
         ),
-        serde_json::json!(true)
+        serde_json::json!(true),
+        "live open describes the retained span"
     );
     let coverage = page
         .eval("document.getElementById('video-interval-0')?.getBoundingClientRect().width ?? 0")
@@ -77,7 +77,7 @@ fn play(base: &str) {
     assert_eq!(
         page.eval("document.getElementById('video-player')?.hasAttribute('hidden')"),
         serde_json::json!(false),
-        "player auto-starts on the newest retained window"
+        "player auto-starts on live follow"
     );
     load_range(&mut page, "2024-01-01T00:00:00Z", "2024-01-01T00:00:04Z");
     page.wait_until(&painted(
@@ -212,14 +212,14 @@ fn assert_leading_retention(base: &str) {
         "requested range was not kept on the timeline"
     );
     assert!(
-        start.contains("2024-01-01T00:03:00"),
+        start.contains("2024-01-01 00:03:00"),
         "effective start {start}"
     );
     assert!(
-        !start.contains("2024-01-01T00:02:30"),
+        !start.contains("00:02:30"),
         "effective start must not include trimmed retention {start}"
     );
-    assert!(end.contains("2024-01-01T00:03"), "effective end {end}");
+    assert!(end.contains("2024-01-01 00:03"), "effective end {end}");
 }
 
 async fn trimmed_bench_lab() -> String {

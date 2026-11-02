@@ -1,5 +1,7 @@
 //! Shared bench catalog for browser video playback tests.
 
+#![allow(dead_code)]
+
 use a2a_lab_dev_kit::{
     A2aLabService, A2aServer, MJPEG_MEDIA_TYPE, MemoryLogs, MemoryMetrics, MemoryTasks,
     MemoryVideos, UtcTimestamp, VideoSource, VideoSourceId, bind_local,

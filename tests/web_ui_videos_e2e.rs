@@ -315,11 +315,13 @@ fn assert_focus_order(page: &mut Browser) {
         ),
         serde_json::json!([
             "video-source",
+            "video-local-time",
             "video-range-start",
             "video-range-end",
             "video-range-apply",
             "video-speed",
-            "video-timeline"
+            "video-timeline",
+            "video-pause"
         ])
     );
     assert_eq!(

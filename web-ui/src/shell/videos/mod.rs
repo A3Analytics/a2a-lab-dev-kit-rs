@@ -31,8 +31,8 @@ use timeline::{
     abort_commands, alert_text, bands, begin_command, commit_at, commit_typed_range, display_clock,
     display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest,
     playhead_style, remember_window, replay_retained_start, reselect_range, selection_slug,
-    slider_now,
-    slider_text, timeline_click, timeline_down, timeline_key, timeline_move, timeline_up,
+    slider_now, slider_text, timeline_click, timeline_down, timeline_key, timeline_move,
+    timeline_up,
 };
 
 #[derive(Clone, PartialEq)]
@@ -107,6 +107,7 @@ struct CommandFlight {
 struct Drag {
     x: f64,
     at_us: i64,
+    moved: bool,
 }
 
 thread_local! {
@@ -360,7 +361,9 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
         div { id: "video-results", class: "log-results",
             div { class: "log-scroll",
                 div { id: "video-stage", class: "video-stage",
-                    div { class: "video-aspect",
+                    div {
+                        class: "video-aspect",
+                        "data-playback": playback_slug(state.reader.playback),
                         canvas {
                             id: "video-canvas",
                             class: "visually-hidden",

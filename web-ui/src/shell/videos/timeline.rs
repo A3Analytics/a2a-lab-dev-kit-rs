@@ -255,7 +255,13 @@ pub(super) fn timeline_down(event: Event<PointerData>) {
         return;
     };
     capture_pointer(&event);
-    DRAG.with(|slot| *slot.borrow_mut() = Some(Drag { x, at_us }));
+    DRAG.with(|slot| {
+        *slot.borrow_mut() = Some(Drag {
+            x,
+            at_us,
+            moved: false,
+        })
+    });
     playback::hold_stream();
     preview_at(at_us);
 }
@@ -273,6 +279,7 @@ pub(super) fn timeline_move(event: Event<PointerData>) {
     }
     drag.x = x;
     drag.at_us = at_us;
+    drag.moved = true;
     DRAG.with(|slot| *slot.borrow_mut() = Some(drag));
     preview_at(at_us);
 }
@@ -282,8 +289,11 @@ pub(super) fn timeline_up(event: Event<PointerData>) {
         return;
     };
     release_pointer(&event);
-    SUPPRESS_CLICK.with(|cell| cell.set(true));
     cancel_preview();
+    if !drag.moved {
+        return;
+    }
+    SUPPRESS_CLICK.with(|cell| cell.set(true));
     let x = event.data().client_coordinates().x;
     let at_us = held_at(x).unwrap_or(drag.at_us);
     commit_at(at_us);

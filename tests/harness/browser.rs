@@ -277,20 +277,32 @@ impl Browser {
     }
 
     pub fn drag(&mut self, from_x: f64, from_y: f64, to_x: f64, to_y: f64) {
-        self.move_mouse(from_x, from_y);
-        self.mouse("mousePressed", from_x, from_y, 1);
+        self.press_at(from_x, from_y);
+        self.drag_to(to_x, to_y);
+        self.release_at(to_x, to_y);
+    }
+
+    pub fn press_at(&mut self, x: f64, y: f64) {
+        self.move_mouse(x, y);
+        self.mouse("mousePressed", x, y, 1);
+    }
+
+    pub fn drag_to(&mut self, x: f64, y: f64) {
         self.call(
             "Input.dispatchMouseEvent",
             &json!({
                 "type": "mouseMoved",
-                "x": to_x,
-                "y": to_y,
+                "x": x,
+                "y": y,
                 "button": "left",
                 "buttons": 1,
                 "pointerType": "mouse"
             }),
         );
-        self.mouse("mouseReleased", to_x, to_y, 1);
+    }
+
+    pub fn release_at(&mut self, x: f64, y: f64) {
+        self.mouse("mouseReleased", x, y, 1);
     }
 
     fn mouse(&mut self, kind: &str, x: f64, y: f64, click_count: u32) {
