@@ -118,6 +118,7 @@
   --media-surface: #000;
   --media-overlay: rgb(0 0 0 / 0.72);
   --media-overlay-foreground: #fff;
+  --media-recording: #ff2b2b;
   --z-raised: 1;
   --z-overlay: 3;
   --elevation-2xs: 0 1px rgb(0 0 0 / 0.04);

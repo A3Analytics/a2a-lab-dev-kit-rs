@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::images::{self, SourcePhase};
 use crate::inventory::{Fault, Item, Primitive};
+use crate::shell::loading::{StrandSize, StrandsLoader};
 use crate::shell::playback::{self, StreamTicket};
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 use crate::videos::track::{self, Track, Window};
@@ -21,14 +22,14 @@ mod playback_hooks;
 mod speed_control;
 mod timeline;
 use details::VideoDetails;
-use playback_hooks::{apply_stream, on_frame, on_gap_skipped, on_playing};
+use playback_hooks::{apply_stream, on_buffering, on_frame, on_gap_skipped, on_playing};
 use speed_control::{active_stream_plan, change_speed, note_trick_fallback};
 use timeline::{
-    abort_commands, alert_text, band_style, bands, begin_command, commit_at, commit_typed_range,
-    display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest, newest_style,
-    playhead_style, remember_window, replay_retained_start, reselect_range, selection_slug,
-    slider_now, slider_text, timeline_click, timeline_down, timeline_key, timeline_move,
-    timeline_up,
+    abort_commands, alert_text, bands, begin_command, commit_at, commit_typed_range,
+    display_clock, display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest,
+    newest_style, playhead_style, remember_window, replay_retained_start, reselect_range,
+    selection_slug, slider_now, slider_text, timeline_click, timeline_down, timeline_key,
+    timeline_move, timeline_up,
 };
 
 #[derive(Clone, PartialEq)]
@@ -45,6 +46,7 @@ pub struct VideoUi {
     pub range_draft_start: String,
     pub range_draft_end: String,
     pub range_error: String,
+    pub local_time: bool,
 }
 
 impl VideoUi {
@@ -62,6 +64,7 @@ impl VideoUi {
             range_draft_start: String::new(),
             range_draft_end: String::new(),
             range_error: String::new(),
+            local_time: false,
         }
     }
 }
@@ -171,7 +174,7 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
     use_hook(|| {
         RUNTIME.with(|slot| *slot.borrow_mut() = Some(Runtime::current()));
         SCOPE.with(|slot| *slot.borrow_mut() = Some(current_scope_id()));
-        playback::bind(on_playing, on_frame, on_gap_skipped);
+        playback::bind(on_playing, on_frame, on_gap_skipped, on_buffering);
         LOADER.with(|slot| *slot.borrow_mut() = Some(Loader { clip }));
     });
     use_drop(stop_playback);
@@ -232,8 +235,13 @@ fn FilterRail(state: VideoUi) -> Element {
         .as_ref()
         .filter(|item| item.span_us() > 0)
         .map(|item| track::format_utc(item.end_us));
-    let available_start = available_start_utc.as_deref().map(display_instant);
-    let available_end = available_end_utc.as_deref().map(display_instant);
+    let local = state.local_time;
+    let available_start = available_start_utc
+        .as_deref()
+        .map(|value| display_clock(value, local));
+    let available_end = available_end_utc
+        .as_deref()
+        .map(|value| display_clock(value, local));
     rsx! {
         nav { id: "video-filters", class: "video-filters", aria_label: "Video filters",
             div { id: "video-sources", class: "video-filter-group",
@@ -267,44 +275,43 @@ fn FilterRail(state: VideoUi) -> Element {
             if !state.reader.source_id.is_empty() {
                 VideoDetails {
                     range_start: if state.range_draft_start.is_empty() {
-                        display_instant(&state.range_start)
+                        display_clock(&state.range_start, local)
                     } else {
                         state.range_draft_start.clone()
                     },
                     range_end: if state.range_draft_end.is_empty() {
-                        display_instant(&state.range_end)
+                        display_clock(&state.range_end, local)
                     } else {
                         state.range_draft_end.clone()
                     },
+                    local_time: local,
                     range_error: state.range_error.clone(),
-                    effective_start: state
-                        .reader
-                        .clip
-                        .as_ref()
-                        .map(|clip| clip.effective_start.clone()),
-                    effective_end: state
-                        .reader
-                        .clip
-                        .as_ref()
-                        .map(|clip| clip.effective_end.clone()),
+                    utc_start: committed_utc(
+                        &state.range_start,
+                        state
+                            .reader
+                            .clip
+                            .as_ref()
+                            .map(|clip| clip.effective_start.as_str()),
+                    ),
+                    utc_end: committed_utc(
+                        &state.range_end,
+                        state
+                            .reader
+                            .clip
+                            .as_ref()
+                            .map(|clip| clip.effective_end.as_str()),
+                    ),
+                    available_start,
+                    available_end,
+                    available_start_utc,
+                    available_end_utc,
                     live_enabled: videos::shows_live_button(&state.reader),
                     live_active: matches!(state.reader.selection, Selection::Live),
                 }
             }
-            if let (Some(start_utc), Some(end_utc), Some(start), Some(end)) = (
-                available_start_utc.as_ref(),
-                available_end_utc.as_ref(),
-                available_start.as_ref(),
-                available_end.as_ref(),
-            ) {
-                div { id: "video-available", class: "video-filter-group video-available",
-                    p { class: "video-available-label", "Available" }
-                    time { id: "video-available-start", datetime: "{start_utc}", "{start}" }
-                    time { id: "video-available-end", datetime: "{end_utc}", "{end}" }
-                }
-            }
             div { class: "video-filter-group video-actions",
-                p { "Actions" }
+                p { "Playback options" }
                 div { class: "video-speed",
                     label { r#for: "video-speed", "Speed" }
                     select {
@@ -336,6 +343,14 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
         && !state.reader.loading
         && state.reader.playback != Playback::Connecting
         && alert.is_empty();
+    let show_loading = alert.is_empty()
+        && state.reader.frame_time.is_empty()
+        && matches!(
+            state.reader.playback,
+            Playback::Connecting | Playback::Playing | Playback::Paused
+        )
+        && !matches!(state.reader.selection, Selection::Empty);
+    let show_buffering = !show_loading && state.reader.buffering && alert.is_empty();
     let failure = state.reader.failure.map(|item| item.code()).unwrap_or("");
     rsx! {
         div { id: "video-results", class: "log-results",
@@ -352,8 +367,8 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
                         if show_empty {
                             p { id: "video-empty", class: "video-empty", "Select a source and a time." }
                         }
-                        if !media && state.reader.playback == Playback::Connecting && alert.is_empty() {
-                            p { id: "video-loading", class: "video-loading", "Loading video." }
+                        if matches!(state.reader.selection, Selection::Live) && !show_empty {
+                            span { id: "video-live-badge", class: "video-live-badge", "LIVE" }
                         }
                         video {
                             id: "video-player",
@@ -372,13 +387,35 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
                             onclick: move |_| playback::toggle_element(),
                         }
                         TimelineScrubber { state: state.clone() }
+                        if show_loading {
+                            div {
+                                id: "video-loading",
+                                class: "video-loading",
+                                aria_hidden: "true",
+                                div { class: "loading-surface",
+                                    StrandsLoader { size: StrandSize::Md }
+                                    p { class: "loading-title", "Loading…" }
+                                }
+                            }
+                        }
+                        if show_buffering {
+                            div {
+                                id: "video-buffering",
+                                class: "video-buffering",
+                                aria_hidden: "true",
+                                StrandsLoader { size: StrandSize::Md }
+                                p { "Buffering…" }
+                            }
+                        }
                     }
                 }
                 p {
                     id: "video-status",
+                    class: "visually-hidden",
                     role: "status",
                     aria_live: "polite",
                     "data-state": playback_slug(state.reader.playback),
+                    "data-buffering": if state.reader.buffering { "true" } else { "false" },
                     "data-frame-time": if state.reader.frame_time.is_empty() {
                         "none"
                     } else {
@@ -423,11 +460,11 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
 fn TimelineScrubber(state: VideoUi) -> Element {
     let track = state.reader.timeline.as_ref().map(track::coverage_track);
     let window = displayed_window(&state);
-    let bars = track.as_ref().map(bands).unwrap_or_default();
-    let selection_style = track
+    let local = state.local_time;
+    let bars = track
         .as_ref()
-        .zip(window)
-        .map(|(item, selected)| band_style(item, selected.start_us, selected.end_us));
+        .map(|item| bands(item, local))
+        .unwrap_or_default();
     let newest_style = newest_style(track.as_ref(), state.reader.timeline.as_ref());
     let playhead_style = playhead_style(&state);
     let ready = state.reader.timeline.is_some();
@@ -437,14 +474,14 @@ fn TimelineScrubber(state: VideoUi) -> Element {
     let available_start = track
         .as_ref()
         .filter(|item| item.span_us() > 0)
-        .map(|item| display_instant(&track::format_utc(item.origin_us)));
+        .map(|item| display_clock(&track::format_utc(item.origin_us), local));
     let available_end = track
         .as_ref()
         .filter(|item| item.span_us() > 0)
-        .map(|item| display_instant(&track::format_utc(item.end_us)));
+        .map(|item| display_clock(&track::format_utc(item.end_us), local));
     let value_text = match (window, available_start.as_deref(), available_end.as_deref()) {
         (None, Some(start), Some(end)) => format!("Available from {start} to {end}"),
-        _ => slider_text(window),
+        _ => slider_text(window, local),
     };
     let duration = window.map(Window::duration_us).unwrap_or(0);
     let draft_start = window
@@ -456,7 +493,7 @@ fn TimelineScrubber(state: VideoUi) -> Element {
     let now = if state.reader.frame_time.is_empty() {
         value_text.clone()
     } else {
-        display_instant(&state.reader.frame_time)
+        display_clock(&state.reader.frame_time, local)
     };
     rsx! {
         div {
@@ -491,9 +528,6 @@ fn TimelineScrubber(state: VideoUi) -> Element {
                     for band in bars {
                         BandMark { key: "{band.id}-{band.style}", band: band.clone() }
                     }
-                    if let Some(style) = selection_style.clone() {
-                        Placed { key: "selection-{style}", id: "video-selection".to_owned(), class: "video-selection", style }
-                    }
                     if let Some(style) = newest_style.clone() {
                         Placed { key: "newest-{style}", id: "video-newest".to_owned(), class: "video-newest", style }
                     }
@@ -503,7 +537,7 @@ fn TimelineScrubber(state: VideoUi) -> Element {
                 }
             }
             p { id: "video-timeline-hint", class: "video-timeline-hint visually-hidden",
-                "Click or drag the timeline to scrub recorded video (gaps are skipped). Use LIVE to return to the live edge."
+                "Drag the timeline to move the current frame. Use LIVE to return to the live edge."
             }
         }
     }
@@ -608,6 +642,13 @@ fn playback_slug(playback: Playback) -> &'static str {
     }
 }
 
+fn committed_utc(stored: &str, effective: Option<&str>) -> String {
+    let source = effective
+        .filter(|value| !value.is_empty())
+        .unwrap_or(stored);
+    display_instant(source)
+}
+
 fn source_option(item: &Item) -> String {
     if item.name.is_empty() {
         item.id.clone()
@@ -632,13 +673,26 @@ pub(super) fn edit_range(start: bool) {
     ui.set(next);
 }
 
+pub(super) fn toggle_local_time() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    let from = next.local_time;
+    next.local_time = !from;
+    next.range_draft_start = timeline::reshow(&next.range_draft_start, from, next.local_time);
+    next.range_draft_end = timeline::reshow(&next.range_draft_end, from, next.local_time);
+    ui.set(next);
+}
+
 pub(super) fn apply_typed_range() {
-    let start = field_to_utc(&session::control_value("video-range-start"));
-    let end = field_to_utc(&session::control_value("video-range-end"));
+    let local = bound().is_some_and(|ui| ui.peek().local_time);
+    let start = field_to_utc(&session::control_value("video-range-start"), local);
+    let end = field_to_utc(&session::control_value("video-range-end"), local);
     if let Err(fault) = videos::check_range(&start, &end) {
         if let Some(mut ui) = bound() {
             let mut next = ui.peek().clone();
-            next.range_error = fault.message().to_owned();
+            next.range_error = timeline::range_fault_message(fault, next.local_time);
             ui.set(next);
         }
         return;
@@ -934,7 +988,7 @@ fn clear_range_replay() {
     REPLAY.with(|slot| slot.set(false));
 }
 
-async fn post(
+pub(super) async fn post(
     command: serde_json::Value,
     secret: Option<String>,
     generation: u32,

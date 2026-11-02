@@ -669,9 +669,7 @@ fn timeline_prelude() -> String {
 }
 
 fn assert_auto_playback_started(page: &mut Browser) {
-    page.wait_until(
-        "!document.getElementById('video-player')?.hasAttribute('hidden')",
-    );
+    page.wait_until("!document.getElementById('video-player')?.hasAttribute('hidden')");
     assert_eq!(
         page.eval("!!document.getElementById('video-empty')"),
         serde_json::json!(false)

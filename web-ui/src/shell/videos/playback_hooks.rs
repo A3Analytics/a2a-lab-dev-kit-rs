@@ -66,6 +66,18 @@ pub(super) fn on_frame(generation: u32, captured_at: &str) {
     });
 }
 
+pub(super) fn on_buffering(generation: u32, buffering: bool) {
+    run(move || {
+        let Some(mut ui) = bound() else {
+            return;
+        };
+        let mut next = ui.peek().clone();
+        if next.reader.note_buffering(generation, buffering) {
+            ui.set(next);
+        }
+    });
+}
+
 pub(super) fn on_gap_skipped(generation: u32) {
     run(move || {
         let Some(mut ui) = bound() else {

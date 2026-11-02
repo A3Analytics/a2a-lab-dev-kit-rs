@@ -95,6 +95,7 @@ pub struct Reader {
     pub frame_time: String,
     pub failure: Option<Failure>,
     pub loading: bool,
+    pub buffering: bool,
     pub fault: String,
     pub validation: String,
     pub playback_note: String,
@@ -119,6 +120,7 @@ impl Reader {
             frame_time: String::new(),
             failure: None,
             loading: false,
+            buffering: false,
             fault: String::new(),
             validation: String::new(),
             playback_note: String::new(),
@@ -302,6 +304,7 @@ impl Reader {
         }
         self.expected = None;
         self.loading = false;
+        self.buffering = false;
         self.playback = Playback::Stopped;
         self.failure = None;
         self.fault = message.to_owned();
@@ -322,6 +325,7 @@ impl Reader {
         if !matches!(self.playback, Playback::Playing | Playback::Connecting) {
             return false;
         }
+        self.buffering = false;
         self.playback = Playback::Paused;
         true
     }
@@ -345,6 +349,20 @@ impl Reader {
         true
     }
 
+    pub fn note_buffering(&mut self, generation: u32, buffering: bool) -> bool {
+        if self.generation != generation || self.buffering == buffering {
+            return false;
+        }
+        if buffering
+            && (self.frame_time.is_empty()
+                || !matches!(self.playback, Playback::Playing | Playback::Connecting))
+        {
+            return false;
+        }
+        self.buffering = buffering;
+        true
+    }
+
     pub fn note_gap_skipped(&mut self, generation: u32) -> bool {
         if self.generation != generation {
             return false;
@@ -358,6 +376,7 @@ impl Reader {
             return false;
         }
         self.loading = false;
+        self.buffering = false;
         self.expected = None;
         self.playback = Playback::Stopped;
         true
@@ -368,6 +387,7 @@ impl Reader {
             return false;
         }
         self.loading = false;
+        self.buffering = false;
         self.expected = None;
         self.playback = Playback::Stopped;
         self.failure = None;
@@ -398,6 +418,7 @@ impl Reader {
     pub fn stop(&mut self) {
         self.bump();
         self.loading = false;
+        self.buffering = false;
         self.expected = None;
         self.playback = Playback::Stopped;
         self.fault.clear();
@@ -542,6 +563,7 @@ impl Reader {
         self.frame_time.clear();
         self.failure = None;
         self.loading = false;
+        self.buffering = false;
         self.expected = None;
         self.last = None;
         self.fault.clear();
@@ -565,6 +587,7 @@ fn prepare_media(reader: &mut Reader, playback: Playback) {
     reader.live = None;
     reader.frame = None;
     reader.frame_time.clear();
+    reader.buffering = false;
     reader.playback = playback;
 }
 
@@ -590,6 +613,7 @@ fn need_source(reader: &mut Reader) -> Result<(), &'static str> {
 fn settle_failure(reader: &mut Reader, failure: Failure) {
     reader.expected = None;
     reader.loading = false;
+    reader.buffering = false;
     reader.playback = Playback::Stopped;
     reader.failure = Some(failure);
     reader.fault.clear();
@@ -668,6 +692,9 @@ pub fn playback_status(reader: &Reader) -> String {
         Playback::Stopped => "Stopped.".to_owned(),
         Playback::Idle if reader.playback_note.is_empty() => String::new(),
         Playback::Connecting if reader.playback_note.is_empty() => "Connecting.".to_owned(),
+        Playback::Playing if reader.buffering && reader.playback_note.is_empty() => {
+            "Buffering.".to_owned()
+        }
         Playback::Playing if reader.playback_note.is_empty() => "Playing.".to_owned(),
         Playback::Idle | Playback::Connecting | Playback::Playing => reader.playback_note.clone(),
     }
@@ -731,6 +758,25 @@ mod tests {
         reader.stop();
         assert!(!reader.note_frame(second.generation, "late"));
         assert_eq!(reader.playback, Playback::Stopped);
+    }
+
+    #[test]
+    fn buffering_waits_for_a_visible_frame() {
+        let mut reader = Reader::new();
+        reader.generation = 3;
+        reader.playback = Playback::Playing;
+        assert!(!reader.note_buffering(3, true));
+        reader.frame_time = "2024-01-01T00:00:00Z".to_owned();
+        assert!(reader.note_buffering(3, true));
+        assert_eq!(playback_status(&reader), "Buffering.");
+        assert!(reader.note_frame(3, "2024-01-01T00:00:01Z"));
+        assert!(reader.buffering);
+        assert!(reader.note_buffering(3, false));
+        assert!(!reader.buffering);
+        assert_eq!(playback_status(&reader), "Playing.");
+        reader.frame_time = "2024-01-01T00:00:01Z".to_owned();
+        reader.playback = Playback::Paused;
+        assert!(!reader.note_buffering(3, true));
     }
 
     #[test]

@@ -383,7 +383,9 @@ fn judge_empty(failures: &mut Vec<String>, case: &str, report: &Value) {
         failures,
         case,
         "names",
-        num(report, "follow") == 0.0 && num(report, "frame") == 0.0 && num(report, "timeline") > 2.0,
+        num(report, "follow") == 0.0
+            && num(report, "frame") == 0.0
+            && num(report, "timeline") > 2.0,
         "timeline stays available without a live or seek button",
         &format!(
             "follow {} frame {} timeline {}",

@@ -20,12 +20,14 @@ use super::hls_playback;
 const CANVAS: &str = "video-canvas";
 const PLAYER: &str = "video-player";
 const BOUND: &str = "__a2aMediaBound";
+const BUFFER_GRACE_MS: i32 = 500;
 
 type MediaListener = Closure<dyn FnMut(Event)>;
 
 type PlayingCallback = fn(u32);
 type FrameCallback = fn(u32, &str);
 type GapSkippedCallback = fn(u32);
+type BufferingCallback = fn(u32, bool);
 
 #[derive(Clone, Copy)]
 pub struct StreamTicket {
@@ -54,19 +56,29 @@ thread_local! {
     static ON_PLAYING: RefCell<Option<PlayingCallback>> = const { RefCell::new(None) };
     static ON_FRAME: RefCell<Option<FrameCallback>> = const { RefCell::new(None) };
     static ON_GAP_SKIPPED: RefCell<Option<GapSkippedCallback>> = const { RefCell::new(None) };
+    static ON_BUFFERING: RefCell<Option<BufferingCallback>> = const { RefCell::new(None) };
     static START_PAUSED: Cell<bool> = const { Cell::new(false) };
+    static HOLD: Cell<bool> = const { Cell::new(false) };
     static IGNORE_PAUSE: Cell<u32> = const { Cell::new(0) };
     static MJPEG_PACE: Cell<u32> = const { Cell::new(1) };
     static HLS_PLAYBACK_RATE: Cell<f64> = const { Cell::new(1.0) };
     static REBASE_PACING: Cell<bool> = const { Cell::new(false) };
     static PLAY_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
     static PAUSE_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
+    static WAITING_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
+    static RESUMED_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
 }
 
-pub fn bind(playing: PlayingCallback, frame: FrameCallback, gap_skipped: GapSkippedCallback) {
+pub fn bind(
+    playing: PlayingCallback,
+    frame: FrameCallback,
+    gap_skipped: GapSkippedCallback,
+    buffering: BufferingCallback,
+) {
     ON_PLAYING.with(|slot| *slot.borrow_mut() = Some(playing));
     ON_FRAME.with(|slot| *slot.borrow_mut() = Some(frame));
     ON_GAP_SKIPPED.with(|slot| *slot.borrow_mut() = Some(gap_skipped));
+    ON_BUFFERING.with(|slot| *slot.borrow_mut() = Some(buffering));
 }
 
 pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
@@ -83,12 +95,30 @@ pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
     let pause = Closure::wrap(Box::new(move |_event: Event| {
         on_pause();
     }) as Box<dyn FnMut(Event)>);
+    let waiting = Closure::wrap(Box::new(move |_event: Event| {
+        if let Some(generation) = session_generation() {
+            notify_buffering(generation, true);
+        }
+    }) as Box<dyn FnMut(Event)>);
+    let resumed = Closure::wrap(Box::new(move |_event: Event| {
+        if hls_playback::is_active()
+            && let Some(generation) = session_generation()
+        {
+            notify_buffering(generation, false);
+        }
+    }) as Box<dyn FnMut(Event)>);
     let target: &EventTarget = video.unchecked_ref();
     if target
         .add_event_listener_with_callback("play", play.as_ref().unchecked_ref())
         .is_err()
         || target
             .add_event_listener_with_callback("pause", pause.as_ref().unchecked_ref())
+            .is_err()
+        || target
+            .add_event_listener_with_callback("waiting", waiting.as_ref().unchecked_ref())
+            .is_err()
+        || target
+            .add_event_listener_with_callback("playing", resumed.as_ref().unchecked_ref())
             .is_err()
     {
         return;
@@ -118,6 +148,8 @@ pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
     mark_bound(&video);
     PLAY_LISTENER.with(|slot| *slot.borrow_mut() = Some(play));
     PAUSE_LISTENER.with(|slot| *slot.borrow_mut() = Some(pause));
+    WAITING_LISTENER.with(|slot| *slot.borrow_mut() = Some(waiting));
+    RESUMED_LISTENER.with(|slot| *slot.borrow_mut() = Some(resumed));
 }
 
 pub fn attach_player() {
@@ -198,13 +230,28 @@ pub fn take_ignore_pause() -> bool {
 }
 
 pub fn abort() {
+    HOLD.with(|slot| slot.set(false));
     hls_playback::teardown();
+    stop_session();
+    reset_surface();
+}
+
+pub fn hold_stream() {
+    HOLD.with(|slot| slot.set(true));
+    hls_playback::teardown();
+    stop_session();
+}
+
+fn stop_session() {
     SESSION.with(|slot| {
         if let Some(session) = slot.borrow_mut().take() {
             session.abort.abort();
         }
     });
-    reset_surface();
+}
+
+fn frames_held() -> bool {
+    HOLD.with(|slot| slot.get())
 }
 
 pub fn set_paused(paused: bool) {
@@ -385,6 +432,7 @@ async fn consume(
     let mut origin_wall = None;
     let mut prev_capture = None;
     let mut painted = false;
+    let mut stalling = false;
     loop {
         if let Some(outcome) = halted(generation, &mut queue) {
             return outcome;
@@ -394,7 +442,15 @@ async fn consume(
             return outcome;
         }
         if queue.len() < mjpeg::MAX_QUEUE {
-            match read_chunk(&reader).await {
+            match read_playback_chunk(
+                generation,
+                &reader,
+                queue.is_empty(),
+                painted,
+                &mut stalling,
+            )
+            .await
+            {
                 Ok(None) => break,
                 Ok(Some(chunk)) => match parser.push(&chunk) {
                     Ok(events) => {
@@ -406,6 +462,7 @@ async fn consume(
                             &mut origin_wall,
                             &mut prev_capture,
                             &mut painted,
+                            &mut stalling,
                             reduced,
                             from_start,
                         )
@@ -432,7 +489,9 @@ async fn consume(
             &mut origin_wall,
             &mut prev_capture,
             &mut painted,
+            &mut stalling,
             reduced,
+            from_start,
         )
         .await
         {
@@ -451,6 +510,7 @@ async fn enqueue(
     origin_wall: &mut Option<f64>,
     prev_capture: &mut Option<i64>,
     painted: &mut bool,
+    stalling: &mut bool,
     reduced: bool,
     from_start: bool,
 ) -> Option<StreamOutcome> {
@@ -465,7 +525,9 @@ async fn enqueue(
                         origin_wall,
                         prev_capture,
                         painted,
+                        stalling,
                         reduced,
+                        from_start,
                     )
                     .await
                     {
@@ -485,7 +547,9 @@ async fn enqueue(
                     origin_wall,
                     prev_capture,
                     painted,
+                    stalling,
                     reduced,
+                    from_start,
                 )
                 .await;
                 queue.clear();
@@ -523,8 +587,17 @@ async fn drain(
     origin_wall: &mut Option<f64>,
     prev_capture: &mut Option<i64>,
     painted: &mut bool,
+    stalling: &mut bool,
     reduced: bool,
+    from_start: bool,
 ) -> Result<(), StreamOutcome> {
+    if !from_start && queue.len() > 1 {
+        let newest = queue.pop_back();
+        queue.clear();
+        if let Some(frame) = newest {
+            queue.push_back(frame);
+        }
+    }
     while let Some(frame) = queue.pop_front() {
         if !live(generation) {
             queue.clear();
@@ -542,6 +615,21 @@ async fn drain(
             *origin_capture = Some(frame.captured_us);
             *origin_wall = Some(js_sys::Date::now());
             notify_gap_skipped(generation);
+        }
+        if frames_held() || !live(generation) {
+            queue.clear();
+            return Err(StreamOutcome::Stopped { generation });
+        }
+        if !from_start {
+            if paint_jpeg(&frame.jpeg).await {
+                *painted = true;
+                clear_stall(generation, stalling);
+            }
+            notify_frame(generation, &frame.captured_at);
+            *origin_capture = Some(frame.captured_us);
+            *origin_wall = Some(js_sys::Date::now());
+            *prev_capture = Some(frame.captured_us);
+            continue;
         }
         let capture = *origin_capture.get_or_insert(frame.captured_us);
         let wall = *origin_wall.get_or_insert_with(js_sys::Date::now);
@@ -564,6 +652,7 @@ async fn drain(
         }
         if paint_jpeg(&frame.jpeg).await {
             *painted = true;
+            clear_stall(generation, stalling);
         }
         notify_frame(generation, &frame.captured_at);
         *prev_capture = Some(frame.captured_us);
@@ -595,6 +684,10 @@ async fn read_chunk(reader: &ReadableStreamDefaultReader) -> Result<Option<Vec<u
     let mut bytes = vec![0; array.length() as usize];
     array.copy_to(&mut bytes);
     Ok(Some(bytes))
+}
+
+pub(crate) async fn show_jpeg(jpeg: &[u8]) -> bool {
+    paint_jpeg(jpeg).await
 }
 
 async fn paint_jpeg(jpeg: &[u8]) -> bool {
@@ -688,6 +781,47 @@ fn prefers_reduced_motion() -> bool {
                 .flatten()
         })
         .is_some_and(|query| query.matches())
+}
+
+fn session_generation() -> Option<u32> {
+    SESSION.with(|slot| slot.borrow().as_ref().map(|session| session.generation))
+}
+
+fn clear_stall(generation: u32, stalling: &mut bool) {
+    if *stalling {
+        *stalling = false;
+        notify_buffering(generation, false);
+    }
+}
+
+async fn read_playback_chunk(
+    generation: u32,
+    reader: &ReadableStreamDefaultReader,
+    queue_empty: bool,
+    painted: bool,
+    stalling: &mut bool,
+) -> Result<Option<Vec<u8>>, ()> {
+    let mut read = std::pin::pin!(read_chunk(reader));
+    if !queue_empty || !painted || *stalling {
+        return read.await;
+    }
+    let mut grace = std::pin::pin!(sleep_ms(BUFFER_GRACE_MS));
+    std::future::poll_fn(|context| {
+        if !*stalling && grace.as_mut().poll(context).is_ready() {
+            *stalling = true;
+            notify_buffering(generation, true);
+        }
+        read.as_mut().poll(context)
+    })
+    .await
+}
+
+pub(crate) fn notify_buffering(generation: u32, buffering: bool) {
+    ON_BUFFERING.with(|slot| {
+        if let Some(callback) = *slot.borrow() {
+            callback(generation, buffering);
+        }
+    });
 }
 
 pub(crate) fn notify_playing(generation: u32) {
