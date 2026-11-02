@@ -95,3 +95,4 @@ id_type!(ImageSourceId, "image source");
 id_type!(VideoSourceId, "video source");
 id_type!(VideoClipId, "video clip");
 id_type!(VideoFollowId, "video follow");
+id_type!(DvrTrackId, "DVR media track");

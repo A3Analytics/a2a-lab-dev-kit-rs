@@ -5,12 +5,16 @@ use futures_util::StreamExt;
 use a2a_lab_dev_kit::service::EmptyVideos;
 use a2a_lab_dev_kit::{
     A2aLabApi, A2aLabCommand, A2aLabResult, A2aLabService, DEFAULT_MJPEG_BOUNDARY,
-    FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoTimelineRequest,
-    ListLogSourcesRequest, ListVideoSourcesRequest, MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE,
-    MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, PageRequest, TckMalformedVideoRequests,
-    TimeRange, UtcTimestamp, VideoClip, VideoFollowId, VideoProvider, VideoSource, VideoSourceId,
-    encode_mjpeg_multipart,
+    DvrFrameAtRequest, DvrMediaPayload, DvrMediaStore, DvrTrackId, FollowVideoRequest,
+    GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoTimelineRequest, ListLogSourcesRequest,
+    ListVideoSourcesRequest, MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, MemoryLogs,
+    MemoryMetrics, MemoryTasks, MemoryVideos, PageRequest, ReadDvrMediaWindowRequest,
+    TckMalformedVideoRequests, TimeRange, UtcTimestamp, VideoClip, VideoCodec, VideoFollowId,
+    VideoProvider, VideoSource, VideoSourceId, encode_mjpeg_multipart,
 };
+
+const H264_INIT: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0x67];
+const H265_INIT: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0x40];
 
 const JPEG: &[u8] = &[
     0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
@@ -42,6 +46,14 @@ fn source(id: &str, fps: u32) -> VideoSource {
 
 fn range(start: &str, end: &str) -> TimeRange {
     TimeRange::new(timestamp(start), timestamp(end)).unwrap()
+}
+
+fn dvr_track(id: &str) -> DvrTrackId {
+    DvrTrackId::new(id).unwrap()
+}
+
+fn mjpeg_track(source: &VideoSourceId) -> DvrTrackId {
+    MemoryVideos::mjpeg_track_id(source).unwrap()
 }
 
 fn page() -> PageRequest {
@@ -181,7 +193,7 @@ async fn with_videos_dispatches_list_frame_and_clip() {
     assert!(encoded.get("data").is_none());
     assert_eq!(
         handle.path(),
-        format!("/media/video-clips/{}", handle.id().as_str())
+        format!("/media/video-clips/{}/", handle.id().as_str())
     );
     assert!(!handle.path().contains("://"));
 }
@@ -624,7 +636,7 @@ async fn memory_live_follow_delivers_later_frames_in_timestamp_order() {
     assert!(encoded.get("data").is_none());
     assert_eq!(
         follow.path(),
-        format!("/media/video-live/{}", follow.id().as_str())
+        format!("/media/video-live/{}/", follow.id().as_str())
     );
     assert!(!follow.path().contains("://"));
     let Err(unknown) = videos
@@ -893,14 +905,30 @@ async fn memory_clips_keep_the_sixty_second_half_open_boundary() {
     }
     assert_eq!(count, 60);
     assert_eq!(last, Some(start.saturating_add_micros(59 * 1_000_000)));
-    let over = videos
-        .get_video_clip(TckMalformedVideoRequests::get_video_clip_over_limit(
+    let long = videos
+        .get_video_clip(
+            GetVideoClipRequest::new(
+                source_id("hour"),
+                TimeRange::new(start, start.saturating_add_micros(61 * 1_000_000)).unwrap(),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let mut long_stream = videos.open_video_clip(long.id()).await.unwrap();
+    let mut long_count = 0_usize;
+    while long_stream.next().await.is_some() {
+        long_count += 1;
+    }
+    assert_eq!(long_count, 61);
+    let empty = videos
+        .get_video_clip(TckMalformedVideoRequests::get_video_clip_empty_range(
             source_id("hour"),
             start,
         ))
         .await
         .unwrap_err();
-    assert_eq!(over.code(), "invalid");
+    assert_eq!(empty.code(), "invalid");
 }
 
 #[tokio::test]
@@ -951,16 +979,264 @@ async fn forget_before_drops_old_frames_without_touching_later_ones() {
     assert!(stream.next().await.is_none());
 }
 
+#[tokio::test]
+async fn memory_videos_dvr_indexes_mjpeg_frames_with_codec_metadata() {
+    let videos = MemoryVideos::new();
+    videos.insert_source(source("cam", 1)).await.unwrap();
+    let source = source_id("cam");
+    for second in 0..5 {
+        videos
+            .insert_frame(
+                source.clone(),
+                timestamp(&format!("2024-01-01T00:00:0{second}Z")),
+                JPEG.to_vec(),
+            )
+            .await
+            .unwrap();
+    }
+    let track = mjpeg_track(&source);
+    let tracks = videos.list_tracks(&source).await.unwrap();
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].codec(), VideoCodec::Mjpeg);
+    assert!(tracks[0].codec_initialization().is_empty());
+
+    let frame = videos
+        .frame_at(DvrFrameAtRequest::new(
+            source.clone(),
+            track.clone(),
+            timestamp("2024-01-01T00:00:02.500000Z"),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(frame.actual_at(), timestamp("2024-01-01T00:00:02Z"));
+    assert!(matches!(frame.payload(), DvrMediaPayload::MjpegFrame(_)));
+}
+
+#[tokio::test]
+async fn memory_videos_dvr_h264_gaps_sparse_keyframes_and_window_reads() {
+    let videos = MemoryVideos::new();
+    videos.insert_source(source("cam", 1)).await.unwrap();
+    let source = source_id("cam");
+    let track = dvr_track("h264");
+    videos
+        .insert_dvr_track(
+            source.clone(),
+            track.clone(),
+            VideoCodec::H264,
+            H264_INIT.to_vec(),
+        )
+        .await
+        .unwrap();
+    for (index, start_text) in ["2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"]
+        .iter()
+        .enumerate()
+    {
+        let start = timestamp(start_text);
+        videos
+            .insert_dvr_segment(
+                source.clone(),
+                track.clone(),
+                TimeRange::new(start, start.saturating_add_micros(1_000_000)).unwrap(),
+                index == 0,
+                VideoCodec::H264,
+                vec![0x00, u8::try_from(index).unwrap()],
+            )
+            .await
+            .unwrap();
+    }
+    for (index, start_text) in ["2024-01-01T00:00:04Z", "2024-01-01T00:00:05Z"]
+        .iter()
+        .enumerate()
+    {
+        let start = timestamp(start_text);
+        videos
+            .insert_dvr_segment(
+                source.clone(),
+                track.clone(),
+                TimeRange::new(start, start.saturating_add_micros(1_000_000)).unwrap(),
+                index == 0,
+                VideoCodec::H264,
+                vec![0x10, u8::try_from(index).unwrap()],
+            )
+            .await
+            .unwrap();
+    }
+    let coverage = videos.media_coverage(&source).await.unwrap();
+    assert_eq!(coverage.intervals().len(), 2);
+    assert_eq!(coverage.discontinuities().len(), 1);
+    let gap = videos
+        .frame_at(DvrFrameAtRequest::new(
+            source.clone(),
+            track.clone(),
+            timestamp("2024-01-01T00:00:03Z"),
+            None,
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(gap.code(), "recording_gap");
+    let page = videos
+        .read_media_window(
+            ReadDvrMediaWindowRequest::new(
+                source,
+                track,
+                range("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z"),
+                PageRequest::new(None, 10).unwrap(),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.items().len(), 2);
+    assert!(page.items()[0].keyframe());
+    assert!(!page.items()[1].keyframe());
+}
+
+#[tokio::test]
+async fn memory_videos_dvr_h265_track_exposes_initialization() {
+    let videos = MemoryVideos::new();
+    videos.insert_source(source("cam", 1)).await.unwrap();
+    let source = source_id("cam");
+    let track = dvr_track("h265");
+    videos
+        .insert_dvr_track(
+            source.clone(),
+            track.clone(),
+            VideoCodec::H265,
+            H265_INIT.to_vec(),
+        )
+        .await
+        .unwrap();
+    let bounds = range("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z");
+    videos
+        .insert_dvr_segment(
+            source.clone(),
+            track.clone(),
+            bounds,
+            true,
+            VideoCodec::H265,
+            vec![0xAA, 0xBB],
+        )
+        .await
+        .unwrap();
+    let listed = videos.list_tracks(&source).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].codec(), VideoCodec::H265);
+    assert_eq!(listed[0].codec_initialization(), H265_INIT);
+}
+
+#[tokio::test]
+async fn memory_videos_dvr_hour_plus_retention_uses_paged_window_reads() {
+    let videos = MemoryVideos::new();
+    videos.insert_source(source("cam", 1)).await.unwrap();
+    let source = source_id("cam");
+    let track = dvr_track("h264-hour");
+    videos
+        .insert_dvr_track(
+            source.clone(),
+            track.clone(),
+            VideoCodec::H264,
+            H264_INIT.to_vec(),
+        )
+        .await
+        .unwrap();
+    let start = timestamp("2024-01-01T00:00:00Z");
+    for second in 0..3_700 {
+        let at = start.saturating_add_micros(i64::from(second) * 1_000_000);
+        videos
+            .insert_dvr_segment(
+                source.clone(),
+                track.clone(),
+                TimeRange::new(at, at.saturating_add_micros(1_000_000)).unwrap(),
+                second % 30 == 0,
+                VideoCodec::H264,
+                vec![0x01, u8::try_from(second % 255).unwrap()],
+            )
+            .await
+            .unwrap();
+    }
+    let retention = videos.retention_bounds(&source).await.unwrap();
+    assert!(retention.newest().as_micros() - retention.oldest().as_micros() >= 3_600_000_000);
+    let window = range("2024-01-01T01:00:00Z", "2024-01-01T01:00:05Z");
+    let page = videos
+        .read_media_window(
+            ReadDvrMediaWindowRequest::new(
+                source,
+                track,
+                window,
+                PageRequest::new(None, 3).unwrap(),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.items().len(), 3);
+    assert!(page.next_cursor().is_some());
+}
+
+#[tokio::test]
+async fn memory_videos_dvr_forget_before_trims_retention_bounds() {
+    let videos = MemoryVideos::new();
+    videos.insert_source(source("cam", 1)).await.unwrap();
+    let source = source_id("cam");
+    for stamp in [
+        "2024-01-01T00:00:00Z",
+        "2024-01-01T00:00:01Z",
+        "2024-01-01T00:02:00Z",
+    ] {
+        videos
+            .insert_frame(source.clone(), timestamp(stamp), JPEG.to_vec())
+            .await
+            .unwrap();
+    }
+    videos
+        .forget_before(&source, timestamp("2024-01-01T00:01:00Z"))
+        .await
+        .unwrap();
+    let retention = videos.retention_bounds(&source).await.unwrap();
+    assert_eq!(retention.oldest(), timestamp("2024-01-01T00:02:00Z"));
+    let coverage = videos.media_coverage(&source).await.unwrap();
+    assert_eq!(coverage.intervals().len(), 1);
+}
+
+#[tokio::test]
+async fn memory_videos_dvr_clip_handles_still_expire() {
+    let videos = MemoryVideos::with_clip_ttl(Duration::ZERO);
+    videos.insert_source(source("cam", 1)).await.unwrap();
+    let source = source_id("cam");
+    videos
+        .insert_frame(
+            source.clone(),
+            timestamp("2024-01-01T00:00:00Z"),
+            JPEG.to_vec(),
+        )
+        .await
+        .unwrap();
+    let clip = videos
+        .get_video_clip(
+            GetVideoClipRequest::new(
+                source,
+                range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    match videos.open_video_clip(clip.id()).await {
+        Err(error) => assert_eq!(error.code(), "clip_expired"),
+        Ok(_) => panic!("zero-TTL clip must not open"),
+    }
+}
+
 #[test]
 fn video_clip_path_is_relative() {
     let id = a2a_lab_dev_kit::VideoClipId::new("clip-1").unwrap();
-    let clip = VideoClip::new(
+    let clip = VideoClip::new_mjpeg(
         id,
         source_id("cam"),
         range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"),
         range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"),
-        MJPEG_MEDIA_TYPE,
     )
     .unwrap();
-    assert_eq!(clip.path(), "/media/video-clips/clip-1");
+    assert_eq!(clip.path(), "/media/video-clips/clip-1/");
 }

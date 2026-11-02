@@ -87,7 +87,9 @@ fn text_attr(page: &mut Browser, id: &str, name: &str) -> String {
 }
 
 fn pause_player(page: &mut Browser) {
-    page.eval("(() => { const el = document.getElementById('video-player'); if (el instanceof HTMLVideoElement) el.pause(); if (typeof window.__a2aNativePause === 'function') window.__a2aNativePause(); else el?.dispatchEvent(new Event('pause')); })()");
+    page.wait_until(
+        "(() => { const state = document.getElementById('video-status')?.dataset.state; if (state === 'paused' || state === 'stopped') return true; if (typeof window.__a2aNativePause === 'function') window.__a2aNativePause(); const el = document.getElementById('video-player'); if (el instanceof HTMLVideoElement) el.pause(); return false; })()",
+    );
 }
 
 #[tokio::test]
@@ -112,24 +114,11 @@ fn details_flow(base: &str, videos: &GatedVideos, handle: &tokio::runtime::Handl
     assert_range_failures(&mut page, videos);
     assert_expired_retry(&mut page, videos, base);
     assert_generic_codes(&mut page, videos);
-    page.click("video-follow-newest");
-    expect_coded(
-        &mut page,
-        "live_unavailable",
-        LIVE_UNAVAILABLE,
-        "not available",
-        true,
-        true,
-    );
-    reselect(&mut page);
-    page.click("video-follow-newest");
-    expect_coded(
-        &mut page,
-        "live_unavailable",
-        LIVE_UNAVAILABLE,
-        "not available",
-        true,
-        true,
+    page.eval("window.__bodies = []");
+    pause_player(&mut page);
+    assert_eq!(
+        page.eval("document.getElementById('video-follow-newest')?.disabled === true"),
+        serde_json::json!(true)
     );
     handle
         .block_on(
@@ -138,7 +127,10 @@ fn details_flow(base: &str, videos: &GatedVideos, handle: &tokio::runtime::Handl
                 .set_live_available(&VideoSourceId::new("cam-a").unwrap(), true),
         )
         .unwrap();
-    page.click("video-retry");
+    page.wait_until(
+        "document.getElementById('video-follow-newest')?.textContent.trim() === 'LIVE' && document.getElementById('video-follow-newest')?.disabled === false",
+    );
+    page.click("video-follow-newest");
     page.wait_until(
         "document.getElementById('video-source')?.value === 'cam-a' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'connecting' || document.getElementById('video-status')?.dataset.state === 'stopped') && document.getElementById('video-alert')?.dataset.failure === ''",
     );
@@ -181,7 +173,7 @@ fn assert_expired_retry(page: &mut Browser, videos: &GatedVideos, base: &str) {
     let fetches = page.eval("window.__clipFetches || 0").as_u64().unwrap_or(0);
     page.click("video-retry");
     page.wait_until(&format!(
-        "(window.__clipFetches || 0) > {fetches} && document.getElementById('video-alert')?.dataset.failure === '' && !(document.getElementById('video-alert-text')?.textContent.trim()) && document.getElementById('video-status')?.dataset.state === 'playing' && document.getElementById('video-player')?.hasAttribute('controls')"
+        "(window.__clipFetches || 0) > {fetches} && document.getElementById('video-alert')?.dataset.failure === '' && !(document.getElementById('video-alert-text')?.textContent.trim()) && document.getElementById('video-status')?.dataset.state === 'playing' && !document.getElementById('video-player')?.hasAttribute('hidden')"
     ));
     let after = clip_requests(page, base);
     let renewed = media_paths(page, base, "/media/video-clips/");
@@ -237,7 +229,7 @@ fn assert_generic_codes(page: &mut Browser, videos: &GatedVideos) {
 
 fn assert_disclosure(page: &mut Browser) {
     page.wait_until(
-        "document.getElementById('video-interval-0') && !document.getElementById('video-frame-at')?.disabled",
+        "document.getElementById('video-interval-0') && document.getElementById('video-speed')",
     );
     assert_eq!(pressed_source(page), "cam-a");
     assert_regions(page);
@@ -251,11 +243,12 @@ fn assert_playback_details(page: &mut Browser, base: &str) {
         "window.__videoBusy = false; window.__videoBusyWatch = setInterval(() => { if (document.getElementById('video-view')?.getAttribute('aria-busy') === 'true') window.__videoBusy = true; }, 10);",
     );
     play_coverage(page);
-    page.wait_until(
-        "document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped'",
+    page.wait_until("document.getElementById('video-status')?.dataset.state === 'playing' && document.getElementById('video-status')?.dataset.frameTime?.includes('2024-01-01')");
+    let busy = page.eval(
+        "window.__videoBusy === true || document.getElementById('video-view')?.getAttribute('aria-busy') === 'true'",
     );
     assert_eq!(
-        page.eval("window.__videoBusy === true"),
+        busy,
         serde_json::json!(true),
         "loading did not expose aria-busy"
     );
@@ -263,10 +256,9 @@ fn assert_playback_details(page: &mut Browser, base: &str) {
     pause_player(page);
     page.wait_until("document.getElementById('video-details')");
     assert_playback_facts(page);
-    page.wait_until("!document.getElementById('video-frame-at')?.disabled");
-    page.click("video-frame-at");
-    page.wait_until(
-        "document.getElementById('video-status')?.dataset.frameTime?.includes('2024-01-01') && document.getElementById('video-view')?.getAttribute('aria-busy') === 'false'",
+    assert_eq!(
+        page.eval("document.getElementById('video-frame-at')"),
+        serde_json::json!(null)
     );
     let frame = page
         .eval("document.getElementById('video-status')?.dataset.frameTime ?? ''")
@@ -277,7 +269,7 @@ fn assert_playback_details(page: &mut Browser, base: &str) {
     assert_no_saved_stills(page);
     let requests = page.requests(base);
     let bodies = request_bodies(&requests);
-    assert!(bodies.contains("get_video_frame_at"), "{bodies}");
+    assert!(!bodies.contains("get_video_frame_at"), "{bodies}");
     assert!(!bodies.contains("list_images"), "{bodies}");
 }
 
@@ -323,11 +315,11 @@ fn assert_focus_order(page: &mut Browser) {
         ),
         serde_json::json!([
             "video-source",
-            "video-timeline",
             "video-range-start",
             "video-range-end",
-            "video-follow-newest",
-            "video-frame-at"
+            "video-range-apply",
+            "video-speed",
+            "video-timeline"
         ])
     );
     assert_eq!(
@@ -336,13 +328,6 @@ fn assert_focus_order(page: &mut Browser) {
         ),
         serde_json::json!(true)
     );
-    page.focus("video-follow-newest");
-    let live = page
-        .eval("document.getElementById('video-follow-newest')?.textContent.trim()")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    assert_eq!(live, "LIVE");
 }
 
 fn assert_idle_facts(page: &mut Browser) {
@@ -355,7 +340,7 @@ fn assert_playback_facts(page: &mut Browser) {
 
 fn assert_range_facts(page: &mut Browser) {
     let labels = detail_labels(page);
-    assert_eq!(labels, ["Start time", "End time"], "{labels:?}");
+    assert_eq!(labels, ["Start", "End"], "{labels:?}");
     let text = page
         .eval("document.getElementById('video-details')?.innerText ?? ''")
         .as_str()
@@ -365,8 +350,8 @@ fn assert_range_facts(page: &mut Browser) {
     assert!(!text.contains("Playback"), "{text}");
     assert!(!text.contains("Bench"), "{text}");
     assert!(!text.contains("Camera"), "{text}");
-    let start = detail_utc(page, "Start time");
-    let end = detail_utc(page, "End time");
+    let start = detail_utc(page, "Start");
+    let end = detail_utc(page, "End");
     assert!(start.contains("2024-01-01"), "{start}");
     assert!(end.contains("2024-01-01"), "{end}");
 }
@@ -374,7 +359,7 @@ fn assert_range_facts(page: &mut Browser) {
 fn detail_utc(page: &mut Browser, label: &str) -> String {
     let label = serde_json::to_string(label).unwrap_or_default();
     page.eval(&format!(
-        "document.querySelector('#video-details dd[data-label={label}]')?.dataset.utc ?? ''"
+        "document.querySelector('#video-details [data-label={label}]')?.dataset.utc ?? ''"
     ))
     .as_str()
     .unwrap_or("")
@@ -611,10 +596,7 @@ fn assert_no_saved_stills(page: &mut Browser) {
     assert!(!view.contains("saved image"), "{view}");
     assert!(!view.contains("still image"), "{view}");
     assert!(!view.contains("saved still"), "{view}");
-    assert_eq!(
-        page.eval("document.getElementById('video-frame-at')?.textContent.trim()"),
-        serde_json::json!("Frame at time")
-    );
+    assert!(!view.contains("seek"), "{view}");
     assert_eq!(
         page.eval("document.getElementById('view-images')?.hasAttribute('hidden')"),
         serde_json::json!(true)
@@ -623,7 +605,7 @@ fn assert_no_saved_stills(page: &mut Browser) {
 
 fn detail_labels(page: &mut Browser) -> Vec<String> {
     let value = page.eval(
-        "[...document.querySelectorAll('#video-details dt')].map((el) => el.textContent.trim())",
+        "[...document.querySelectorAll('#video-details label')].map((el) => el.textContent.trim())",
     );
     value
         .as_array()
@@ -672,7 +654,6 @@ fn text(page: &mut Browser, id: &str) -> String {
 const NO_RECORDING: &str = "No recording covers the requested range.";
 const RECORDING_GAP: &str = "The recording contains a gap.";
 const CLIP_EXPIRED: &str = "The clip expired.";
-const LIVE_UNAVAILABLE: &str = "Live video is unavailable.";
 const INVALID: &str = "The video request is invalid.";
 const NOT_FOUND: &str = "The requested video was not found.";
 const UNAVAILABLE: &str = "Video is unavailable.";

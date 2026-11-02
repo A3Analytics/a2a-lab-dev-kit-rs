@@ -627,6 +627,7 @@ async fn live_disconnect_cancels_and_keeps_a_bounded_queue() {
 
 fn clip_metadata_keys() -> Vec<String> {
     [
+        "codec",
         "effective_range",
         "id",
         "media_type",
@@ -969,10 +970,9 @@ impl VideoProvider for ProbeVideos {
         request: FollowVideoRequest,
     ) -> impl Future<Output = Result<VideoFollow, A2aLabError>> + Send {
         let source_id = request.source_id().clone();
-        std::future::ready(VideoFollow::new(
+        std::future::ready(VideoFollow::new_mjpeg(
             VideoFollowId::new("follow-probe").unwrap(),
             source_id,
-            MJPEG_MEDIA_TYPE,
         ))
     }
 

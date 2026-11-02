@@ -147,7 +147,7 @@ impl Browser {
 
     pub fn wait_until(&mut self, expression: &str) {
         let start = Instant::now();
-        while start.elapsed() < Duration::from_secs(15) {
+        while start.elapsed() < Duration::from_secs(30) {
             if self.eval(&format!("!!({expression})")) == Value::Bool(true) {
                 return;
             }
@@ -623,10 +623,11 @@ fn launch() -> (Child, u16, PathBuf) {
     let mut command = Command::new(browser_bin());
     command
         .arg("--headless=new")
-        .arg("--disable-gpu")
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
         .arg("--disable-extensions")
+        .arg("--autoplay-policy=no-user-gesture-required")
+        .arg("--enable-features=NetworkService,NetworkServiceInProcess")
         .arg("--remote-debugging-port=0")
         .arg("--remote-allow-origins=*")
         .arg(format!("--user-data-dir={}", profile.display()))

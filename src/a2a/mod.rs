@@ -14,6 +14,8 @@ mod tck;
 mod web_ui;
 mod wire;
 
+pub(crate) use access::{AccessGate, auth_response, security_configuration_error};
+
 pub use auth::{AuthError, Authenticator, OidcAuthenticator, Principal};
 pub use client::{A2aClient, AgentMessageResponse};
 pub use message::{

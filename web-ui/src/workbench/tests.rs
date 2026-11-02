@@ -459,7 +459,7 @@ fn success_reply(operation: Operation) -> Reply {
             "requested_range": {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:00:01Z"},
             "effective_range": {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:00:01Z"},
             "media_type": "multipart/x-mixed-replace; type=image/jpeg",
-            "path": "/media/video-clips/clip-1"
+            "path": "/media/video-clips/clip-1/"
         })
     } else {
         json!({"items": [{"id": "item-1", "name": MARKUP}]})

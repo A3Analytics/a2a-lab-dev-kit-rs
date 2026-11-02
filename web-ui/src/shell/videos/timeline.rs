@@ -1,6 +1,7 @@
 //! Timeline selection, coverage drawing, and command cancellation.
 
 use dioxus::prelude::*;
+use wasm_bindgen::JsCast;
 use web_sys::AbortController;
 
 use super::{
@@ -63,6 +64,8 @@ pub(super) fn reselect_range() {
     };
     let mut next = ui.peek().clone();
     if next.reader.reselect() {
+        next.draft = None;
+        next.session = None;
         ui.set(next);
         playback::pause_element();
     }
@@ -76,10 +79,28 @@ fn play_at(at_us: i64) {
     let Some(track) = current_track() else {
         return;
     };
-    let Some(window) = track::window_at(&track, at_us) else {
+    let Some(mut ui) = bound() else {
         return;
     };
-    commit_window(window);
+    let mut next = ui.peek().clone();
+    if let Some(selection) = selection_window(&next)
+        && selection.duration_us() > track::PLAYBACK_WINDOW_US
+        && at_us >= selection.start_us
+        && at_us < selection.end_us
+    {
+        let Some(session) = track::session_in_selection(&track, selection, at_us) else {
+            return;
+        };
+        remember(&mut next, selection);
+        request_session(&mut next, session);
+        ui.set(next);
+        return;
+    }
+    let Some(session) = track::session_at(&track, at_us) else {
+        return;
+    };
+    ui.set(next);
+    commit_selection(session, Some(at_us));
 }
 
 pub(super) fn replay_retained_start() {
@@ -90,7 +111,7 @@ pub(super) fn replay_retained_start() {
         let Some(window) = track::initial_window(&track) else {
             return;
         };
-        commit_window(window);
+        commit_selection(window, Some(window.start_us));
     });
 }
 
@@ -98,21 +119,41 @@ pub(super) fn commit_established() {
     let Some(track) = current_track() else {
         return;
     };
-    let current = bound().and_then(|ui| ui.peek().draft);
-    let Some(window) = current.or_else(|| track::initial_window(&track)) else {
+    let newest = bound().and_then(|ui| ui.peek().reader.timeline.as_ref()?.newest_us);
+    let current = bound().and_then(|ui| displayed_window(&ui.peek()));
+    let Some(window) = track::establish(&track, current, newest) else {
         return;
     };
-    commit_window(window);
+    commit_selection(window, Some(window.start_us));
 }
 
-pub(super) fn commit_window(window: Window) {
+pub(super) fn commit_window(selection: Window) {
+    commit_selection(selection, Some(selection.start_us));
+}
+
+fn commit_selection(selection: Window, anchor: Option<i64>) {
+    let Some(track) = current_track() else {
+        return;
+    };
+    let anchor = anchor.unwrap_or(selection.start_us);
+    let session = if selection.duration_us() <= track::PLAYBACK_WINDOW_US {
+        selection
+    } else {
+        track::session_in_selection(&track, selection, anchor).unwrap_or(selection)
+    };
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
-    remember(&mut next, window);
-    let start = next.range_start.clone();
-    let end = next.range_end.clone();
+    remember(&mut next, selection);
+    request_session(&mut next, session);
+    ui.set(next);
+}
+
+fn request_session(next: &mut VideoUi, session: Window) {
+    next.session = Some(session);
+    let start = track::format_utc(session.start_us);
+    let end = track::format_utc(session.end_us);
     playback::abort();
     abort_commands();
     playback::set_paused(false);
@@ -120,13 +161,15 @@ pub(super) fn commit_window(window: Window) {
     let ticket = match next.reader.select_range(&start, &end) {
         Ok(ticket) => ticket,
         Err(_) => {
-            ui.set(next);
             playback::pause_element();
             return;
         }
     };
-    ui.set(next);
     launch_clip(ticket);
+}
+
+fn selection_window(state: &VideoUi) -> Option<Window> {
+    displayed_window(state)
 }
 
 pub(super) fn nudge(steps: i64, extend: bool) {
@@ -137,14 +180,15 @@ pub(super) fn nudge(steps: i64, extend: bool) {
         return;
     };
     let mut next = ui.peek().clone();
-    let Some(window) = next.draft.or_else(|| track::initial_window(&track)) else {
+    let newest = next
+        .reader
+        .timeline
+        .as_ref()
+        .and_then(|timeline| timeline.newest_us);
+    let Some(window) = displayed_window(&next).or_else(|| track::establish(&track, None, newest))
+    else {
         return;
     };
-    if next.draft.is_none() {
-        remember(&mut next, window);
-        ui.set(next);
-        return;
-    }
     remember(
         &mut next,
         if extend {
@@ -164,7 +208,13 @@ pub(super) fn jump_selection(to_start: bool) {
         return;
     };
     let mut next = ui.peek().clone();
-    let Some(window) = next.draft.or_else(|| track::initial_window(&track)) else {
+    let newest = next
+        .reader
+        .timeline
+        .as_ref()
+        .and_then(|timeline| timeline.newest_us);
+    let Some(window) = displayed_window(&next).or_else(|| track::establish(&track, None, newest))
+    else {
         return;
     };
     remember(&mut next, track::jump_window(&track, window, to_start));
@@ -249,10 +299,28 @@ pub(super) fn timeline_click(event: Event<MouseData>) {
     if SUPPRESS_CLICK.with(|cell| cell.replace(false)) {
         return;
     }
-    let Some(at_us) = us_at(event.data().client_coordinates().x) else {
+    let point = event.data().client_coordinates();
+    let Some(at_us) = interval_start_at(point.x, point.y).or_else(|| us_at(point.x)) else {
         return;
     };
     commit_at(at_us);
+}
+
+fn interval_start_at(x: f64, y: f64) -> Option<i64> {
+    let nodes = web_sys::window()?
+        .document()?
+        .query_selector_all("#video-timeline .video-interval")
+        .ok()?;
+    for index in 0..nodes.length() {
+        let element = nodes.get(index)?.dyn_into::<web_sys::Element>().ok()?;
+        let rect = element.get_bounding_client_rect();
+        if x < rect.left() || x > rect.right() || y < rect.top() || y > rect.bottom() {
+            continue;
+        }
+        let start = element.get_attribute("data-start")?;
+        return crate::videos::mjpeg::captured_us(&start);
+    }
+    None
 }
 
 pub(super) fn set_draft(window: Window) {
@@ -267,48 +335,48 @@ pub(super) fn set_draft(window: Window) {
 pub(super) fn commit_typed_range() {
     let start = field_to_utc(&session::control_value("video-range-start"));
     let end = field_to_utc(&session::control_value("video-range-end"));
+    commit_typed_bounds(&start, &end);
+}
+
+fn commit_typed_bounds(start: &str, end: &str) {
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
-    if let Ok(range) = videos::check_range(&start, &end)
-        && let Selection::Recorded {
-            start_us, end_us, ..
-        } = next.reader.selection
-        && start_us == range.start_us
-        && end_us == range.end_us
+    next.range_start = start.to_owned();
+    next.range_end = end.to_owned();
+    let Ok(range) = videos::check_range(start, end) else {
+        let _ = next.reader.select_range(start, end);
+        ui.set(next);
+        return;
+    };
+    let selection = Window {
+        start_us: range.start_us,
+        end_us: range.end_us,
+    };
+    if next.draft == Some(selection)
+        && next.session.is_some_and(|session| {
+            session.start_us == range.start_us && session.end_us <= range.end_us
+        })
     {
-        remember(&mut next, Window { start_us, end_us });
+        remember(&mut next, selection);
         ui.set(next);
         return;
     }
-    next.range_start = start.clone();
-    next.range_end = end.clone();
-    playback::abort();
-    abort_commands();
-    playback::set_paused(false);
-    playback::play_element();
-    let ticket = match next.reader.select_range(&start, &end) {
-        Ok(ticket) => ticket,
-        Err(_) => {
-            ui.set(next);
-            playback::pause_element();
-            return;
-        }
-    };
-    if let Selection::Recorded {
-        start_us, end_us, ..
-    } = next.reader.selection
-    {
-        remember(&mut next, Window { start_us, end_us });
-    }
     ui.set(next);
-    launch_clip(ticket);
+    commit_selection(selection, Some(selection.start_us));
 }
 
 fn remember(next: &mut VideoUi, window: Window) {
+    remember_window(next, window);
+}
+
+pub(super) fn remember_window(next: &mut VideoUi, window: Window) {
     next.range_start = track::format_utc(window.start_us);
     next.range_end = track::format_utc(window.end_us);
+    next.range_draft_start = display_instant(&next.range_start);
+    next.range_draft_end = display_instant(&next.range_end);
+    next.range_error.clear();
     next.draft = Some(window);
 }
 
@@ -316,22 +384,6 @@ pub(super) fn current_track() -> Option<Track> {
     let ui = bound()?;
     let timeline = ui.peek().reader.timeline.clone()?;
     Some(track::coverage_track(&timeline))
-}
-
-pub(super) fn frame_cursor_now() -> Option<String> {
-    let ui = bound()?;
-    let state = ui.peek().clone();
-    frame_cursor(&state)
-}
-
-pub(super) fn frame_cursor(state: &VideoUi) -> Option<String> {
-    let timeline = state.reader.timeline.as_ref()?;
-    let track = track::coverage_track(timeline);
-    let at = state
-        .draft
-        .map(|window| window.start_us)
-        .or_else(|| track::initial_window(&track).map(|window| window.start_us))?;
-    track::retained_instant(&track, at)
 }
 
 pub(super) fn us_at(client_x: f64) -> Option<i64> {
@@ -354,6 +406,13 @@ pub(super) fn timeline_ratio(client_x: f64) -> Option<f64> {
 pub(super) fn displayed_window(state: &VideoUi) -> Option<Window> {
     if let Some(window) = state.draft {
         return Some(window);
+    }
+    if !state.range_start.is_empty() && !state.range_end.is_empty() {
+        let start_us = crate::videos::mjpeg::captured_us(&state.range_start)?;
+        let end_us = crate::videos::mjpeg::captured_us(&state.range_end)?;
+        if end_us > start_us {
+            return Some(Window { start_us, end_us });
+        }
     }
     match &state.reader.selection {
         Selection::Recorded {
@@ -441,24 +500,16 @@ pub(super) fn slider_text(window: Option<Window>) -> String {
 }
 
 pub(super) fn format_local(us: i64) -> String {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(us as f64 / 1_000.0));
-        if date.get_time().is_nan() {
-            return track::format_utc(us);
-        }
-        let year = date.get_full_year() as i32;
-        let month = date.get_month() as u32 + 1;
-        let day = date.get_date() as u32;
-        let hour = date.get_hours() as u32;
-        let minute = date.get_minutes() as u32;
-        let second = date.get_seconds() as u32;
-        format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        track::format_utc(us)
-    }
+    pretty_utc(&track::format_utc(us))
+}
+
+fn pretty_utc(stored: &str) -> String {
+    let body = stored.trim_end_matches('Z');
+    let Some((date, time)) = body.split_once('T') else {
+        return stored.to_owned();
+    };
+    let clock = time.split('.').next().unwrap_or(time);
+    format!("{date} {clock} UTC")
 }
 
 pub(super) fn display_instant(stored: &str) -> String {
@@ -478,15 +529,21 @@ pub(super) fn field_to_utc(value: &str) -> String {
     if let Some(us) = crate::videos::mjpeg::captured_us(value) {
         return track::format_utc(us);
     }
-    local_text_to_utc(value).unwrap_or_else(|| value.to_owned())
+    naive_text_to_utc(value).unwrap_or_else(|| value.to_owned())
 }
 
-fn local_text_to_utc(value: &str) -> Option<String> {
+fn naive_text_to_utc(value: &str) -> Option<String> {
+    let value = value.trim();
+    let value = value
+        .strip_suffix(" UTC")
+        .or_else(|| value.strip_suffix(" utc"))
+        .unwrap_or(value)
+        .trim();
     let (date, time) = value.split_once('T').or_else(|| value.split_once(' '))?;
     let mut date_parts = date.split('-');
-    let year: u32 = date_parts.next()?.parse().ok()?;
-    let month: i32 = date_parts.next()?.parse().ok()?;
-    let day: i32 = date_parts.next()?.parse().ok()?;
+    let year: i32 = date_parts.next()?.parse().ok()?;
+    let month: u32 = date_parts.next()?.parse().ok()?;
+    let day: u32 = date_parts.next()?.parse().ok()?;
     if date_parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
@@ -495,50 +552,27 @@ fn local_text_to_utc(value: &str) -> Option<String> {
         None => (time, ""),
     };
     let mut clock_parts = clock.split(':');
-    let hour: i32 = clock_parts.next()?.parse().ok()?;
-    let minute: i32 = clock_parts.next()?.parse().ok()?;
-    let second: i32 = clock_parts.next()?.parse().ok()?;
-    if clock_parts.next().is_some()
-        || !(0..=23).contains(&hour)
-        || !(0..=59).contains(&minute)
-        || !(0..=59).contains(&second)
-    {
+    let hour: u32 = clock_parts.next()?.parse().ok()?;
+    let minute: u32 = clock_parts.next()?.parse().ok()?;
+    let second: u32 = clock_parts.next()?.parse().ok()?;
+    if clock_parts.next().is_some() || hour > 23 || minute > 59 || second > 59 {
         return None;
     }
     let digits: String = fraction
         .chars()
-        .take_while(|c| c.is_ascii_digit())
+        .take_while(|ch| ch.is_ascii_digit())
         .collect();
     if digits.len() != fraction.len() || digits.len() > 6 {
         return None;
     }
-    let padded = format!("{digits:0<6}");
-    let millis: i32 = padded.get(0..3)?.parse().ok()?;
-    let extra: i32 = padded.get(3..6)?.parse().ok()?;
-    #[cfg(target_arch = "wasm32")]
-    {
-        let date = js_sys::Date::new_with_year_month_day_hr_min_sec_milli(
-            year,
-            month - 1,
-            day,
-            hour,
-            minute,
-            second,
-            millis,
-        );
-        if date.get_time().is_nan() {
-            return None;
-        }
-        let us = (date.get_time().round() as i64)
-            .saturating_mul(1_000)
-            .saturating_add(extra as i64);
-        Some(track::format_utc(us))
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (year, month, day, hour, minute, second, millis, extra);
-        None
-    }
+    let frac = if digits.is_empty() {
+        String::new()
+    } else {
+        format!(".{digits}")
+    };
+    let rfc = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}{frac}Z");
+    crate::videos::mjpeg::captured_us(&rfc)?;
+    Some(rfc)
 }
 
 pub(super) fn playhead_style(state: &VideoUi) -> Option<String> {

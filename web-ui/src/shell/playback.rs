@@ -9,16 +9,17 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     AbortController, Blob, BlobPropertyBag, CanvasRenderingContext2d, Event, EventTarget,
-    HtmlCanvasElement, HtmlImageElement, HtmlVideoElement, ImageBitmap,
-    ReadableStreamDefaultReader,
+    HtmlCanvasElement, HtmlVideoElement, ImageBitmap, ReadableStreamDefaultReader,
 };
 
+use crate::videos::StreamPlan;
 use crate::videos::mjpeg::{self, Event as MjpegEvent, Frame as MjpegFrame, Parser as MjpegParser};
+
+use super::hls_playback;
 
 const CANVAS: &str = "video-canvas";
 const PLAYER: &str = "video-player";
 const BOUND: &str = "__a2aMediaBound";
-const GAP_THRESHOLD_US: i64 = 1_500_000;
 
 type MediaListener = Closure<dyn FnMut(Event)>;
 
@@ -55,6 +56,9 @@ thread_local! {
     static ON_GAP_SKIPPED: RefCell<Option<GapSkippedCallback>> = const { RefCell::new(None) };
     static START_PAUSED: Cell<bool> = const { Cell::new(false) };
     static IGNORE_PAUSE: Cell<u32> = const { Cell::new(0) };
+    static MJPEG_PACE: Cell<u32> = const { Cell::new(1) };
+    static HLS_PLAYBACK_RATE: Cell<f64> = const { Cell::new(1.0) };
+    static REBASE_PACING: Cell<bool> = const { Cell::new(false) };
     static PLAY_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
     static PAUSE_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
 }
@@ -65,7 +69,7 @@ pub fn bind(playing: PlayingCallback, frame: FrameCallback, gap_skipped: GapSkip
     ON_GAP_SKIPPED.with(|slot| *slot.borrow_mut() = Some(gap_skipped));
 }
 
-pub fn bind_media(on_play: fn(), on_pause: fn()) {
+pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
     attach_player();
     let Some(video) = player() else {
         return;
@@ -90,16 +94,26 @@ pub fn bind_media(on_play: fn(), on_pause: fn()) {
         return;
     }
     if let Some(window) = web_sys::window() {
+        let resume = Closure::wrap(Box::new(move || {
+            set_paused(false);
+            play_element();
+            on_play();
+        }) as Box<dyn FnMut()>);
         let _ = js_sys::Reflect::set(
             &window,
             &JsValue::from_str("__a2aNativePlay"),
-            play.as_ref().unchecked_ref(),
+            resume.as_ref().unchecked_ref(),
         );
+        let force_pause = Closure::wrap(Box::new(move || {
+            on_force_pause();
+        }) as Box<dyn FnMut()>);
         let _ = js_sys::Reflect::set(
             &window,
             &JsValue::from_str("__a2aNativePause"),
-            pause.as_ref().unchecked_ref(),
+            force_pause.as_ref().unchecked_ref(),
         );
+        resume.forget();
+        force_pause.forget();
     }
     mark_bound(&video);
     PLAY_LISTENER.with(|slot| *slot.borrow_mut() = Some(play));
@@ -107,6 +121,9 @@ pub fn bind_media(on_play: fn(), on_pause: fn()) {
 }
 
 pub fn attach_player() {
+    if hls_playback::is_active() {
+        return;
+    }
     let Some(canvas) = canvas() else {
         return;
     };
@@ -121,9 +138,24 @@ pub fn attach_player() {
     if let Ok(stream) = canvas.capture_stream() {
         video.set_src_object(Some(&stream));
     }
-    if !video.paused() {
+    if session_wants_play() {
+        play_element();
+    } else if !video.paused() {
         pause_element();
     }
+}
+
+fn session_wants_play() -> bool {
+    !START_PAUSED.with(Cell::get)
+        && SESSION.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .is_some_and(|session| !session.paused)
+        })
+}
+
+pub fn start_paused() -> bool {
+    START_PAUSED.with(Cell::get)
 }
 
 pub fn play_element() {
@@ -143,23 +175,36 @@ pub fn pause_element() {
     }
 }
 
+pub fn toggle_element() {
+    let Some(video) = player() else {
+        return;
+    };
+    if video.paused() {
+        play_element();
+    } else {
+        pause_element();
+    }
+}
+
 pub fn take_ignore_pause() -> bool {
     IGNORE_PAUSE.with(|cell| {
         let n = cell.get();
         if n == 0 {
             return false;
         }
-        cell.set(n - 1);
+        cell.set(0);
         true
     })
 }
 
 pub fn abort() {
+    hls_playback::teardown();
     SESSION.with(|slot| {
         if let Some(session) = slot.borrow_mut().take() {
             session.abort.abort();
         }
     });
+    reset_surface();
 }
 
 pub fn set_paused(paused: bool) {
@@ -171,12 +216,60 @@ pub fn set_paused(paused: bool) {
     });
 }
 
+pub fn apply_plan(plan: &StreamPlan) {
+    MJPEG_PACE.with(|slot| slot.set(plan.mjpeg_pace.max(1)));
+    HLS_PLAYBACK_RATE.with(|slot| slot.set(plan.hls_playback_rate.max(0.1)));
+    apply_hls_playback_rate();
+    rebase_pacing();
+}
+
+fn mjpeg_pace() -> u32 {
+    MJPEG_PACE.with(Cell::get).max(1)
+}
+
+fn rebase_pacing() {
+    REBASE_PACING.with(|slot| slot.set(true));
+}
+
+pub(crate) fn apply_hls_playback_rate() {
+    let Some(video) = player() else {
+        return;
+    };
+    video.set_playback_rate(HLS_PLAYBACK_RATE.with(Cell::get));
+}
+
+fn maybe_rebase_pacing(
+    origin_capture: &mut Option<i64>,
+    origin_wall: &mut Option<f64>,
+    prev_capture: &mut Option<i64>,
+) {
+    if !REBASE_PACING.with(Cell::get) {
+        return;
+    }
+    REBASE_PACING.with(|slot| slot.set(false));
+    *origin_capture = None;
+    *origin_wall = None;
+    *prev_capture = None;
+}
+
 pub fn live(generation: u32) -> bool {
     SESSION.with(|slot| {
         slot.borrow()
             .as_ref()
             .is_some_and(|session| session.generation == generation)
     })
+}
+
+pub fn end_session(generation: u32) {
+    SESSION.with(|slot| {
+        if slot
+            .borrow()
+            .as_ref()
+            .is_some_and(|session| session.generation == generation)
+        {
+            slot.borrow_mut().take();
+        }
+    });
 }
 
 pub async fn run(ticket: StreamTicket, path: String, secret: Option<String>) -> StreamOutcome {
@@ -192,7 +285,13 @@ pub async fn run(ticket: StreamTicket, path: String, secret: Option<String>) -> 
             paused,
         });
     });
+    if !paused {
+        play_element();
+    }
     let from_start = path.starts_with(crate::videos::CLIP_PATH_PREFIX);
+    if crate::videos::speed::is_hls_fetch_path(&path) {
+        return hls_playback::run(ticket, path, secret, &abort, from_start).await;
+    }
     let outcome = play(
         ticket.generation,
         &path,
@@ -211,11 +310,6 @@ pub async fn run(ticket: StreamTicket, path: String, secret: Option<String>) -> 
         }
     });
     outcome
-}
-
-pub async fn paint_frame(media_type: &str, data: &str) -> bool {
-    let url = format!("data:{media_type};base64,{data}");
-    paint_data_url(&url).await
 }
 
 async fn play(
@@ -436,14 +530,14 @@ async fn drain(
             queue.clear();
             return Err(StreamOutcome::Stopped { generation });
         }
+        maybe_rebase_pacing(origin_capture, origin_wall, prev_capture);
         wait_if_paused(generation).await;
         if !live(generation) {
             queue.clear();
             return Err(StreamOutcome::Stopped { generation });
         }
-        let jumped = prev_capture
-            .map(|previous| frame.captured_us.saturating_sub(previous) > GAP_THRESHOLD_US)
-            .unwrap_or(false);
+        let jumped =
+            prev_capture.is_some_and(|previous| mjpeg::is_capture_gap(previous, frame.captured_us));
         if jumped {
             *origin_capture = Some(frame.captured_us);
             *origin_wall = Some(js_sys::Date::now());
@@ -452,13 +546,17 @@ async fn drain(
         let capture = *origin_capture.get_or_insert(frame.captured_us);
         let wall = *origin_wall.get_or_insert_with(js_sys::Date::now);
         if reduced && *painted && !jumped {
-            notify_frame(generation, &frame.captured_at);
             *prev_capture = Some(frame.captured_us);
             continue;
         }
         if !jumped {
-            let due = wall + ((frame.captured_us - capture) as f64 / 1_000.0);
-            sleep_until(due).await;
+            let pace = mjpeg_pace();
+            if mjpeg::is_late(frame.captured_us, capture, wall, js_sys::Date::now(), pace) {
+                notify_frame(generation, &frame.captured_at);
+                *prev_capture = Some(frame.captured_us);
+                continue;
+            }
+            sleep_until(mjpeg::due_wall_ms(frame.captured_us, capture, wall, pace)).await;
             if !live(generation) {
                 queue.clear();
                 return Err(StreamOutcome::Stopped { generation });
@@ -466,14 +564,14 @@ async fn drain(
         }
         if paint_jpeg(&frame.jpeg).await {
             *painted = true;
-            notify_frame(generation, &frame.captured_at);
         }
+        notify_frame(generation, &frame.captured_at);
         *prev_capture = Some(frame.captured_us);
     }
     Ok(())
 }
 
-async fn wait_if_paused(generation: u32) {
+pub(crate) async fn wait_if_paused(generation: u32) {
     while SESSION.with(|slot| {
         slot.borrow()
             .as_ref()
@@ -524,40 +622,6 @@ async fn paint_jpeg(jpeg: &[u8]) -> bool {
     draw_bitmap(&bitmap)
 }
 
-async fn paint_data_url(url: &str) -> bool {
-    let Ok(image) = HtmlImageElement::new() else {
-        return false;
-    };
-    let loaded = js_sys::Promise::new(&mut |resolve, reject| {
-        let onload = wasm_bindgen::closure::Closure::once_into_js(move || {
-            let _ = resolve.call0(&JsValue::NULL);
-        });
-        let onerror = wasm_bindgen::closure::Closure::once_into_js(move || {
-            let _ = reject.call0(&JsValue::NULL);
-        });
-        image.set_onload(Some(onload.unchecked_ref()));
-        image.set_onerror(Some(onerror.unchecked_ref()));
-        image.set_src(url);
-    });
-    if JsFuture::from(loaded).await.is_err() {
-        return false;
-    }
-    let Some(canvas) = canvas() else {
-        return false;
-    };
-    canvas.set_width(image.natural_width());
-    canvas.set_height(image.natural_height());
-    let Some(ctx) = context(&canvas) else {
-        return false;
-    };
-    ctx.draw_image_with_html_image_element(&image, 0.0, 0.0)
-        .is_ok()
-        && {
-            attach_player();
-            true
-        }
-}
-
 fn draw_bitmap(bitmap: &ImageBitmap) -> bool {
     let Some(canvas) = canvas() else {
         return false;
@@ -573,7 +637,7 @@ fn draw_bitmap(bitmap: &ImageBitmap) -> bool {
         }
 }
 
-fn bump_ignore_pause() {
+pub(crate) fn bump_ignore_pause() {
     IGNORE_PAUSE.with(|slot| slot.set(slot.get().saturating_add(1)));
 }
 
@@ -594,6 +658,13 @@ fn player() -> Option<HtmlVideoElement> {
         .get_element_by_id(PLAYER)?
         .dyn_into()
         .ok()
+}
+
+fn reset_surface() {
+    if let Some(canvas) = canvas() {
+        canvas.set_width(0);
+        canvas.set_height(0);
+    }
 }
 
 fn canvas() -> Option<HtmlCanvasElement> {
@@ -619,7 +690,7 @@ fn prefers_reduced_motion() -> bool {
         .is_some_and(|query| query.matches())
 }
 
-fn notify_playing(generation: u32) {
+pub(crate) fn notify_playing(generation: u32) {
     ON_PLAYING.with(|slot| {
         if let Some(callback) = *slot.borrow() {
             callback(generation);
@@ -627,7 +698,7 @@ fn notify_playing(generation: u32) {
     });
 }
 
-fn notify_gap_skipped(generation: u32) {
+pub(crate) fn notify_gap_skipped(generation: u32) {
     ON_GAP_SKIPPED.with(|slot| {
         if let Some(callback) = *slot.borrow() {
             callback(generation);
@@ -635,7 +706,13 @@ fn notify_gap_skipped(generation: u32) {
     });
 }
 
-fn notify_frame(generation: u32, captured_at: &str) {
+pub(crate) fn notify_frame(generation: u32, captured_at: &str) {
+    if let Some(status) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("video-status"))
+    {
+        let _ = status.set_attribute("data-frame-time", captured_at);
+    }
     ON_FRAME.with(|slot| {
         if let Some(callback) = *slot.borrow() {
             callback(generation, captured_at);
@@ -673,7 +750,7 @@ async fn sleep_until(deadline: f64) {
     }
 }
 
-async fn sleep_ms(ms: i32) {
+pub(crate) async fn sleep_ms(ms: i32) {
     if ms <= 0 {
         return;
     }

@@ -14,7 +14,7 @@ pub const WEB_UI_PATH: &str = "/ui/";
 
 const ENTRY_CACHE: &str = "no-cache";
 const ASSET_CACHE: &str = "public, max-age=31536000, immutable";
-const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 
 mod packed {
     include!(concat!(env!("OUT_DIR"), "/web_ui_assets.rs"));

@@ -1,23 +1,29 @@
 //! Timeline-centered video reader.
 //!
-//! One selection follows the newest point or plays an earlier bounded clip.
+//! One selection follows the newest point or plays a bounded clip.
 //! Saved images stay in the Images primitive.
 
 #![allow(dead_code)]
 
+pub(crate) mod hls;
 pub(crate) mod mjpeg;
 pub(crate) mod track;
 
 mod domain;
+pub(crate) mod speed;
 
 #[allow(unused_imports)]
 pub use domain::{
     CAPTURED_AT_HEADER, CLIP_PATH_PREFIX, CheckedRange, ClipHandle, Failure, FrameAtTime, Interval,
-    LIVE_PATH_PREFIX, LiveHandle, MAX_CLIP_US, MEDIA_CACHE_CONTROL, MJPEG_MEDIA_TYPE, RangeFault,
-    Selection, SourceCapability, Timeline, check_coverage, check_range, clip_command,
-    follow_command, frame_at_time_command, frame_at_time_label, frame_instant, interpret_clip,
-    interpret_follow, interpret_frame_at_time, interpret_timeline, parse_source_capability,
-    stable_failure, timeline_command,
+    LIVE_PATH_PREFIX, LiveHandle, MEDIA_CACHE_CONTROL, MJPEG_MEDIA_TYPE, RangeFault, Selection,
+    SourceCapability, Timeline, check_coverage, check_range, clip_command, follow_command,
+    frame_at_time_command, frame_at_time_label, frame_instant, interpret_clip, interpret_follow,
+    interpret_frame_at_time, interpret_timeline, parse_source_capability, stable_failure,
+    timeline_command,
+};
+#[allow(unused_imports)]
+pub use speed::{
+    Playback8xMetadata, PlaybackSpeed, StreamPlan, is_hls_session, join_gateway, plan_stream,
 };
 
 use crate::images::SourcePhase;
@@ -248,7 +254,9 @@ impl Reader {
         self.failure = None;
         self.live = Some(follow);
         self.selection = Selection::Live;
-        self.playback = Playback::Connecting;
+        if self.playback != Playback::Paused {
+            self.playback = Playback::Connecting;
+        }
         true
     }
 
@@ -261,7 +269,9 @@ impl Reader {
         self.fault.clear();
         self.failure = None;
         self.clip = Some(clip);
-        self.playback = Playback::Connecting;
+        if self.playback != Playback::Paused {
+            self.playback = Playback::Connecting;
+        }
         true
     }
 
@@ -329,6 +339,9 @@ impl Reader {
             return false;
         }
         self.frame_time = captured_at.to_owned();
+        if self.playback_note == "Skipped gap." {
+            self.playback_note.clear();
+        }
         true
     }
 
@@ -456,7 +469,11 @@ impl Reader {
     }
 
     pub fn has_media(&self) -> bool {
-        self.clip.is_some() || self.live.is_some() || self.frame.is_some()
+        if self.clip.is_some() || self.live.is_some() || self.frame.is_some() {
+            return true;
+        }
+        self.playback == Playback::Connecting
+            && matches!(self.selection, Selection::Live | Selection::Recorded { .. })
     }
 
     pub fn set_details_open(&mut self, open: bool) {
@@ -472,7 +489,7 @@ impl Reader {
         };
         Details {
             open: true,
-            facts: vec![fact("Start time", start), fact("End time", end)],
+            facts: vec![fact("Start", start), fact("End", end)],
         }
     }
 
@@ -579,7 +596,7 @@ fn settle_failure(reader: &mut Reader, failure: Failure) {
     reader.validation.clear();
 }
 
-fn video_range(reader: &Reader) -> Option<(String, String)> {
+pub(crate) fn video_range(reader: &Reader) -> Option<(String, String)> {
     if let Some(clip) = &reader.clip {
         return Some((clip.effective_start.clone(), clip.effective_end.clone()));
     }
@@ -617,6 +634,13 @@ pub fn live_button_label(_reader: &Reader) -> &'static str {
     "LIVE"
 }
 
+pub fn shows_live_button(reader: &Reader) -> bool {
+    reader
+        .timeline
+        .as_ref()
+        .is_some_and(|timeline| timeline.live_available)
+}
+
 pub fn begin_auto_playback(reader: &mut Reader) -> Option<AutoPlayback> {
     if reader.selection != Selection::Empty {
         return None;
@@ -639,15 +663,13 @@ pub fn begin_auto_playback(reader: &mut Reader) -> Option<AutoPlayback> {
 }
 
 pub fn playback_status(reader: &Reader) -> String {
-    if !reader.playback_note.is_empty() {
-        return reader.playback_note.clone();
-    }
     match reader.playback {
-        Playback::Idle => String::new(),
-        Playback::Connecting => "Connecting.".to_owned(),
-        Playback::Playing => "Playing.".to_owned(),
         Playback::Paused => "Paused.".to_owned(),
         Playback::Stopped => "Stopped.".to_owned(),
+        Playback::Idle if reader.playback_note.is_empty() => String::new(),
+        Playback::Connecting if reader.playback_note.is_empty() => "Connecting.".to_owned(),
+        Playback::Playing if reader.playback_note.is_empty() => "Playing.".to_owned(),
+        Playback::Idle | Playback::Connecting | Playback::Playing => reader.playback_note.clone(),
     }
 }
 
@@ -668,15 +690,13 @@ mod tests {
     use serde_json::{Value, json};
 
     #[test]
-    fn clip_range_requires_utc_bounds_within_one_minute() {
+    fn clip_range_requires_utc_bounds() {
         assert_eq!(clip_range("", "").unwrap_err(), "Enter a start and an end.");
-        assert_eq!(
-            clip_range("2024-01-01T00:00:00", "2024-01-01T00:01:01").unwrap_err(),
-            "The clip range must be at most 60 seconds."
-        );
-        let (start, end) = clip_range("2024-01-01T00:00:00", "2024-01-01T00:00:10").unwrap();
+        let (start, end) = clip_range("2024-01-01T00:00:00", "2024-01-01T00:01:01").unwrap();
         assert!(start.ends_with('Z'));
         assert!(end.ends_with('Z'));
+        let hour = clip_range("2024-01-01T00:00:00", "2024-01-01T01:00:00").unwrap();
+        assert!(hour.1.ends_with('Z'));
         let command = clip_command("cam", &start, &end);
         assert_eq!(command["operation"], "get_video_clip");
         assert!(command["params"].get("data").is_none());
@@ -716,17 +736,17 @@ mod tests {
     #[test]
     fn clip_json_rejects_embedded_bytes_and_non_relative_paths() {
         let ok = interpret_clip(
-            &clip_reply(sample_clip_json("clip-1", "/media/video-clips/clip-1")),
+            &clip_reply(sample_clip_json("clip-1", "/media/video-clips/clip-1/")),
             None,
         )
         .unwrap();
-        assert_eq!(ok.path, "/media/video-clips/clip-1");
+        assert_eq!(ok.path, "/media/video-clips/clip-1/");
         let with_data = json!({
             "operation": "get_video_clip",
             "result": {
                 "id": "clip-1",
                 "source_id": "cam",
-                "path": "/media/video-clips/clip-1",
+                "path": "/media/video-clips/clip-1/",
                 "requested_range": range(),
                 "effective_range": range(),
                 "media_type": "multipart/x-mixed-replace; type=image/jpeg",
@@ -737,7 +757,7 @@ mod tests {
         let query = interpret_clip(
             &clip_reply(sample_clip_json(
                 "clip-1",
-                "/media/video-clips/clip-1?token=secret",
+                "/media/video-clips/clip-1/?token=secret",
             )),
             None,
         );
@@ -748,7 +768,9 @@ mod tests {
         ClipHandle {
             id: id.to_owned(),
             source_id: "cam".to_owned(),
-            path: format!("/media/video-clips/{id}"),
+            path: format!("/media/video-clips/{id}/"),
+            media_type: MJPEG_MEDIA_TYPE.to_owned(),
+            playback_8x: Playback8xMetadata::absent(),
             requested_start: "2024-01-01T00:00:00Z".to_owned(),
             requested_end: "2024-01-01T00:00:02Z".to_owned(),
             effective_start: "2024-01-01T00:00:00Z".to_owned(),

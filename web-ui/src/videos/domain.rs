@@ -12,16 +12,16 @@ use crate::inventory::Fault;
 use crate::metrics::{self, QueryRange};
 
 use super::mjpeg::captured_us;
+use super::speed::Playback8xMetadata;
 
 pub const CLIP_PATH_PREFIX: &str = "/media/video-clips/";
 pub const LIVE_PATH_PREFIX: &str = "/media/video-live/";
-pub const MAX_CLIP_US: i64 = 60 * 1_000_000;
 pub const MJPEG_MEDIA_TYPE: &str = "multipart/x-mixed-replace; type=image/jpeg";
 pub const MEDIA_CACHE_CONTROL: &str = "no-store";
 pub const CAPTURED_AT_HEADER: &str = "X-Captured-At";
 
 pub fn frame_at_time_label() -> &'static str {
-    "Frame at time"
+    "Seek"
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,6 +47,7 @@ pub struct LiveHandle {
     pub source_id: String,
     pub path: String,
     pub media_type: String,
+    pub playback_8x: Playback8xMetadata,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +55,8 @@ pub struct ClipHandle {
     pub id: String,
     pub source_id: String,
     pub path: String,
+    pub media_type: String,
+    pub playback_8x: Playback8xMetadata,
     pub requested_start: String,
     pub requested_end: String,
     pub effective_start: String,
@@ -165,7 +168,6 @@ pub enum RangeFault {
     MissingBounds,
     NotUtc,
     Reversed,
-    TooLong,
     NoRecording,
     RecordingGap,
 }
@@ -176,7 +178,6 @@ impl RangeFault {
             Self::MissingBounds => "Enter a start and an end.",
             Self::NotUtc => "Enter a UTC time range.",
             Self::Reversed => "The start must be before the end.",
-            Self::TooLong => "The clip range must be at most 60 seconds.",
             Self::NoRecording => "no_recording",
             Self::RecordingGap => "recording_gap",
         }
@@ -279,9 +280,6 @@ pub fn check_range(start: &str, end: &str) -> Result<CheckedRange, RangeFault> {
     let (end, end_us) = utc_point(end).ok_or(RangeFault::NotUtc)?;
     if start_us >= end_us {
         return Err(RangeFault::Reversed);
-    }
-    if end_us.saturating_sub(start_us) > MAX_CLIP_US {
-        return Err(RangeFault::TooLong);
     }
     Ok(CheckedRange {
         start,
@@ -409,7 +407,7 @@ fn parse_follow(payload: &str) -> Result<LiveHandle, Fault> {
     let id = required(&result, "id")?;
     let path = required(&result, "path")?;
     let media_type = required(&result, "media_type")?;
-    if media_type != MJPEG_MEDIA_TYPE || !safe_media_path(&path, LIVE_PATH_PREFIX, &id) {
+    if !safe_session_media(&path, LIVE_PATH_PREFIX, &id, &media_type) {
         return Err(Fault::Malformed);
     }
     Ok(LiveHandle {
@@ -417,6 +415,7 @@ fn parse_follow(payload: &str) -> Result<LiveHandle, Fault> {
         source_id: required(&result, "source_id")?,
         path,
         media_type,
+        playback_8x: parse_playback_8x(result.get("playback_8x")),
     })
 }
 
@@ -425,7 +424,7 @@ fn parse_clip(payload: &str) -> Result<ClipHandle, Fault> {
     let id = required(&result, "id")?;
     let path = required(&result, "path")?;
     let media_type = required(&result, "media_type")?;
-    if media_type != MJPEG_MEDIA_TYPE || !safe_media_path(&path, CLIP_PATH_PREFIX, &id) {
+    if !safe_session_media(&path, CLIP_PATH_PREFIX, &id, &media_type) {
         return Err(Fault::Malformed);
     }
     let requested = range_of(&result, "requested_range")?;
@@ -434,6 +433,8 @@ fn parse_clip(payload: &str) -> Result<ClipHandle, Fault> {
         id,
         source_id: required(&result, "source_id")?,
         path,
+        media_type,
+        playback_8x: parse_playback_8x(result.get("playback_8x")),
         requested_start: requested.0,
         requested_end: requested.1,
         effective_start: effective.0,
@@ -537,7 +538,7 @@ fn embeds_media(value: &Value) -> bool {
 }
 
 fn safe_media_path(path: &str, prefix: &str, id: &str) -> bool {
-    let expected = format!("{prefix}{id}");
+    let expected = format!("{prefix}{id}/");
     path == expected
         && safe_id(id)
         && !path.contains('?')
@@ -545,6 +546,22 @@ fn safe_media_path(path: &str, prefix: &str, id: &str) -> bool {
         && !path.contains("://")
         && !path.starts_with("//")
         && !path.contains('@')
+}
+
+fn safe_session_media(path: &str, prefix: &str, id: &str, media_type: &str) -> bool {
+    if !safe_media_path(path, prefix, id) {
+        return false;
+    }
+    matches!(
+        media_type,
+        MJPEG_MEDIA_TYPE | "application/vnd.apple.mpegurl" | "application/x-mpegURL"
+    )
+}
+
+fn parse_playback_8x(value: Option<&Value>) -> Playback8xMetadata {
+    value
+        .and_then(Playback8xMetadata::parse)
+        .unwrap_or_else(Playback8xMetadata::absent)
 }
 
 fn safe_id(id: &str) -> bool {

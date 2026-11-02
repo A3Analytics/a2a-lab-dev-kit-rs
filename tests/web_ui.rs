@@ -287,6 +287,7 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert!(!policy.contains("fonts.googleapis.com"));
     assert!(!policy.contains("fonts.gstatic.com"));
     assert!(policy.contains("img-src 'self' data:"));
+    assert!(policy.contains("media-src blob:"));
     assert!(policy.contains("connect-src 'self'"));
     assert!(!policy.contains("unsafe-inline"));
     assert!(!policy.contains('*'));

@@ -77,6 +77,7 @@ fn interactions(base: &str) {
 }
 
 fn drag_interval(page: &mut Browser, from_ratio: f64, to_ratio: f64) {
+    page.focus("video-timeline");
     let bounds = page.eval(
         "(() => { const el = document.getElementById('video-interval-0'); const rect = el.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; })()",
     );
@@ -90,7 +91,7 @@ fn type_range(page: &mut Browser, start: &str, end: &str) {
     let start = serde_json::to_string(start).unwrap_or_default();
     let end = serde_json::to_string(end).unwrap_or_default();
     let entered = page.eval(&format!(
-        "(() => {{ const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement)) return false; start.value = {start}; end.value = {end}; start.dispatchEvent(new Event('input', {{ bubbles: true }})); end.dispatchEvent(new Event('input', {{ bubbles: true }})); return true; }})()"
+        "(() => {{ const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); const apply = document.getElementById('video-range-apply'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; start.value = {start}; end.value = {end}; start.dispatchEvent(new Event('input', {{ bubbles: true }})); end.dispatchEvent(new Event('input', {{ bubbles: true }})); apply.click(); return true; }})()"
     ));
     assert_eq!(entered, serde_json::json!(true), "range fields missing");
 }

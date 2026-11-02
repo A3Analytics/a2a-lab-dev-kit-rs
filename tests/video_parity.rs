@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
     A2aClient, A2aLabApi, A2aLabCommand, A2aLabError, A2aLabResult, A2aLabService, A2aServer,
-    GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult, ListVideoSourcesRequest,
-    MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, McpLab, McpServer, MemoryLogs, MemoryMetrics,
-    MemoryTasks, MemoryVideos, Page, PageRequest, TckMalformedVideoRequests, TimeRange,
-    UtcTimestamp, VideoClip, VideoSource, VideoSourceId, bind_local, video_clip_path,
+    DvrTrackId, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, HttpAuthSecurityScheme,
+    ListVideoSourcesRequest, MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, McpLab, McpServer,
+    MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, Page, PageRequest, SecurityScheme,
+    TckMalformedVideoRequests, TimeRange, UtcTimestamp, VideoClip, VideoCodec, VideoProvider,
+    VideoSource, VideoSourceId, bind_local, video_clip_path,
 };
 
 const JPEG: &[u8] = &[
@@ -325,7 +327,7 @@ async fn compare_malformed(endpoints: &Endpoints) {
     compare(
         endpoints,
         "get_video_clip over limit",
-        Op::Clip(TckMalformedVideoRequests::get_video_clip_over_limit(
+        Op::Clip(TckMalformedVideoRequests::get_video_clip_empty_range(
             cam(),
             timestamp("2024-01-01T00:00:00Z"),
         )),
@@ -521,3 +523,5 @@ fn sila_utc(
         }),
     }
 }
+
+include!("support/control_plane_parity.rs");

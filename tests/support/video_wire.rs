@@ -60,6 +60,46 @@ async fn listen_mcp(lab: Arc<dyn A2aLabApi>) -> (String, std::net::SocketAddr) {
     (format!("http://{address}/mcp"), address)
 }
 
+async fn listen_a2a_auth(lab: Arc<dyn A2aLabApi>) -> String {
+    let (listener, address) = bind_local().await.unwrap();
+    let server = A2aServer::new(&lab).with_security(
+        [(
+            "bearerAuth".to_owned(),
+            SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
+                scheme: "bearer".to_owned(),
+                description: None,
+                bearer_format: None,
+            }),
+        )]
+        .into(),
+        vec![[("bearerAuth".to_owned(), Vec::new())].into()],
+    );
+    tokio::spawn(async move {
+        server.listen(listener).await.unwrap();
+    });
+    format!("http://{address}")
+}
+
+async fn listen_mcp_auth(lab: Arc<dyn A2aLabApi>) -> (String, std::net::SocketAddr) {
+    let (listener, address) = bind_local().await.unwrap();
+    let server = McpServer::new(&lab).with_security(
+        [(
+            "bearerAuth".to_owned(),
+            SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
+                scheme: "bearer".to_owned(),
+                description: None,
+                bearer_format: None,
+            }),
+        )]
+        .into(),
+        vec![[("bearerAuth".to_owned(), Vec::new())].into()],
+    );
+    tokio::spawn(async move {
+        server.serve_http(listener).await.unwrap();
+    });
+    (format!("http://{address}/mcp"), address)
+}
+
 fn assert_no_media_bytes(value: &Value) {
     let text = value.to_string();
     assert!(value.get("data").is_none(), "{text}");

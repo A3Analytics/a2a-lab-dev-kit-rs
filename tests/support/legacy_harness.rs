@@ -275,7 +275,7 @@ async fn compare_malformed(endpoints: &Endpoints) {
     compare(
         endpoints,
         "get_video_clip over limit",
-        Op::Clip(TckMalformedVideoRequests::get_video_clip_over_limit(
+        Op::Clip(TckMalformedVideoRequests::get_video_clip_empty_range(
             cam(),
             timestamp("2024-01-01T00:00:00Z"),
         )),

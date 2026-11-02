@@ -1,19 +1,26 @@
 //! Video provider interface.
 
+use futures_util::StreamExt;
+
+use crate::PackagedMediaAsset;
 use crate::error::A2aLabError;
 use crate::id::{VideoClipId, VideoFollowId};
 use crate::page::Page;
+use crate::videos::media_asset::ResolvedMediaAsset;
 use crate::videos::{
-    FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip, VideoClipStream, VideoFollow,
-    VideoLiveStream, VideoSource, VideoTimeline,
+    DEFAULT_MJPEG_BOUNDARY, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip,
+    VideoClipStream, VideoFollow, VideoLiveStream, VideoSource, VideoTimeline, encode_mjpeg_end,
+    encode_mjpeg_part, mjpeg_content_type,
 };
 
 /// Lists video sources, reads frames at a time, timelines, live follow, and clips.
 ///
+/// The first six methods are the [`crate::videos::VideoCatalog`] control plane.
 /// Implementations own recording, indexing, retention, clip expiry, and live
-/// subscription. This crate does not capture cameras. Saved images are not part
-/// of this provider.
+/// subscription. They are not required to generate HLS playlists, CMAF segments,
+/// MP4 files, HTTP responses, or authentication behavior. Saved images are not
+/// part of this provider.
 pub trait VideoProvider: Send + Sync {
     /// Returns the video sources this agent can read.
     fn list_video_sources(
@@ -22,39 +29,46 @@ pub trait VideoProvider: Send + Sync {
     ) -> impl Future<Output = Result<Page<VideoSource>, A2aLabError>> + Send;
 
     /// Returns the retained frame at `request.at`.
-    ///
-    /// This is a frame-at-time lookup. Ties choose the earlier frame. An optional
-    /// maximum delta is honored. Empty coverage, a request outside retained
-    /// coverage, or a coverage gap is `not_found`. Coverage is never silently clamped.
     fn get_video_frame_at(
         &self,
         request: GetVideoFrameAtRequest,
     ) -> impl Future<Output = Result<GetVideoFrameAtResult, A2aLabError>> + Send;
 
-    /// Prepares a short-lived clip handle for a half-open `[start, end)` range.
-    ///
-    /// A range with no retained recording is [`A2aLabError::no_recording`]. A range
-    /// that crosses a gap between retained intervals is [`A2aLabError::recording_gap`].
-    /// Invalid, reversed, or over-limit ranges are `invalid`. JSON metadata never
-    /// includes video bytes.
+    /// Prepares an opaque finite playback session for a half-open `[start, end)` range.
     fn get_video_clip(
         &self,
         request: GetVideoClipRequest,
     ) -> impl Future<Output = Result<VideoClip, A2aLabError>> + Send;
 
-    /// Opens a bounded JPEG frame stream for a previously prepared clip.
-    ///
-    /// An expired handle is [`A2aLabError::clip_expired`]. An unknown handle is `not_found`.
+    /// Opens a bounded frame stream for a previously prepared finite session.
     fn open_video_clip(
         &self,
         id: &VideoClipId,
     ) -> impl Future<Output = Result<VideoClipStream, A2aLabError>> + Send;
 
-    /// Returns ordered retained coverage for one source.
+    /// Packages the finite retained body for one prepared clip handle.
     ///
-    /// Temporally continuous coverage is one logical interval. Genuine temporal
-    /// gaps remain separate intervals. The result has no storage-file or partition
-    /// boundary.
+    /// SiLA LabVideos reads this export while building `BinaryDownload`. The default
+    /// implementation materializes a closed MJPEG multipart body from
+    /// [`Self::open_video_clip`].
+    fn export_finite_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> impl Future<Output = Result<PackagedMediaAsset, A2aLabError>> + Send {
+        let id = id.clone();
+        async move {
+            let mut stream = self.open_video_clip(&id).await?;
+            let mut body = Vec::new();
+            while let Some(frame) = stream.next().await {
+                let frame = frame?;
+                body.extend_from_slice(&encode_mjpeg_part(&frame, DEFAULT_MJPEG_BOUNDARY));
+            }
+            body.extend_from_slice(&encode_mjpeg_end(DEFAULT_MJPEG_BOUNDARY));
+            PackagedMediaAsset::new(mjpeg_content_type(DEFAULT_MJPEG_BOUNDARY), body)
+        }
+    }
+
+    /// Returns ordered retained coverage for one source.
     fn get_video_timeline(
         &self,
         _request: GetVideoTimelineRequest,
@@ -63,10 +77,7 @@ pub trait VideoProvider: Send + Sync {
         std::future::ready(timeline_unavailable())
     }
 
-    /// Prepares a live-follow handle for frames captured after the stream opens.
-    ///
-    /// A source that cannot be followed is [`A2aLabError::live_unavailable`].
-    /// The handle contains no frame bytes.
+    /// Prepares an opaque live playback session for frames captured after the stream opens.
     fn follow_video(
         &self,
         _request: FollowVideoRequest,
@@ -75,16 +86,33 @@ pub trait VideoProvider: Send + Sync {
         std::future::ready(timeline_unavailable())
     }
 
-    /// Opens the JPEG frame stream for a previously prepared live-follow handle.
-    ///
-    /// Unknown handles are `not_found`. The stream stays open across the retained
-    /// live edge and ends when the consumer drops it or the provider stops the source.
+    /// Opens the frame stream for a previously prepared live session.
     fn open_video_follow(
         &self,
         _id: &VideoFollowId,
     ) -> impl Future<Output = Result<VideoLiveStream, A2aLabError>> + Send {
         let _ = self;
         std::future::ready(timeline_unavailable())
+    }
+
+    /// Re-anchors a prepared live session to a retained instant.
+    fn rebase_video_follow(
+        &self,
+        _id: &VideoFollowId,
+        _anchor: crate::time::UtcTimestamp,
+    ) -> impl Future<Output = Result<VideoFollow, A2aLabError>> + Send {
+        let _ = self;
+        std::future::ready(timeline_unavailable())
+    }
+
+    /// Resolves one gateway asset for a prepared live session.
+    fn resolve_live_playback_asset(
+        &self,
+        id: &VideoFollowId,
+        relative_path: Option<&str>,
+    ) -> impl Future<Output = Result<ResolvedMediaAsset, A2aLabError>> + Send {
+        let _ = (self, id, relative_path);
+        std::future::ready(Err(A2aLabError::not_found("video follow", id.to_string())))
     }
 }
 

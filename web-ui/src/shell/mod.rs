@@ -2,6 +2,7 @@
 
 mod app;
 mod chat;
+mod hls_playback;
 mod http;
 mod images;
 mod inventory;

@@ -12,10 +12,11 @@ use a2a_lab_dev_kit::sila::api::{
 };
 use a2a_lab_dev_kit::sila::{SilaIdentity, SilaServer};
 use a2a_lab_dev_kit::{
-    A2aLabError, A2aLabService, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, MJPEG_MEDIA_TYPE, MemoryLogs, MemoryMetrics,
-    MemoryTasks, MemoryVideos, Page, UtcTimestamp, VideoClip, VideoClipId, VideoClipStream,
-    VideoProvider, VideoSource, VideoSourceId, VideoTimeline,
+    A2aLabError, A2aLabService, DvrTrackId, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest, MJPEG_MEDIA_TYPE,
+    MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, Page, TimeRange, UtcTimestamp, VideoClip,
+    VideoClipId, VideoClipStream, VideoCodec, VideoProvider, VideoSource, VideoSourceId,
+    VideoTimeline,
 };
 use futures_util::StreamExt;
 use tonic::Code;
@@ -607,6 +608,199 @@ async fn assert_sila_maps_recording_gap_from_provider() {
         .unwrap_err();
     assert!(defined(&gap, "RecordingGap"));
     assert!(!defined(&gap, "NoRecording"));
+}
+
+const H264_INIT: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0x67];
+const H265_INIT: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0x40, 0x01];
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn sila_finite_exports_use_shared_packager_without_gateway_assets() {
+    let mjpeg = catalog().await;
+    let server = serve_videos(mjpeg).await;
+    let channel = channel_of(&server).await;
+    let mut client = LabVideosClient::new(channel.clone());
+    let mut downloads = BinaryDownloadClient::new(channel);
+    let mjpeg_clip = client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("cam")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 0, 2))),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(mjpeg_clip.media_type.unwrap().value, MJPEG_MEDIA_TYPE);
+    let requested = mjpeg_clip.requested_range.unwrap();
+    let effective = mjpeg_clip.effective_range.unwrap();
+    expect_utc(
+        requested
+            .time_range
+            .as_ref()
+            .unwrap()
+            .start
+            .as_ref()
+            .unwrap(),
+        0,
+    );
+    expect_utc(
+        requested.time_range.as_ref().unwrap().end.as_ref().unwrap(),
+        2,
+    );
+    expect_utc(
+        effective
+            .time_range
+            .as_ref()
+            .unwrap()
+            .start
+            .as_ref()
+            .unwrap(),
+        0,
+    );
+    expect_utc(
+        effective.time_range.as_ref().unwrap().end.as_ref().unwrap(),
+        2,
+    );
+    let body = download(&mut downloads, &transfer_id(mjpeg_clip.clip.unwrap())).await;
+    assert!(body.starts_with(b"--"));
+    assert!(body.ends_with(b"--\r\n"));
+    assert!(!body.starts_with(b"#EXTM3U"));
+    assert!(String::from_utf8_lossy(&body).contains("X-Captured-At:"));
+
+    let h264 = encoded_clip_catalog(VideoCodec::H264, H264_INIT, "h264").await;
+    let h264_server = serve_videos(h264).await;
+    let h264_channel = channel_of(&h264_server).await;
+    let mut h264_client = LabVideosClient::new(h264_channel.clone());
+    let mut h264_downloads = BinaryDownloadClient::new(h264_channel);
+    let mp4_clip = h264_client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("enc")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 0, 2))),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(mp4_clip.media_type.unwrap().value, "video/mp4");
+    let mp4 = download(&mut h264_downloads, &transfer_id(mp4_clip.clip.unwrap())).await;
+    assert!(mp4.windows(4).any(|window| window == b"ftyp"));
+    assert!(!mp4.starts_with(b"#EXTM3U"));
+
+    let h265 = encoded_clip_catalog(VideoCodec::H265, H265_INIT, "hevc").await;
+    let h265_server = serve_videos(h265).await;
+    let h265_channel = channel_of(&h265_server).await;
+    let mut h265_client = LabVideosClient::new(h265_channel);
+    let h265_clip = h265_client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("enc")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 0, 2))),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(h265_clip.media_type.unwrap().value, "video/mp4");
+
+    let span = span_catalog().await;
+    let span_server = serve_videos(span).await;
+    let span_channel = channel_of(&span_server).await;
+    let mut span_client = LabVideosClient::new(span_channel.clone());
+    let mut span_downloads = BinaryDownloadClient::new(span_channel);
+    let hour = span_client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("span")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 0, 1, 0))),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let hour_body = download(&mut span_downloads, &transfer_id(hour.clip.unwrap())).await;
+    assert_eq!(stamps_in_multipart(&hour_body).len(), 60);
+    assert!(hour_body.ends_with(b"--\r\n"));
+
+    let hour_plus = span_client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("span")),
+            range: Some(range(utc(2024, 1, 1, 0, 0, 0), utc(2024, 1, 1, 1, 0, 0))),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let hour_plus_body = download(&mut span_downloads, &transfer_id(hour_plus.clip.unwrap())).await;
+    assert_eq!(stamps_in_multipart(&hour_plus_body).len(), 61);
+    assert!(hour_plus_body.ends_with(b"--\r\n"));
+    assert!(!hour_plus_body.starts_with(b"#EXTM3U"));
+
+    let reversed = span_client
+        .get_video_clip(a2a_lab_dev_kit::sila::api::GetVideoClipParameters {
+            source_id: Some(text("span")),
+            range: Some(range(utc(2024, 1, 1, 0, 1, 0), utc(2024, 1, 1, 0, 0, 0))),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(reversed.code(), Code::Aborted);
+    assert!(!defined(&reversed, "NoRecording"));
+}
+
+async fn encoded_clip_catalog(codec: VideoCodec, init: &[u8], track: &str) -> MemoryVideos {
+    let videos = MemoryVideos::new();
+    videos
+        .insert_source(
+            VideoSource::with_capabilities(
+                VideoSourceId::new("enc").unwrap(),
+                "enc",
+                "encoded",
+                None,
+                None,
+                640,
+                480,
+                30,
+                "video/mp4",
+                vec![codec],
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let source = VideoSourceId::new("enc").unwrap();
+    let track_id = DvrTrackId::new(track).unwrap();
+    videos
+        .insert_dvr_track(source.clone(), track_id.clone(), codec, init.to_vec())
+        .await
+        .unwrap();
+    for second in 0..3 {
+        let at = UtcTimestamp::parse(&format!("2024-01-01T00:00:0{second}Z")).unwrap();
+        videos
+            .insert_dvr_segment(
+                source.clone(),
+                track_id.clone(),
+                TimeRange::new(at, at.saturating_add_micros(1_000_000)).unwrap(),
+                second == 0,
+                codec,
+                vec![0x01, u8::try_from(second).unwrap()],
+            )
+            .await
+            .unwrap();
+    }
+    videos
+}
+
+async fn span_catalog() -> MemoryVideos {
+    let videos = MemoryVideos::new();
+    add_source(&videos, "span").await;
+    let start = UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap();
+    for second in 0_i32..=60 {
+        let at = start.saturating_add_micros(i64::from(second) * 1_000_000);
+        videos
+            .insert_frame(VideoSourceId::new("span").unwrap(), at, JPEG.to_vec())
+            .await
+            .unwrap();
+    }
+    videos
+}
+
+fn stamps_in_multipart(body: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(body)
+        .lines()
+        .filter_map(|line| line.strip_prefix("X-Captured-At: ").map(str::to_string))
+        .collect()
 }
 
 struct ClipGapRefused;

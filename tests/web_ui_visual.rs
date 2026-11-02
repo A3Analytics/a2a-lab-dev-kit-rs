@@ -738,7 +738,7 @@ impl Kind {
             Self::Metrics => &["Latency", "Data CSV", "ms"],
             Self::Tasks => &["Home", "This task has no input fields."],
             Self::Images => &["Bench", "No images for this source."],
-            Self::Videos => &["Frame at time", "Cam"],
+            Self::Videos => &["Speed", "Cam"],
             Self::Chat => &["visual row", "echo:visual row"],
             Self::Workbench => &["pump ready", "Command"],
         }

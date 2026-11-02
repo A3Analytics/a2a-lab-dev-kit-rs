@@ -1,7 +1,8 @@
-//! Authenticated MJPEG downloads.
+//! Authenticated MJPEG downloads and session-relative packaged assets.
 //!
 //! `GET /media/video-clips/{id}` is a finite clip. `GET /media/video-live/{id}`
-//! follows frames captured after the handle opens. A2A and MCP mount [`router`]
+//! follows frames captured after the handle opens. Nested paths serve packaged
+//! HLS/CMAF assets through [`MediaAssetProvider`]. A2A and MCP mount [`router`]
 //! and build absolute URLs with [`clip_url`] and [`live_url`]. Failures are
 //! JSON `{"error":{"code","message"}}` where `code` is [`A2aLabError::code`].
 
@@ -10,6 +11,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
+use axum::http::Uri;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -23,9 +25,15 @@ use crate::error::A2aLabError;
 use crate::id::{VideoClipId, VideoFollowId};
 use crate::service::A2aLabApi;
 use crate::time::UtcTimestamp;
+use crate::videos::local_media::LocalMediaAssetProvider;
+use crate::videos::media_asset::{
+    ClipAssetRequest, LiveAssetRequest, ResolvedMediaAsset, SharedMediaAssetProvider,
+    media_query_carries_credential,
+};
 use crate::videos::model::{
     DEFAULT_MJPEG_BOUNDARY, encode_mjpeg_end, encode_mjpeg_part, mjpeg_content_type,
 };
+use crate::videos::packager::PackagedMediaAsset;
 use crate::videos::{
     VideoClipStream, VideoFrame, VideoLiveStream, video_clip_path, video_live_path,
 };
@@ -36,37 +44,155 @@ use crate::videos::{
 /// that part with the producer.
 const LIVE_PART_QUEUE: usize = 1;
 
-/// Serves clip and live-follow downloads.
-///
-/// Callers apply their own access gate. This router does not add a public
-/// route, a shared frame cache, or byte-range responses.
-pub fn router(lab: Arc<dyn A2aLabApi>) -> Router {
-    Router::new()
-        .route("/media/video-clips/{id}", get(get_clip))
-        .route("/media/video-live/{id}", get(get_live))
-        .with_state(lab)
+#[derive(Clone)]
+struct MediaRouterState {
+    assets: SharedMediaAssetProvider,
 }
 
-async fn get_clip(State(lab): State<Arc<dyn A2aLabApi>>, Path(id): Path<String>) -> Response {
+/// Serves clip and live-follow downloads through `assets`.
+///
+/// Callers apply their own access gate. This router rejects credential queries
+/// on ungated listeners and adds `Cache-Control: no-store` plus
+/// `X-Content-Type-Options: nosniff` on every response.
+pub fn router(assets: SharedMediaAssetProvider) -> Router {
+    Router::new()
+        .route("/media/video-clips/{id}", get(get_clip_root))
+        .route("/media/video-clips/{id}/", get(get_clip_root))
+        .route("/media/video-clips/{id}/{*asset}", get(get_clip_asset))
+        .route("/media/video-live/{id}", get(get_live_root))
+        .route("/media/video-live/{id}/", get(get_live_root))
+        .route("/media/video-live/{id}/{*asset}", get(get_live_asset))
+        .with_state(MediaRouterState { assets })
+}
+
+/// Default router using a local provider over `lab`.
+pub fn router_for_lab(lab: Arc<dyn A2aLabApi>) -> Router {
+    router(Arc::new(LocalMediaAssetProvider::new(lab)))
+}
+
+/// Returns true for gateway paths that require media security headers on every response.
+#[must_use]
+pub fn is_gated_media_path(path: &str) -> bool {
+    path.starts_with(crate::videos::VIDEO_CLIP_PATH_PREFIX)
+        || path.starts_with(crate::videos::VIDEO_LIVE_PATH_PREFIX)
+}
+
+/// Applies `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+pub fn apply_media_security_headers(response: &mut Response) {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+}
+
+async fn get_clip_root(
+    State(state): State<MediaRouterState>,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> Response {
+    serve_clip(&state, &uri, id, None).await
+}
+
+async fn get_clip_asset(
+    State(state): State<MediaRouterState>,
+    uri: Uri,
+    Path((id, asset)): Path<(String, String)>,
+) -> Response {
+    serve_clip(&state, &uri, id, Some(asset)).await
+}
+
+async fn get_live_root(
+    State(state): State<MediaRouterState>,
+    uri: Uri,
+    Path(id): Path<String>,
+) -> Response {
+    serve_live(&state, &uri, id, None).await
+}
+
+async fn get_live_asset(
+    State(state): State<MediaRouterState>,
+    uri: Uri,
+    Path((id, asset)): Path<(String, String)>,
+) -> Response {
+    serve_live(&state, &uri, id, Some(asset)).await
+}
+
+async fn serve_clip(
+    state: &MediaRouterState,
+    uri: &Uri,
+    id: String,
+    asset: Option<String>,
+) -> Response {
+    if media_query_carries_credential(uri.query()) {
+        return media_error(&A2aLabError::invalid("query", "must not carry credentials"));
+    }
     let id = match VideoClipId::new(id) {
         Ok(id) => id,
         Err(error) => return media_error(&error),
     };
-    match lab.open_video_clip(&id).await {
-        Ok(frames) => mjpeg_response(Body::from_stream(clip_parts(frames))),
+    let relative = asset.as_deref();
+    match state
+        .assets
+        .resolve_clip_asset(ClipAssetRequest {
+            id: &id,
+            relative_path: relative,
+        })
+        .await
+    {
+        Ok(ResolvedMediaAsset::Bytes(bytes)) => asset_response(&bytes),
+        Ok(ResolvedMediaAsset::ClipStream(frames)) => {
+            mjpeg_response(Body::from_stream(clip_parts(frames)))
+        }
+        Ok(ResolvedMediaAsset::LiveStream(_)) => {
+            media_error(&A2aLabError::invalid("id", "clip session mismatch"))
+        }
         Err(error) => media_error(&error),
     }
 }
 
-async fn get_live(State(lab): State<Arc<dyn A2aLabApi>>, Path(id): Path<String>) -> Response {
+async fn serve_live(
+    state: &MediaRouterState,
+    uri: &Uri,
+    id: String,
+    asset: Option<String>,
+) -> Response {
+    if media_query_carries_credential(uri.query()) {
+        return media_error(&A2aLabError::invalid("query", "must not carry credentials"));
+    }
     let id = match VideoFollowId::new(id) {
         Ok(id) => id,
         Err(error) => return media_error(&error),
     };
-    match lab.open_video_follow(&id).await {
-        Ok(frames) => mjpeg_response(Body::from_stream(live_parts(frames))),
+    let relative = asset.as_deref();
+    match state
+        .assets
+        .resolve_live_asset(LiveAssetRequest {
+            id: &id,
+            relative_path: relative,
+        })
+        .await
+    {
+        Ok(ResolvedMediaAsset::Bytes(bytes)) => asset_response(&bytes),
+        Ok(ResolvedMediaAsset::LiveStream(frames)) => {
+            mjpeg_response(Body::from_stream(live_parts(frames)))
+        }
+        Ok(ResolvedMediaAsset::ClipStream(_)) => {
+            media_error(&A2aLabError::invalid("id", "live session mismatch"))
+        }
         Err(error) => media_error(&error),
     }
+}
+
+fn asset_response(asset: &PackagedMediaAsset) -> Response {
+    let mut response = Response::new(Body::from(asset.bytes().to_vec()));
+    *response.status_mut() = StatusCode::OK;
+    if let Ok(content_type) = HeaderValue::from_str(asset.content_type()) {
+        response.headers_mut().insert(CONTENT_TYPE, content_type);
+    }
+    apply_media_security_headers(&mut response);
+    response
 }
 
 fn mjpeg_response(body: Body) -> Response {
@@ -77,12 +203,10 @@ fn mjpeg_response(body: Body) -> Response {
 }
 
 fn apply_mjpeg_headers(response: &mut Response) {
-    let headers = response.headers_mut();
     if let Ok(content_type) = HeaderValue::from_str(&mjpeg_content_type(DEFAULT_MJPEG_BOUNDARY)) {
-        headers.insert(CONTENT_TYPE, content_type);
+        response.headers_mut().insert(CONTENT_TYPE, content_type);
     }
-    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    apply_media_security_headers(response);
 }
 
 fn clip_parts(frames: VideoClipStream) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
@@ -190,12 +314,7 @@ fn media_error(error: &A2aLabError) -> Response {
     });
     let mut response = body.to_string().into_response();
     *response.status_mut() = status;
-    response
-        .headers_mut()
-        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
-        .headers_mut()
-        .insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    apply_media_security_headers(&mut response);
     response
 }
 
@@ -219,18 +338,46 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::{Duration, Instant};
 
-    use super::{LIVE_PART_QUEUE, live_parts, live_url};
+    use axum::body::Body;
+    use axum::http::header::{CACHE_CONTROL, X_CONTENT_TYPE_OPTIONS};
+    use axum::response::Response;
+
+    use super::{
+        LIVE_PART_QUEUE, apply_media_security_headers, is_gated_media_path, live_parts, live_url,
+    };
     use crate::error::A2aLabError;
     use crate::id::VideoFollowId;
     use crate::time::UtcTimestamp;
     use crate::videos::VideoFrame;
+    use crate::videos::media_asset::{media_query_carries_credential, validate_media_asset_path};
 
     #[test]
     fn live_url_joins_the_origin_to_the_relative_path() {
         let id = VideoFollowId::new("follow-1").unwrap();
         assert_eq!(
             live_url("http://127.0.0.1:9/", &id),
-            "http://127.0.0.1:9/media/video-live/follow-1"
+            "http://127.0.0.1:9/media/video-live/follow-1/"
+        );
+    }
+
+    #[test]
+    fn gated_media_paths_and_queries_are_detected() {
+        assert!(is_gated_media_path("/media/video-clips/clip-1/"));
+        assert!(is_gated_media_path("/media/video-live/follow-1/index.m3u8"));
+        assert!(!is_gated_media_path("/ui/"));
+        assert!(media_query_carries_credential(Some("access_token=secret")));
+        assert!(!media_query_carries_credential(Some("cursor=abc")));
+        assert!(validate_media_asset_path("../init.mp4").is_err());
+    }
+
+    #[test]
+    fn media_security_headers_are_applied() {
+        let mut response = Response::new(Body::empty());
+        apply_media_security_headers(&mut response);
+        assert_eq!(response.headers().get(CACHE_CONTROL).unwrap(), "no-store");
+        assert_eq!(
+            response.headers().get(X_CONTENT_TYPE_OPTIONS).unwrap(),
+            "nosniff"
         );
     }
 

@@ -3,13 +3,20 @@ use std::collections::BTreeSet;
 use futures_util::{Stream, StreamExt};
 use schemars::JsonSchema;
 
+#[path = "support/dvr_store_contract.rs"]
+mod dvr_store_contract;
+
+#[path = "support/packager_contract.rs"]
+mod packager_contract;
+
 use a2a_lab_dev_kit::{
     A2aLabApi, A2aLabCommand, A2aLabError, A2aLabResult, A2aLabService, FollowVideoRequest,
     GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult, GetVideoTimelineRequest,
     Image, ImageDescriptor, ImageId, ImageSourceId, JsonObject, ListVideoSourcesRequest,
-    MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, MemoryLogs, MemoryMetrics, MemoryTasks,
-    TimeRange, UtcTimestamp, VideoAvailability, VideoClipId, VideoFollow, VideoFollowId,
-    VideoFrame, VideoProvider, VideoSource, VideoSourceId, VideoTimeline, video_live_path,
+    MJPEG_MEDIA_TYPE, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos,
+    TckMalformedVideoRequests, TimeRange, UtcTimestamp, VideoAvailability, VideoCatalog, VideoClip,
+    VideoClipId, VideoCodec, VideoFollow, VideoFollowId, VideoFrame, VideoProvider, VideoSource,
+    VideoSourceId, VideoTimeline, video_live_path,
 };
 
 const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xD9];
@@ -182,17 +189,32 @@ fn timeline_json_hides_storage_boundaries_and_rejects_unknown_fields() {
 }
 
 #[test]
+#[allow(clippy::cognitive_complexity)]
 fn live_follow_metadata_is_an_opaque_relative_mjpeg_path() {
-    let follow = VideoFollow::new(
-        VideoFollowId::new("follow-1").unwrap(),
-        source_id("cam"),
-        MJPEG_MEDIA_TYPE,
-    )
-    .unwrap();
-    assert_eq!(follow.path(), "/media/video-live/follow-1");
+    let follow =
+        VideoFollow::new_mjpeg(VideoFollowId::new("follow-1").unwrap(), source_id("cam")).unwrap();
+    assert_eq!(follow.path(), "/media/video-live/follow-1/");
     assert_eq!(follow.path(), video_live_path(follow.id()));
+    assert_eq!(follow.codec(), VideoCodec::Mjpeg);
     assert_eq!(follow.media_type(), MJPEG_MEDIA_TYPE);
-    assert!(VideoFollow::new(follow.id().clone(), source_id("cam"), "video/mp4").is_err());
+    assert!(
+        VideoFollow::new(
+            follow.id().clone(),
+            source_id("cam"),
+            VideoCodec::Mjpeg,
+            "video/mp4",
+        )
+        .is_err()
+    );
+    assert!(
+        VideoFollow::new(
+            VideoFollowId::new("follow-h265").unwrap(),
+            source_id("cam"),
+            VideoCodec::H265,
+            "application/vnd.apple.mpegurl",
+        )
+        .is_ok()
+    );
 
     let value = serde_json::to_value(&follow).unwrap();
     assert_eq!(
@@ -200,6 +222,7 @@ fn live_follow_metadata_is_an_opaque_relative_mjpeg_path() {
         BTreeSet::from([
             "id".to_owned(),
             "source_id".to_owned(),
+            "codec".to_owned(),
             "media_type".to_owned(),
             "path".to_owned(),
         ])
@@ -212,11 +235,12 @@ fn live_follow_metadata_is_an_opaque_relative_mjpeg_path() {
     assert!(!follow.path().contains('#'));
 
     for path in [
-        "https://camera.example/media/video-live/follow-1",
-        "/media/video-live/follow-1?access_token=secret",
-        "/media/video-live/follow-1#fragment",
-        "//camera.example/media/video-live/follow-1",
-        "media/video-live/follow-1",
+        "https://camera.example/media/video-live/follow-1/",
+        "/media/video-live/follow-1/?access_token=secret",
+        "/media/video-live/follow-1/#fragment",
+        "//camera.example/media/video-live/follow-1/",
+        "media/video-live/follow-1/",
+        "/media/video-live/../other/",
     ] {
         let mut rejected = value.clone();
         rejected["path"] = serde_json::json!(path);
@@ -271,7 +295,7 @@ fn video_availability_reasons_round_trip_without_parsing_messages() {
 }
 
 #[test]
-fn legacy_video_json_shapes_and_clip_limit_stay_compatible() {
+fn catalog_clip_requests_accept_long_retained_ranges() {
     let source = VideoSource::new(
         source_id("cam"),
         "Camera",
@@ -285,18 +309,8 @@ fn legacy_video_json_shapes_and_clip_limit_stay_compatible() {
     )
     .unwrap();
     let source_json = serde_json::to_value(&source).unwrap();
-    assert_eq!(
-        object_keys(&source_json),
-        BTreeSet::from([
-            "id".to_owned(),
-            "name".to_owned(),
-            "description".to_owned(),
-            "width".to_owned(),
-            "height".to_owned(),
-            "fps".to_owned(),
-            "media_type".to_owned(),
-        ])
-    );
+    assert!(source_json.get("capabilities").is_some());
+    assert_eq!(source.capabilities(), &[VideoCodec::Mjpeg]);
     let restored = serde_json::from_value::<VideoSource>(source_json).unwrap();
     assert_eq!(restored, source);
 
@@ -357,22 +371,111 @@ fn legacy_video_json_shapes_and_clip_limit_stay_compatible() {
     );
 
     let start = timestamp("2024-01-01T00:00:00Z");
-    let limit = i64::try_from(MAX_VIDEO_CLIP_DURATION_US).unwrap();
+    let one_hour = 3_600_000_000_i64;
     assert!(
         GetVideoClipRequest::new(
             source_id("cam"),
-            TimeRange::new(start, start.saturating_add_micros(limit)).unwrap(),
+            TimeRange::new(start, start.saturating_add_micros(one_hour)).unwrap(),
         )
         .is_ok()
     );
     assert!(
         GetVideoClipRequest::new(
             source_id("cam"),
-            TimeRange::new(start, start.saturating_add_micros(limit + 1)).unwrap(),
+            TimeRange::new(start, start.saturating_add_micros(one_hour + 1)).unwrap(),
+        )
+        .is_ok()
+    );
+    assert!(
+        TckMalformedVideoRequests::get_video_clip_empty_range(source_id("cam"), start)
+            .check()
+            .is_err()
+    );
+    let _ = VideoClipId::new("clip-1").unwrap();
+}
+
+#[test]
+fn source_capabilities_reject_malformed_lists() {
+    let id = source_id("cam");
+    assert!(
+        VideoSource::with_capabilities(
+            id.clone(),
+            "Cam",
+            "bench",
+            None,
+            None,
+            640,
+            480,
+            30,
+            "video/mp4",
+            vec![VideoCodec::H264],
+        )
+        .is_ok()
+    );
+    assert!(
+        VideoSource::with_capabilities(
+            id.clone(),
+            "Cam",
+            "bench",
+            None,
+            None,
+            640,
+            480,
+            30,
+            MJPEG_MEDIA_TYPE,
+            Vec::new(),
         )
         .is_err()
     );
-    let _ = VideoClipId::new("clip-1").unwrap();
+    assert!(
+        VideoSource::with_capabilities(
+            id,
+            "Cam",
+            "bench",
+            None,
+            None,
+            640,
+            480,
+            30,
+            MJPEG_MEDIA_TYPE,
+            vec![VideoCodec::Mjpeg, VideoCodec::Mjpeg],
+        )
+        .is_err()
+    );
+    let encoded = serde_json::json!({
+        "id": "cam",
+        "name": "Cam",
+        "description": "bench",
+        "width": 640,
+        "height": 480,
+        "fps": 30,
+        "media_type": "video/mp4",
+        "capabilities": ["not_a_codec"]
+    });
+    assert!(serde_json::from_value::<VideoSource>(encoded).is_err());
+}
+
+#[test]
+fn finite_session_json_is_metadata_with_gateway_root() {
+    let clip = VideoClip::new_mjpeg(
+        VideoClipId::new("clip-1").unwrap(),
+        source_id("cam"),
+        range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"),
+        range("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z"),
+    )
+    .unwrap();
+    assert!(clip.path().starts_with("/media/video-clips/clip-1/"));
+    let value = serde_json::to_value(&clip).unwrap();
+    for absent in ["data", "jpeg", "bytes", "bearer", "authorization", "token"] {
+        assert!(value.get(absent).is_none(), "{absent}");
+    }
+    assert!(!value.to_string().contains("://"));
+}
+
+#[test]
+fn video_catalog_is_implemented_for_providers() {
+    fn assert_catalog<T: VideoCatalog>(_value: T) {}
+    assert_catalog(MemoryVideos::new());
 }
 
 #[test]
@@ -402,11 +505,22 @@ fn video_schema_exposes_timeline_and_preserves_legacy_contracts() {
         BTreeSet::from([
             "id".to_owned(),
             "source_id".to_owned(),
+            "codec".to_owned(),
+            "media_type".to_owned(),
+            "path".to_owned(),
+            "playback_8x".to_owned(),
+        ])
+    );
+    assert_eq!(
+        names(&follow, "required"),
+        BTreeSet::from([
+            "id".to_owned(),
+            "source_id".to_owned(),
+            "codec".to_owned(),
             "media_type".to_owned(),
             "path".to_owned(),
         ])
     );
-    assert_eq!(names(&follow, "required"), names(&follow, "properties"));
 
     let frame = schema::<GetVideoFrameAtRequest>();
     assert_eq!(
@@ -443,10 +557,12 @@ fn video_schema_exposes_timeline_and_preserves_legacy_contracts() {
             "height".to_owned(),
             "fps".to_owned(),
             "media_type".to_owned(),
+            "capabilities".to_owned(),
         ])
     );
     assert!(names(&source, "properties").contains("asset_id"));
     assert!(names(&source, "properties").contains("semantic_id"));
+    assert!(names(&source, "properties").contains("capabilities"));
     assert!(!names(&source, "required").contains("asset_id"));
     assert!(!names(&source, "required").contains("semantic_id"));
 }
@@ -518,12 +634,8 @@ fn one_frame(frame: VideoFrame) -> impl Stream<Item = Result<VideoFrame, A2aLabE
 
 #[tokio::test]
 async fn service_dispatches_timeline_and_live_follow() {
-    let follow = VideoFollow::new(
-        VideoFollowId::new("follow-1").unwrap(),
-        source_id("cam"),
-        MJPEG_MEDIA_TYPE,
-    )
-    .unwrap();
+    let follow =
+        VideoFollow::new_mjpeg(VideoFollowId::new("follow-1").unwrap(), source_id("cam")).unwrap();
     let videos = ScriptedVideos {
         timeline: timeline(
             vec![range("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z")],

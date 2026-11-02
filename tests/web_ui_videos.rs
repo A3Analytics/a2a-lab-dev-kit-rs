@@ -306,8 +306,8 @@ fn assert_route_aborts(page: &mut Browser) {
 }
 
 fn assert_bounds(page: &mut Browser) {
-    let max_us = page
-        .eval("document.getElementById('video-timeline')?.dataset.maxUs ?? ''")
+    let session_us = page
+        .eval("document.getElementById('video-timeline')?.dataset.sessionUs ?? ''")
         .as_str()
         .unwrap_or("")
         .to_owned();
@@ -315,25 +315,26 @@ fn assert_bounds(page: &mut Browser) {
         .eval("Number(document.getElementById('video-timeline')?.dataset.durationUs || '0')")
         .as_f64()
         .unwrap_or(0.0);
-    assert_eq!(max_us, "60000000");
-    assert!(
-        duration > 0.0 && duration <= 60_000_000.0,
-        "selection {duration} exceeds 60 seconds"
-    );
+    assert_eq!(session_us, "120000000");
+    assert!(duration > 0.0, "selection {duration} missing");
 }
 
 fn assert_keyboard(page: &mut Browser) {
     page.focus("video-timeline");
     let before = text_attr(page, "video-timeline", "data-end");
+    let before_duration = text_attr(page, "video-timeline", "data-duration-us");
     key_down(page, "video-timeline", "ArrowLeft", true);
     page.wait_until(&format!(
         "document.getElementById('video-timeline')?.dataset.end !== '{}'",
         before.replace('\'', "")
     ));
     let after = text_attr(page, "video-timeline", "data-duration-us");
-    assert!(after.parse::<i64>().unwrap_or(i64::MAX) <= 60_000_000);
-    page.click_box("video-follow-newest");
-    let mouse = page.computed("#video-follow-newest")["outlineStyle"].clone();
+    assert_ne!(
+        after, before_duration,
+        "shift-arrow did not change the selection"
+    );
+    page.click_box("video-range-apply");
+    let mouse = page.computed("#video-range-apply")["outlineStyle"].clone();
     page.press_tab();
     let ring = page
         .eval("getComputedStyle(document.activeElement).outlineWidth")
@@ -346,26 +347,17 @@ fn assert_keyboard(page: &mut Browser) {
 
 fn assert_still(page: &mut Browser) {
     pause_player(page);
-    page.wait_until("!document.getElementById('video-frame-at')?.disabled");
     assert_eq!(
-        page.eval("document.getElementById('video-frame-at')?.textContent.trim()"),
-        serde_json::json!("Frame at time")
+        page.eval("document.getElementById('video-frame-at')"),
+        serde_json::json!(null)
     );
-    let before = page
-        .eval("document.getElementById('video-view')?.dataset.gen ?? ''")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    page.click("video-frame-at");
-    page.wait_until(&format!(
-        "document.getElementById('video-alert')?.textContent.length > 0 || (document.getElementById('video-view')?.dataset.gen !== '{before}' && document.getElementById('video-view')?.getAttribute('aria-busy') === 'false' && document.getElementById('video-status')?.dataset.state === 'idle')"
-    ));
     let view = page
         .eval("document.getElementById('view-videos')?.innerText ?? ''")
         .as_str()
         .unwrap_or("")
         .to_owned();
     assert!(!view.contains("Saved images"), "{view}");
+    assert!(!view.contains("Seek"), "{view}");
     assert_eq!(
         page.eval("document.getElementById('image-view')?.closest('[hidden]') !== null || document.getElementById('view-images')?.hasAttribute('hidden')"),
         serde_json::json!(true)
@@ -469,8 +461,6 @@ fn timeline_flow(base: &str) {
         serde_json::json!(null)
     );
     page.reduced_motion(false);
-    page.wait_until("!document.getElementById('video-frame-at')?.disabled");
-    page.click("video-frame-at");
     page.wait_until("document.getElementById('video-view')?.getAttribute('aria-busy') === 'false'");
     let requests = page.requests(base);
     let bodies = requests
@@ -481,7 +471,7 @@ fn timeline_flow(base: &str) {
     assert!(bodies.contains("get_video_timeline"), "{bodies}");
     assert!(bodies.contains("follow_video"), "{bodies}");
     assert!(bodies.contains("get_video_clip"), "{bodies}");
-    assert!(bodies.contains("get_video_frame_at"), "{bodies}");
+    assert!(!bodies.contains("get_video_frame_at"), "{bodies}");
     assert!(!bodies.contains("list_images"), "{bodies}");
     assert!(!bodies.contains("search_images"), "{bodies}");
     let live = requests
@@ -512,7 +502,7 @@ fn assert_live_hidden_boundary(page: &mut Browser, base: &str) {
     );
     play_coverage(page);
     page.wait_until(
-        "document.getElementById('video-timeline')?.dataset.durationUs === '60000000' && (window.__clipFetches || 0) >= 1 && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && document.getElementById('video-alert')?.dataset.failure === '' && document.getElementById('video-player')?.hasAttribute('controls')",
+        "Number(document.getElementById('video-timeline')?.dataset.durationUs || '0') > 60000000 && (window.__clipFetches || 0) >= 1 && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && document.getElementById('video-alert')?.dataset.failure === '' && !document.getElementById('video-player')?.hasAttribute('hidden')",
     );
     let crosses = page.eval(
         "(() => { const el = document.getElementById('video-timeline'); const start = el?.dataset.start || ''; const end = el?.dataset.end || ''; return start < '2024-01-01T00:00:30Z' && end > '2024-01-01T00:00:30Z'; })()",
@@ -520,7 +510,7 @@ fn assert_live_hidden_boundary(page: &mut Browser, base: &str) {
     expect_case(
         "hidden chunk boundary",
         crosses == serde_json::json!(true),
-        "60s selection crosses the abutting boundary and plays",
+        "selection crosses the abutting boundary and plays",
         &format!(
             "start {} end {} status {}",
             text_attr(page, "video-timeline", "data-start"),
@@ -680,7 +670,7 @@ fn timeline_prelude() -> String {
 
 fn assert_auto_playback_started(page: &mut Browser) {
     page.wait_until(
-        "document.getElementById('video-player')?.hasAttribute('controls') && !document.getElementById('video-player')?.hasAttribute('hidden')",
+        "!document.getElementById('video-player')?.hasAttribute('hidden')",
     );
     assert_eq!(
         page.eval("!!document.getElementById('video-empty')"),
@@ -690,11 +680,11 @@ fn assert_auto_playback_started(page: &mut Browser) {
 
 fn assert_typed_range(page: &mut Browser) {
     let entered = page.eval(
-        "(() => { const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement)) return false; start.value = '2024-01-01T00:00:00Z'; end.value = '2024-01-01T00:00:02Z'; start.dispatchEvent(new Event('input', { bubbles: true })); end.dispatchEvent(new Event('input', { bubbles: true })); return true; })()",
+        "(() => { const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); const apply = document.getElementById('video-range-apply'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; start.value = '2024-01-01T00:00:00Z'; end.value = '2024-01-01T00:00:02Z'; start.dispatchEvent(new Event('input', { bubbles: true })); end.dispatchEvent(new Event('input', { bubbles: true })); apply.click(); return true; })()",
     );
     assert_eq!(entered, serde_json::json!(true), "range fields missing");
     page.wait_until(
-        "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:00') && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && document.getElementById('video-player')?.hasAttribute('controls')",
+        "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:00') && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && !document.getElementById('video-player')?.hasAttribute('hidden')",
     );
 }
 

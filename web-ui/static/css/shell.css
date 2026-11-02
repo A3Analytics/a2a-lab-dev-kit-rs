@@ -169,7 +169,7 @@ body {
   background: var(--status-unhealthy);
 }
 
-nav {
+#primary-nav {
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
@@ -213,7 +213,7 @@ nav {
   line-height: 1.25;
 }
 
-nav::after {
+#primary-nav::after {
   content: "Navigate";
   order: 1;
   margin: 0.5rem 0.75rem 0;
@@ -224,7 +224,7 @@ nav::after {
   text-transform: uppercase;
 }
 
-nav a {
+#primary-nav a {
   order: 2;
   display: flex;
   align-items: center;
@@ -254,7 +254,7 @@ nav a {
   font-weight: 600;
 }
 
-nav a[aria-current="page"] .nav-glyph {
+#primary-nav a[aria-current="page"] .nav-glyph {
   border-color: transparent;
   background: var(--a3-nav-glyph-active-bg);
   color: var(--a3-nav-glyph-active-fg);
@@ -296,13 +296,13 @@ nav a[aria-current="page"] .nav-glyph {
   border-radius: 2px;
 }
 
-nav a:hover,
-nav a[aria-current="page"] {
+#primary-nav a:hover,
+#primary-nav a[aria-current="page"] {
   background: var(--a3-nav-item-hover-bg);
   color: var(--a3-text);
 }
 
-nav a[aria-current="page"] {
+#primary-nav a[aria-current="page"] {
   background: var(--a3-nav-item-active-bg);
   font-weight: 500;
 }
@@ -460,7 +460,7 @@ dd {
     width: 0;
   }
 
-  nav {
+  #primary-nav {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -473,7 +473,7 @@ dd {
     transition: transform var(--motion-normal) linear;
   }
 
-  .shell[data-state="collapsed"] nav {
+  .shell[data-state="collapsed"] #primary-nav {
     transform: translateX(-100%);
   }
 

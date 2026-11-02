@@ -1,6 +1,7 @@
 use super::*;
 use crate::codec::Reply;
 use crate::inventory::Kind as InventoryKind;
+use crate::videos::track;
 use serde_json::{Value, json};
 
 #[test]
@@ -10,13 +11,13 @@ fn parses_timeline_and_live_follow_without_media_bytes() {
     assert!(timeline.live_available);
     assert!(timeline.newest_at.is_some());
     assert_eq!(timeline_command("cam")["operation"], "get_video_timeline");
-    let follow = interpret_follow(&reply(follow_body("/media/video-live/live-1")), None).unwrap();
-    assert_eq!(follow.path, "/media/video-live/live-1");
+    let follow = interpret_follow(&reply(follow_body("/media/video-live/live-1/")), None).unwrap();
+    assert_eq!(follow.path, "/media/video-live/live-1/");
     assert_eq!(follow_command("cam")["operation"], "follow_video");
     assert!(interpret_timeline(&reply(with_bytes(timeline_body(true))), None).is_err());
     assert!(
         interpret_follow(
-            &reply(follow_body("/media/video-live/live-1?token=secret")),
+            &reply(follow_body("/media/video-live/live-1/?token=secret")),
             None
         )
         .is_err()
@@ -128,10 +129,18 @@ fn range_selection_spans_gaps_when_retained_coverage_overlaps() {
     assert_eq!(reader.playback, Playback::Playing);
     assert!(reader.note_gap_skipped(clip.generation));
     assert_eq!(playback_status(&reader), "Skipped gap.");
+    assert!(reader.note_frame(clip.generation, "2024-01-01T00:00:01Z"));
+    assert_eq!(playback_status(&reader), "Playing.");
+    assert!(reader.note_gap_skipped(clip.generation));
+    assert_eq!(playback_status(&reader), "Skipped gap.");
+    assert!(reader.pause());
+    assert_eq!(playback_status(&reader), "Paused.");
+    assert!(reader.fault.is_empty());
+    assert!(reader.failure.is_none());
 }
 
 #[test]
-fn empty_timeline_is_success_and_sixty_seconds_is_the_boundary() {
+fn empty_timeline_is_success_and_hour_plus_ranges_validate() {
     let mut reader = ready(&["cam"]);
     let ticket = reader.load_timeline().unwrap();
     let empty = interpret_timeline(&reply(empty_timeline()), None).unwrap();
@@ -146,20 +155,19 @@ fn empty_timeline_is_success_and_sixty_seconds_is_the_boundary() {
 
     let mut reader = ready(&["cam"]);
     accept(&mut reader, long_timeline());
-    let exact = check_range("2024-01-01T00:00:00", "2024-01-01T00:01:00").unwrap();
-    assert_eq!(exact.end_us - exact.start_us, MAX_CLIP_US);
+    let hour = check_range("2024-01-01T00:00:00", "2024-01-01T00:01:00").unwrap();
+    assert_eq!(hour.end_us - hour.start_us, 60_000_000);
     assert!(
         reader
             .select_range("2024-01-01T00:00:00", "2024-01-01T00:01:00")
             .is_ok()
     );
-    let over = check_range("2024-01-01T00:00:00", "2024-01-01T00:01:00.000001").unwrap_err();
-    assert_eq!(over, RangeFault::TooLong);
-    assert_eq!(
+    let longer = check_range("2024-01-01T00:00:00", "2024-01-01T00:01:01").unwrap();
+    assert_eq!(longer.end_us - longer.start_us, 61_000_000);
+    assert!(
         reader
             .select_range("2024-01-01T00:00:00", "2024-01-01T00:01:01")
-            .unwrap_err(),
-        "The clip range must be at most 60 seconds."
+            .is_ok()
     );
 }
 
@@ -269,7 +277,7 @@ fn stable_codes_drive_retry_and_reselection_without_message_text() {
 
 #[test]
 fn frame_at_time_keeps_the_public_operation_and_details_start_closed() {
-    assert_eq!(frame_at_time_label(), "Frame at time");
+    assert_eq!(frame_at_time_label(), "Seek");
     assert!(!frame_at_time_label().to_ascii_lowercase().contains("still"));
     let at = frame_instant("2024-01-01T00:00:00").unwrap();
     let command = frame_at_time_command("cam", &at);
@@ -332,6 +340,23 @@ fn playhead_percent_tracks_frame_time() {
 }
 
 #[test]
+fn live_action_enables_only_for_a_livestream() {
+    let mut archive = ready(&["cam"]);
+    let archive_ticket = archive.load_timeline().unwrap();
+    let archived = interpret_timeline(&reply(timeline_body(false)), None).unwrap();
+    assert!(!archived.live_available);
+    assert!(archive.accept_timeline(&archive_ticket, archived));
+    assert!(!shows_live_button(&archive));
+
+    let mut live = ready(&["cam"]);
+    let live_ticket = live.load_timeline().unwrap();
+    let livestream = interpret_timeline(&reply(timeline_body(true)), None).unwrap();
+    assert!(livestream.live_available);
+    assert!(live.accept_timeline(&live_ticket, livestream));
+    assert!(shows_live_button(&live));
+}
+
+#[test]
 fn failure_sentences_stay_distinct_from_codes_and_saved_stills() {
     let failures = [
         Failure::NoRecording,
@@ -367,13 +392,13 @@ fn details_omit_facts_that_are_not_available() {
     let clip = reader
         .select_range("2024-01-01T00:00:00", "2024-01-01T00:00:02")
         .unwrap();
-    assert_eq!(labels_of(&reader), ["Start time", "End time"]);
+    assert_eq!(labels_of(&reader), ["Start", "End"]);
     assert!(reader.accept_clip(&clip, sample_clip("clip-1")));
     assert!(reader.playing(clip.generation));
     let facts = reader.details().facts;
     assert_eq!(
         facts.iter().map(|item| item.label).collect::<Vec<_>>(),
-        ["Start time", "End time"]
+        ["Start", "End"]
     );
     assert_eq!(facts[0].value, "2024-01-01T00:00:00Z");
     assert_eq!(facts[1].value, "2024-01-01T00:00:02Z");
@@ -424,7 +449,9 @@ fn sample_clip(id: &str) -> ClipHandle {
     ClipHandle {
         id: id.to_owned(),
         source_id: "cam".to_owned(),
-        path: format!("/media/video-clips/{id}"),
+        path: format!("/media/video-clips/{id}/"),
+        media_type: MJPEG_MEDIA_TYPE.to_owned(),
+        playback_8x: Playback8xMetadata::absent(),
         requested_start: "2024-01-01T00:00:00Z".to_owned(),
         requested_end: "2024-01-01T00:00:02Z".to_owned(),
         effective_start: "2024-01-01T00:00:00Z".to_owned(),
@@ -436,8 +463,9 @@ fn sample_follow() -> LiveHandle {
     LiveHandle {
         id: "live-1".to_owned(),
         source_id: "cam".to_owned(),
-        path: "/media/video-live/live-1".to_owned(),
+        path: "/media/video-live/live-1/".to_owned(),
         media_type: MJPEG_MEDIA_TYPE.to_owned(),
+        playback_8x: Playback8xMetadata::absent(),
     }
 }
 
@@ -489,6 +517,66 @@ fn gapped_timeline() -> Value {
             ],
             "newest_at": "2024-01-01T00:00:30Z",
             "live_available": true
+        }
+    })
+}
+
+#[test]
+fn dvr_timeline_accepts_long_selections_and_rebases_sessions() {
+    use crate::videos::track::{
+        PLAYBACK_WINDOW_US, Window, coverage_track, drag_window, extend_window, move_window,
+        needs_session_rebase, newest_retained_window, session_in_selection,
+    };
+
+    let timeline = interpret_timeline(&reply(three_hour_timeline()), None).unwrap();
+    let track = coverage_track(&timeline);
+    let dragged = drag_window(
+        &track,
+        stamp("2024-01-01T00:00:00Z"),
+        stamp("2024-01-01T00:01:30Z"),
+    )
+    .unwrap();
+    assert_eq!(dragged.duration_us(), 90_000_000);
+
+    let mut reader = ready(&["cam"]);
+    accept(&mut reader, three_hour_timeline());
+    assert!(matches!(
+        begin_auto_playback(&mut reader),
+        Some(AutoPlayback::Clip(_))
+    ));
+    assert!(matches!(reader.selection, Selection::Recorded { .. }));
+
+    let selection = Window {
+        start_us: stamp("2024-01-01T00:00:00Z"),
+        end_us: stamp("2024-01-01T00:02:30Z"),
+    };
+    let first = session_in_selection(&track, selection, selection.start_us).unwrap();
+    assert!(first.duration_us() <= PLAYBACK_WINDOW_US);
+    let later = session_in_selection(&track, selection, stamp("2024-01-01T00:02:20Z")).unwrap();
+    assert!(needs_session_rebase(first, stamp("2024-01-01T00:02:20Z")));
+    assert!(later.start_us > first.start_us);
+
+    let draft = newest_retained_window(&track, timeline.newest_us).unwrap();
+    let extended = extend_window(&track, draft, 30);
+    assert!(extended.duration_us() <= PLAYBACK_WINDOW_US || extended.end_us > draft.end_us);
+    let shifted = move_window(&track, extended, -1);
+    assert!(shifted.start_us < extended.start_us || shifted.end_us <= extended.end_us);
+}
+
+fn stamp(value: &str) -> i64 {
+    crate::videos::mjpeg::captured_us(value).unwrap()
+}
+
+fn three_hour_timeline() -> Value {
+    json!({
+        "operation": "get_video_timeline",
+        "result": {
+            "source_id": "cam",
+            "intervals": [
+                {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T00:03:00Z"}
+            ],
+            "newest_at": "2024-01-01T00:02:30Z",
+            "live_available": false
         }
     })
 }
@@ -567,6 +655,64 @@ fn follow_body(path: &str) -> Value {
             "path": path
         }
     })
+}
+
+#[test]
+fn encoded_follow_parses_playback_8x_metadata() {
+    let body = json!({
+        "operation": "follow_video",
+        "result": {
+            "id": "live-1",
+            "source_id": "enc",
+            "media_type": "application/vnd.apple.mpegurl",
+            "path": "/media/video-live/live-1/",
+            "playback_8x": {
+                "rendition_path": "index-8x.m3u8",
+                "fallback_path": "index.m3u8"
+            }
+        }
+    });
+    let follow = interpret_follow(&reply(body), None).unwrap();
+    assert_eq!(
+        follow.playback_8x.rendition_path.as_deref(),
+        Some("index-8x.m3u8")
+    );
+    let plan = plan_stream(
+        PlaybackSpeed::Eight,
+        &follow.path,
+        &follow.media_type,
+        &follow.playback_8x,
+    );
+    assert!(plan.fetch_path.ends_with("index-8x.m3u8"));
+}
+
+#[test]
+fn playback_speed_preserves_selection_pause_and_session_window() {
+    let mut reader = ready(&["cam"]);
+    accept(&mut reader, gapped_timeline());
+    let ticket = reader
+        .select_range("2024-01-01T00:00:00", "2024-01-01T01:00:00")
+        .unwrap();
+    let selection = reader.selection.clone();
+    assert!(reader.accept_clip(&ticket, sample_clip("clip-1")));
+    reader.pause();
+    assert_eq!(reader.playback, Playback::Paused);
+    for speed in PlaybackSpeed::all() {
+        let plan = plan_stream(
+            *speed,
+            &reader.clip.as_ref().unwrap().path,
+            MJPEG_MEDIA_TYPE,
+            &Playback8xMetadata::absent(),
+        );
+        assert_eq!(plan.mjpeg_pace, speed.mjpeg_pace());
+        assert_eq!(reader.selection, selection);
+        assert_eq!(reader.playback, Playback::Paused);
+    }
+    let session = track::Window {
+        start_us: 0,
+        end_us: 3_600_000_000,
+    };
+    assert!(session.end_us > session.start_us);
 }
 
 fn with_bytes(mut body: Value) -> Value {

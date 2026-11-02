@@ -10,6 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use crate::PackagedMediaAsset;
 use crate::error::A2aLabError;
 use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{
@@ -25,10 +26,11 @@ use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskProvider,
     TaskRun, TaskState,
 };
+use crate::time::UtcTimestamp;
 use crate::videos::{
     FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip, VideoClipStream, VideoFollow,
-    VideoLiveStream, VideoProvider, VideoSource, VideoTimeline,
+    GetVideoTimelineRequest, ListVideoSourcesRequest, ResolvedMediaAsset, VideoClip,
+    VideoClipStream, VideoFollow, VideoLiveStream, VideoProvider, VideoSource, VideoTimeline,
 };
 
 /// Future returned by [`A2aLabApi`].
@@ -163,6 +165,12 @@ pub trait A2aLabApi: Send + Sync {
         id: &VideoClipId,
     ) -> A2aLabFuture<'_, Result<VideoClipStream, A2aLabError>>;
 
+    /// Packages the finite retained body for one prepared clip handle.
+    fn export_finite_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> A2aLabFuture<'_, Result<PackagedMediaAsset, A2aLabError>>;
+
     /// Opens the JPEG frame stream for a previously prepared live-follow handle.
     ///
     /// HTTP adapters can mount `GET /media/video-live/{id}` on this method.
@@ -172,6 +180,31 @@ pub trait A2aLabApi: Send + Sync {
         id: &VideoFollowId,
     ) -> A2aLabFuture<'_, Result<VideoLiveStream, A2aLabError>> {
         let _ = (self, id);
+        Box::pin(std::future::ready(Err(A2aLabError::unavailable(
+            "live follow is not available",
+        ))))
+    }
+
+    /// Resolves one authenticated live session asset or MJPEG stream.
+    fn resolve_live_playback_asset(
+        &self,
+        id: &VideoFollowId,
+        relative_path: Option<&str>,
+    ) -> A2aLabFuture<'_, Result<ResolvedMediaAsset, A2aLabError>> {
+        let _ = (self, id, relative_path);
+        Box::pin(std::future::ready(Err(A2aLabError::not_found(
+            "video follow",
+            id.to_string(),
+        ))))
+    }
+
+    /// Re-anchors a prepared live session to a retained instant.
+    fn rebase_video_follow(
+        &self,
+        id: &VideoFollowId,
+        anchor: UtcTimestamp,
+    ) -> A2aLabFuture<'_, Result<VideoFollow, A2aLabError>> {
+        let _ = (self, id, anchor);
         Box::pin(std::future::ready(Err(A2aLabError::unavailable(
             "live follow is not available",
         ))))
@@ -188,7 +221,7 @@ struct StoredTask {
 enum StoredBody {
     Snapshot {
         state: TaskState,
-        result: A2aLabResult,
+        result: Box<A2aLabResult>,
     },
     Run(RunId),
 }
@@ -592,6 +625,14 @@ where
         self.videos.open_video_clip(id).await
     }
 
+    /// Packages the finite retained body for one prepared clip handle.
+    pub async fn export_finite_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> Result<PackagedMediaAsset, A2aLabError> {
+        self.videos.export_finite_video_clip(id).await
+    }
+
     async fn get_video_timeline(
         &self,
         request: GetVideoTimelineRequest,
@@ -614,6 +655,26 @@ where
         self.videos.open_video_follow(id).await
     }
 
+    /// Resolves one authenticated live session asset or MJPEG stream.
+    pub async fn resolve_live_playback_asset(
+        &self,
+        id: &VideoFollowId,
+        relative_path: Option<&str>,
+    ) -> Result<ResolvedMediaAsset, A2aLabError> {
+        self.videos
+            .resolve_live_playback_asset(id, relative_path)
+            .await
+    }
+
+    /// Re-anchors a prepared live session to a retained instant.
+    pub async fn rebase_video_follow(
+        &self,
+        id: &VideoFollowId,
+        anchor: UtcTimestamp,
+    ) -> Result<VideoFollow, A2aLabError> {
+        self.videos.rebase_video_follow(id, anchor).await
+    }
+
     fn accepted_image(&self, image: Image) -> Result<Image, A2aLabError> {
         self.image_transport.check_payload(image.data())?;
         Ok(image)
@@ -625,7 +686,7 @@ where
             context_id: context_id(&id),
             body: StoredBody::Snapshot {
                 state: TaskState::Completed,
-                result,
+                result: Box::new(result),
             },
         };
         self.task_store
@@ -637,7 +698,7 @@ where
 
     async fn materialize(&self, id: &str, stored: StoredTask) -> Result<TaskSnapshot, A2aLabError> {
         let (state, result) = match stored.body {
-            StoredBody::Snapshot { state, result } => (state, result),
+            StoredBody::Snapshot { state, result } => (state, *result),
             StoredBody::Run(id) => {
                 let run = self.tasks.status(GetTaskStatusRequest { id }).await?;
                 (run.state, A2aLabResult::StartTask(run))
@@ -692,12 +753,41 @@ where
         Box::pin(async move { A2aLabService::open_video_clip(self, &id).await })
     }
 
+    fn export_finite_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> A2aLabFuture<'_, Result<PackagedMediaAsset, A2aLabError>> {
+        let id = id.clone();
+        Box::pin(async move { A2aLabService::export_finite_video_clip(self, &id).await })
+    }
+
     fn open_video_follow(
         &self,
         id: &VideoFollowId,
     ) -> A2aLabFuture<'_, Result<VideoLiveStream, A2aLabError>> {
         let id = id.clone();
         Box::pin(async move { A2aLabService::open_video_follow(self, &id).await })
+    }
+
+    fn resolve_live_playback_asset(
+        &self,
+        id: &VideoFollowId,
+        relative_path: Option<&str>,
+    ) -> A2aLabFuture<'_, Result<ResolvedMediaAsset, A2aLabError>> {
+        let id = id.clone();
+        let relative_path = relative_path.map(str::to_owned);
+        Box::pin(async move {
+            A2aLabService::resolve_live_playback_asset(self, &id, relative_path.as_deref()).await
+        })
+    }
+
+    fn rebase_video_follow(
+        &self,
+        id: &VideoFollowId,
+        anchor: UtcTimestamp,
+    ) -> A2aLabFuture<'_, Result<VideoFollow, A2aLabError>> {
+        let id = id.clone();
+        Box::pin(async move { A2aLabService::rebase_video_follow(self, &id, anchor).await })
     }
 }
 

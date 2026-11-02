@@ -85,8 +85,9 @@ fn visual_matrix(
 }
 
 fn judge_focus(page: &mut Browser, scheme: &str, failures: &mut Vec<String>) {
-    page.click_box("video-follow-newest");
-    let mouse = page.computed("#video-follow-newest")["outlineStyle"]
+    page.wait_until("document.getElementById('video-range-apply')");
+    page.click_box("video-range-apply");
+    let mouse = page.computed("#video-range-apply")["outlineStyle"]
         .as_str()
         .unwrap_or("")
         .to_owned();
@@ -285,12 +286,11 @@ fn judge_populated(failures: &mut Vec<String>, case: &str, report: &Value) {
         failures,
         case,
         "names",
-        num(report, "follow") > 2.0
-            && num(report, "frame") > 2.0
+        num(report, "frame") == 0.0
             && num(report, "timeline") > 2.0
             && text_value(report, "timelineName").contains("Recording")
-            && text_value(report, "frameName") == "Frame at time",
-        "named timeline, follow, and frame controls",
+            && text_value(report, "frameName").is_empty(),
+        "named timeline without a seek control",
         &format!(
             "follow {} frame {} timeline {} names {} / {}",
             num(report, "follow"),
@@ -320,8 +320,11 @@ fn judge_details(failures: &mut Vec<String>, case: &str, report: &Value) {
             && flag(report, "detailsInside")
             && !flag(report, "detailsOverlap")
             && !flag(report, "detailsClip")
-            && text_value(report, "detailsText").contains("Start time")
-            && text_value(report, "detailsText").contains("End time")
+            && text_value(report, "detailsText")
+                .to_ascii_lowercase()
+                .contains("time range")
+            && text_value(report, "detailsText").contains("Start")
+            && text_value(report, "detailsText").contains("End")
             && !text_value(report, "detailsText").contains("Connection")
             && !text_value(report, "detailsText").contains("Playback"),
         "open details stay inside the scrollport without overlap or clipped facts",
@@ -345,7 +348,8 @@ fn judge_error(failures: &mut Vec<String>, case: &str, report: &Value) {
             && flag(report, "retry")
             && flag(report, "alertInside")
             && !flag(report, "alertOverlap")
-            && num(report, "timeline") > 2.0,
+            && num(report, "timeline") > 2.0
+            && num(report, "follow") > 2.0,
         "error alert and timeline stay visible without overlap",
         &format!(
             "alert {} retry {} inside {} overlap {} timeline {}",
@@ -379,8 +383,8 @@ fn judge_empty(failures: &mut Vec<String>, case: &str, report: &Value) {
         failures,
         case,
         "names",
-        num(report, "follow") > 2.0 && num(report, "frame") > 2.0 && num(report, "timeline") > 2.0,
-        "named controls stay available",
+        num(report, "follow") == 0.0 && num(report, "frame") == 0.0 && num(report, "timeline") > 2.0,
+        "timeline stays available without a live or seek button",
         &format!(
             "follow {} frame {} timeline {}",
             num(report, "follow"),
@@ -510,7 +514,7 @@ const VISUAL: &str = r"( () => {
     motion: getComputedStyle(document.documentElement).getPropertyValue('--motion-normal').trim(),
     wave: getComputedStyle(document.querySelector('.strand-wave')).animationName,
     player: !!(player && !player.hidden && player.getBoundingClientRect().width > 2),
-    controls: player?.hasAttribute('controls') === true,
+    controls: !!(player && !player.hidden && getComputedStyle(document.getElementById('video-timeline')).opacity === '1'),
     follow: box('video-follow-newest').width,
     frame: box('video-frame-at').width,
     timeline: box('video-timeline').width,
@@ -525,7 +529,7 @@ const VISUAL: &str = r"( () => {
     detailsOpen: !!details,
     detailsInside: insideFilters(detailsBox),
     detailsOverlap: overlaps(detailsBox, timelineBox),
-    detailsClip: details ? [...details.querySelectorAll('dt, dd')].some((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) : false,
+    detailsClip: details ? [...details.querySelectorAll('label, input')].some((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) : false,
     detailsText: details?.innerText.trim() || '',
     alertText: document.getElementById('video-alert-text')?.textContent.trim() || '',
     retry: !!document.getElementById('video-retry'),

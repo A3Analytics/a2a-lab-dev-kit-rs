@@ -18,7 +18,7 @@ use browser::{Browser, header, request_url};
 
 const CONNECTED: &str = "document.getElementById('connection')?.dataset.state === 'connected'";
 const TOKEN: &str = "video-bearer-token";
-const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
+const POLICY: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 const JPEG: &[u8] = &[
     0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
     0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
@@ -37,7 +37,7 @@ async fn browser_video_reader_closes_the_usability_matrix() {
     let policy = shell_policy(&base).await;
     assert_case(
         "csp",
-        policy == POLICY && !policy.contains("blob:"),
+        policy == POLICY && policy.contains("media-src blob:"),
         POLICY,
         &policy,
     );
@@ -181,7 +181,7 @@ fn assert_abort(page: &mut Browser) {
     let before = generation(page);
     page.show("#logs");
     page.wait_until(&format!(
-        "document.getElementById('video-view')?.dataset.gen !== '{before}'"
+        "document.getElementById('video-view')?.dataset.gen !== '{before}' && document.getElementById('video-status')?.dataset.state === 'stopped'"
     ));
     page.show("#videos");
     let after = generation(page);
@@ -225,12 +225,12 @@ fn assert_half_open(page: &mut Browser) {
         .eval("Number(document.getElementById('video-timeline')?.dataset.durationUs || '0')")
         .as_f64()
         .unwrap_or(0.0);
-    let max_us = attr(page, "video-timeline", "data-max-us");
+    let session_us = attr(page, "video-timeline", "data-session-us");
     assert_case(
-        "over-limit range",
-        max_us == "60000000" && duration > 0.0 && duration <= 60_000_000.0,
-        "selection at most 60 seconds",
-        &format!("{max_us} {duration}"),
+        "playback session window",
+        session_us == "120000000" && duration > 0.0,
+        "opaque session window metadata and a positive selection",
+        &format!("{session_us} {duration}"),
     );
 }
 
@@ -245,8 +245,8 @@ fn assert_keyboard(page: &mut Browser) {
     page.wait_until(&format!("{PLAYING} || {STOPPED} || document.getElementById('video-status')?.dataset.state === 'connecting'"));
     pause_player(page);
     page.wait_until(&format!("{PAUSED} || {STOPPED}"));
-    page.click_box("video-follow-newest");
-    let mouse = page.computed("#video-follow-newest")["outlineStyle"].clone();
+    page.click_box("video-range-apply");
+    let mouse = page.computed("#video-range-apply")["outlineStyle"].clone();
     page.press_tab();
     let ring = page
         .eval("getComputedStyle(document.activeElement).outlineWidth")

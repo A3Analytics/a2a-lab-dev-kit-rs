@@ -12,7 +12,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::error::A2aLabError;
 use crate::id::{VideoFollowId, VideoSourceId};
 use crate::time::{TimeRange, UtcTimestamp};
-use crate::videos::model::{VideoFrame, check_mjpeg_media_type};
+use crate::videos::codec::{VideoCodec, check_relative_session_path, check_session_media};
+use crate::videos::model::VideoFrame;
+use crate::videos::model::VideoPlayback8xMetadata;
 
 /// Relative media prefix for live-follow handles. Never a host or scheme.
 pub const VIDEO_LIVE_PATH_PREFIX: &str = "/media/video-live/";
@@ -134,19 +136,39 @@ impl VideoTimeline {
 #[serde(deny_unknown_fields)]
 pub struct FollowVideoRequest {
     source_id: VideoSourceId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    at: Option<UtcTimestamp>,
 }
 
 impl FollowVideoRequest {
-    /// Creates a request for `source_id`.
+    /// Creates a live-edge request for `source_id`.
     #[must_use]
     pub const fn new(source_id: VideoSourceId) -> Self {
-        Self { source_id }
+        Self {
+            source_id,
+            at: None,
+        }
+    }
+
+    /// Creates a request anchored at a retained instant inside the source.
+    #[must_use]
+    pub const fn at(source_id: VideoSourceId, anchor: UtcTimestamp) -> Self {
+        Self {
+            source_id,
+            at: Some(anchor),
+        }
     }
 
     /// Source to follow.
     #[must_use]
     pub const fn source_id(&self) -> &VideoSourceId {
         &self.source_id
+    }
+
+    /// Optional retained anchor. Absent means follow the live edge.
+    #[must_use]
+    pub const fn anchor_at(&self) -> Option<UtcTimestamp> {
+        self.at
     }
 }
 
@@ -155,8 +177,11 @@ impl FollowVideoRequest {
 pub struct VideoFollow {
     id: VideoFollowId,
     source_id: VideoSourceId,
+    codec: VideoCodec,
     media_type: String,
     path: String,
+    #[serde(default, skip_serializing_if = "VideoPlayback8xMetadata::is_absent")]
+    playback_8x: VideoPlayback8xMetadata,
 }
 
 #[derive(Deserialize)]
@@ -164,20 +189,29 @@ pub struct VideoFollow {
 struct VideoFollowRaw {
     id: VideoFollowId,
     source_id: VideoSourceId,
+    #[serde(default = "default_live_codec")]
+    codec: VideoCodec,
     media_type: String,
     path: String,
+    #[serde(default)]
+    playback_8x: VideoPlayback8xMetadata,
+}
+
+fn default_live_codec() -> VideoCodec {
+    VideoCodec::Mjpeg
 }
 
 impl TryFrom<VideoFollowRaw> for VideoFollow {
     type Error = A2aLabError;
 
     fn try_from(raw: VideoFollowRaw) -> Result<Self, Self::Error> {
-        check_relative_media_path(&raw.path)?;
-        let follow = Self::new(raw.id, raw.source_id, raw.media_type)?;
+        check_relative_session_path(&raw.path)?;
+        let follow = Self::new(raw.id, raw.source_id, raw.codec, raw.media_type)?
+            .with_playback_8x(raw.playback_8x);
         if follow.path != raw.path {
             return Err(A2aLabError::invalid(
                 "path",
-                "must be a relative /media/video-live/{id} path",
+                "must be a relative /media/video-live/{id}/ gateway root",
             ));
         }
         Ok(follow)
@@ -197,18 +231,55 @@ impl VideoFollow {
     pub fn new(
         id: VideoFollowId,
         source_id: VideoSourceId,
+        codec: VideoCodec,
         media_type: impl Into<String>,
     ) -> Result<Self, A2aLabError> {
         let media_type = media_type.into();
-        check_mjpeg_media_type(&media_type)?;
+        check_session_media(codec, &media_type)?;
         let path = video_live_path(&id);
-        check_relative_media_path(&path)?;
+        check_relative_session_path(&path)?;
         Ok(Self {
             id,
             source_id,
+            codec,
             media_type,
             path,
+            playback_8x: VideoPlayback8xMetadata::default(),
         })
+    }
+
+    /// Attaches optional 8x trick-play metadata for encoded gateway sessions.
+    #[must_use]
+    pub fn with_playback_8x(mut self, playback_8x: VideoPlayback8xMetadata) -> Self {
+        self.playback_8x = playback_8x;
+        self
+    }
+
+    /// Creates an MJPEG live session with the legacy multipart media type.
+    pub fn new_mjpeg(id: VideoFollowId, source_id: VideoSourceId) -> Result<Self, A2aLabError> {
+        Self::new(
+            id,
+            source_id,
+            VideoCodec::Mjpeg,
+            crate::videos::MJPEG_MEDIA_TYPE,
+        )
+    }
+
+    /// Creates an encoded live session rooted at the gateway HLS playlist.
+    pub fn new_encoded(
+        id: VideoFollowId,
+        source_id: VideoSourceId,
+        codec: VideoCodec,
+    ) -> Result<Self, A2aLabError> {
+        match codec {
+            VideoCodec::H264 | VideoCodec::H265 => {
+                Self::new(id, source_id, codec, "application/vnd.apple.mpegurl")
+            }
+            VideoCodec::Mjpeg => Err(A2aLabError::invalid(
+                "codec",
+                "encoded live follow requires H.264 or H.265",
+            )),
+        }
     }
 
     /// Opaque follow identifier.
@@ -223,7 +294,13 @@ impl VideoFollow {
         &self.source_id
     }
 
-    /// MJPEG multipart media type.
+    /// Session codec choice.
+    #[must_use]
+    pub const fn codec(&self) -> VideoCodec {
+        self.codec
+    }
+
+    /// Declared session media type.
     #[must_use]
     pub fn media_type(&self) -> &str {
         &self.media_type
@@ -234,12 +311,18 @@ impl VideoFollow {
     pub fn path(&self) -> &str {
         &self.path
     }
+
+    /// Optional 8x trick-play advertisement and recoverable fallback.
+    #[must_use]
+    pub const fn playback_8x(&self) -> &VideoPlayback8xMetadata {
+        &self.playback_8x
+    }
 }
 
-/// Relative path `/media/video-live/{id}`.
+/// Relative gateway root `/media/video-live/{id}/`.
 #[must_use]
 pub fn video_live_path(id: &VideoFollowId) -> String {
-    format!("{VIDEO_LIVE_PATH_PREFIX}{id}")
+    format!("{VIDEO_LIVE_PATH_PREFIX}{id}/")
 }
 
 fn validate_intervals(intervals: &[TimeRange]) -> Result<(), A2aLabError> {
@@ -278,20 +361,6 @@ fn validate_newest(
         Err(A2aLabError::invalid(
             "newest_at",
             "must lie in the newest retained interval",
-        ))
-    }
-}
-
-fn check_relative_media_path(path: &str) -> Result<(), A2aLabError> {
-    let relative = path.starts_with('/') && !path.starts_with("//");
-    let opaque =
-        !path.contains("://") && !path.contains('?') && !path.contains('#') && !path.contains('@');
-    if relative && opaque {
-        Ok(())
-    } else {
-        Err(A2aLabError::invalid(
-            "path",
-            "must be an authenticated relative media path",
         ))
     }
 }

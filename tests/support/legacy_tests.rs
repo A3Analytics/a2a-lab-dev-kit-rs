@@ -70,20 +70,20 @@ async fn legacy_clients_keep_success_malformed_and_the_sixty_second_boundary() {
     if mcp_stamps != expected {
         diverge("60-second boundary", "MCP", &format!("{mcp_stamps:?}"));
     }
-    let over = TckMalformedVideoRequests::get_video_clip_over_limit(
+    let empty = TckMalformedVideoRequests::get_video_clip_empty_range(
         source_id("span"),
         timestamp("2024-01-01T00:00:00Z"),
     );
     expect_code(
         "60-second boundary",
         "A2A",
-        a2a.get_video_clip(over.clone()).await.unwrap_err().code(),
+        a2a.get_video_clip(empty.clone()).await.unwrap_err().code(),
         "invalid",
     );
     expect_code(
         "60-second boundary",
         "MCP",
-        mcp.execute(A2aLabCommand::GetVideoClip(over))
+        mcp.execute(A2aLabCommand::GetVideoClip(empty))
             .await
             .unwrap_err()
             .code(),
@@ -102,16 +102,15 @@ async fn legacy_clients_keep_success_malformed_and_the_sixty_second_boundary() {
     if sila_stamps != expected {
         diverge("60-second boundary", "SiLA", &format!("{sila_stamps:?}"));
     }
-    let over = span_sila
-        .client
-        .get_video_clip(clip_params(
+    let (over_path, over_bytes) = span_sila
+        .clip_bytes(
             "span",
             sila_utc(2024, 1, 1, 0, 0, 0),
             sila_ms(1, 0, 1),
-        ))
-        .await
-        .unwrap_err();
-    assert_validation(&over);
+        )
+        .await;
+    assert_relative_media_path(&over_path);
+    assert_eq!(stamps_in(&over_bytes).len(), 61);
 }
 
 async fn span_catalog() -> MemoryVideos {
@@ -220,16 +219,6 @@ async fn assert_sila_catalog_and_malformed(sila: &mut SilaVideos) {
         .await
         .unwrap_err();
     assert_validation(&reversed);
-    let over = sila
-        .client
-        .get_video_clip(clip_params(
-            "cam",
-            sila_utc(2024, 1, 1, 0, 0, 0),
-            sila_ms(1, 0, 1),
-        ))
-        .await
-        .unwrap_err();
-    assert_validation(&over);
 }
 
 #[cfg(feature = "sila2")]

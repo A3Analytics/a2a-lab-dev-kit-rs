@@ -115,6 +115,11 @@
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-oxanium: Oxanium, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --media-surface: #000;
+  --media-overlay: rgb(0 0 0 / 0.72);
+  --media-overlay-foreground: #fff;
+  --z-raised: 1;
+  --z-overlay: 3;
   --elevation-2xs: 0 1px rgb(0 0 0 / 0.04);
   --elevation-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --elevation-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);

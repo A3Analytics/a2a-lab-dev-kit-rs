@@ -30,6 +30,7 @@ use tower_service::Service;
 
 use crate::error::A2aLabError;
 use crate::service::A2aLabApi;
+use crate::videos::SharedMediaAssetProvider;
 
 use super::access::{
     AccessError, AccessGate, OwnedTaskStore, auth_response, grpc_auth_status,
@@ -57,6 +58,7 @@ pub struct A2aServer {
     security_requirements: Option<Vec<SecurityRequirement>>,
     authenticator: Option<Arc<dyn Authenticator>>,
     messages: Option<Arc<dyn AgentMessageHandler>>,
+    media_assets: Option<SharedMediaAssetProvider>,
     #[cfg(feature = "web-ui")]
     web_ui: bool,
 }
@@ -76,6 +78,7 @@ impl A2aServer {
             security_requirements: None,
             authenticator: None,
             messages: None,
+            media_assets: None,
             #[cfg(feature = "web-ui")]
             web_ui: false,
         }
@@ -142,6 +145,13 @@ impl A2aServer {
     #[must_use]
     pub fn with_authenticator(mut self, authenticator: Arc<dyn Authenticator>) -> Self {
         self.authenticator = Some(authenticator);
+        self
+    }
+
+    /// Uses `assets` for `/media/video-*` gateway routes instead of a default local provider.
+    #[must_use]
+    pub fn with_media_assets(mut self, assets: SharedMediaAssetProvider) -> Self {
+        self.media_assets = Some(assets);
         self
     }
 
@@ -284,6 +294,11 @@ fn router(
         .with_default_input_modes(input_modes());
     let handler = Arc::new(handler);
     let http_gate = gate.clone();
+    let media = server.media_assets.clone().unwrap_or_else(|| {
+        Arc::new(crate::videos::LocalMediaAssetProvider::new(Arc::clone(
+            &server.lab,
+        )))
+    });
     #[cfg(feature = "web-ui")]
     let serve_web_ui = server.web_ui;
     let app = Router::new()
@@ -292,7 +307,7 @@ fn router(
         )))
         .merge(a2a_server::rest::rest_router(Arc::clone(&handler)))
         .merge(a2a_server::jsonrpc::jsonrpc_router(Arc::clone(&handler)))
-        .merge(crate::videos::http::router(Arc::clone(&server.lab)));
+        .merge(crate::videos::http::router(media));
     #[cfg(feature = "web-ui")]
     let app = if serve_web_ui {
         app.merge(super::web_ui::router())
@@ -318,7 +333,13 @@ fn router(
                 .await
             {
                 Ok(caller) => with_caller(caller, normalize_a2a_json(request, next)).await,
-                Err(error) => auth_response(&error),
+                Err(error) => {
+                    let mut response = auth_response(&error);
+                    if crate::videos::http::is_gated_media_path(request.uri().path()) {
+                        crate::videos::http::apply_media_security_headers(&mut response);
+                    }
+                    response
+                }
             }
         }
     }));

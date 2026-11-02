@@ -45,8 +45,8 @@ pub use catalog::{
 };
 pub use error::{A2aLabError, VideoAvailability};
 pub use id::{
-    ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId, VideoClipId, VideoFollowId,
-    VideoSourceId,
+    DvrTrackId, ImageId, ImageSourceId, MetricId, RunId, SourceId, TaskId, VideoClipId,
+    VideoFollowId, VideoSourceId,
 };
 pub use images::{
     DEFAULT_MAX_IMAGE_BYTES, GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor,
@@ -79,13 +79,22 @@ pub use tasks::{
 };
 pub use time::{TimeRange, UtcTimestamp};
 pub use videos::{
-    DEFAULT_MJPEG_BOUNDARY, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest,
-    MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, TckMalformedVideoRequests,
-    VIDEO_CLIP_PATH_PREFIX, VIDEO_LIVE_PATH_PREFIX, VideoClip, VideoClipStream, VideoFollow,
-    VideoFrame, VideoLiveStream, VideoProvider, VideoSource, VideoTimeline, decode_mjpeg_multipart,
-    encode_mjpeg_end, encode_mjpeg_multipart, encode_mjpeg_part, mjpeg_content_type,
-    video_clip_path, video_live_path,
+    ClipAssetRequest, DEFAULT_MJPEG_BOUNDARY, DEFAULT_PLAYBACK_WINDOW_US, DvrDiscontinuity,
+    DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPackager, DvrMediaPayload,
+    DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPackagerConfig, DvrRetentionBounds,
+    FinitePlaybackSession, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, HLS_INIT_RELATIVE_PATH,
+    HLS_PLAYLIST_RELATIVE_PATH, HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH, ListVideoSourcesRequest,
+    LiveAssetRequest, LivePlaybackSession, LocalMediaAssetProvider, MAX_VIDEO_CLIP_DURATION_US,
+    MJPEG_MEDIA_TYPE, MediaAssetProvider, PackagedHlsSegment, PackagedHlsSession,
+    PackagedHlsTrick8xRendition, PackagedMediaAsset, ReadDvrMediaWindowRequest, ResolvedMediaAsset,
+    SharedMediaAssetProvider, TRICK_8X_UNAVAILABLE_INSUFFICIENT_KEYFRAMES,
+    TRICK_8X_UNAVAILABLE_NO_REDUCTION, TckMalformedVideoRequests, VIDEO_CLIP_PATH_PREFIX,
+    VIDEO_LIVE_PATH_PREFIX, VideoCatalog, VideoClip, VideoClipStream, VideoCodec, VideoFollow,
+    VideoFrame, VideoLiveStream, VideoPlayback8xMetadata, VideoProvider, VideoSource,
+    VideoTimeline, decode_mjpeg_multipart, encode_mjpeg_end, encode_mjpeg_multipart,
+    encode_mjpeg_part, mjpeg_content_type, router, router_for_lab, video_clip_path,
+    video_live_path,
 };
 
 /// Returns the crate version.

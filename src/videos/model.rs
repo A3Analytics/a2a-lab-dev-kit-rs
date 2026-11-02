@@ -14,11 +14,15 @@ use crate::id::{VideoClipId, VideoSourceId};
 use crate::images::Image;
 use crate::page::PageRequest;
 use crate::time::{TimeRange, UtcTimestamp};
+use crate::videos::codec::{
+    VideoCodec, check_capabilities, check_relative_session_path, check_session_media,
+    validate_source_media,
+};
 
 /// Required MJPEG multipart media type for video sources and clips.
-pub const MJPEG_MEDIA_TYPE: &str = "multipart/x-mixed-replace; type=image/jpeg";
+pub use crate::videos::codec::MJPEG_MEDIA_TYPE;
 
-/// Longest clip [`TimeRange`] the kit accepts (60 seconds).
+/// Suggested UI and legacy MJPEG selection bound (60 seconds). Not a catalog limit.
 pub const MAX_VIDEO_CLIP_DURATION_US: u64 = 60 * 1_000_000;
 
 /// Default multipart boundary used by [`encode_mjpeg_multipart`].
@@ -26,6 +30,63 @@ pub const DEFAULT_MJPEG_BOUNDARY: &str = "a2alabframe";
 
 /// Relative download prefix for clip handles. Never a host or scheme.
 pub const VIDEO_CLIP_PATH_PREFIX: &str = "/media/video-clips/";
+
+/// Optional 8x trick-play metadata for encoded HLS/CMAF sessions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct VideoPlayback8xMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rendition_path: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    fallback_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unavailable_reason: Option<String>,
+}
+
+impl VideoPlayback8xMetadata {
+    /// Omits the block for legacy MJPEG sessions that never set acceleration metadata.
+    #[must_use]
+    pub fn is_absent(&self) -> bool {
+        self == &Self::default()
+    }
+
+    /// Session-relative 8x playlist when trick play is available.
+    #[must_use]
+    pub fn rendition_path(&self) -> Option<&str> {
+        self.rendition_path.as_deref()
+    }
+
+    /// Recoverable 1x gateway playlist used when 8x trick play is unavailable.
+    #[must_use]
+    pub fn fallback_path(&self) -> &str {
+        &self.fallback_path
+    }
+
+    /// Stable reason code when [`Self::rendition_path`] is absent.
+    #[must_use]
+    pub fn unavailable_reason(&self) -> Option<&str> {
+        self.unavailable_reason.as_deref()
+    }
+
+    /// Advertises an available 8x rendition with the normal playlist as fallback.
+    #[must_use]
+    pub fn available(rendition_path: impl Into<String>, fallback_path: impl Into<String>) -> Self {
+        Self {
+            rendition_path: Some(rendition_path.into()),
+            fallback_path: fallback_path.into(),
+            unavailable_reason: None,
+        }
+    }
+
+    /// Advertises recoverable 1x playback when trick play cannot be published.
+    #[must_use]
+    pub fn unavailable(fallback_path: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            rendition_path: None,
+            fallback_path: fallback_path.into(),
+            unavailable_reason: Some(reason.into()),
+        }
+    }
+}
 
 /// Object-safe stream of JPEG frames for one clip handle.
 pub type VideoClipStream = Pin<Box<dyn Stream<Item = Result<VideoFrame, A2aLabError>> + Send>>;
@@ -44,6 +105,7 @@ pub struct VideoSource {
     height: u32,
     fps: u32,
     media_type: String,
+    capabilities: Vec<VideoCodec>,
 }
 
 #[derive(Deserialize)]
@@ -60,13 +122,19 @@ struct VideoSourceRaw {
     height: u32,
     fps: u32,
     media_type: String,
+    #[serde(default = "default_mjpeg_capabilities")]
+    capabilities: Vec<VideoCodec>,
+}
+
+fn default_mjpeg_capabilities() -> Vec<VideoCodec> {
+    vec![VideoCodec::Mjpeg]
 }
 
 impl TryFrom<VideoSourceRaw> for VideoSource {
     type Error = A2aLabError;
 
     fn try_from(raw: VideoSourceRaw) -> Result<Self, Self::Error> {
-        Self::new(
+        Self::with_capabilities(
             raw.id,
             raw.name,
             raw.description,
@@ -76,6 +144,7 @@ impl TryFrom<VideoSourceRaw> for VideoSource {
             raw.height,
             raw.fps,
             raw.media_type,
+            raw.capabilities,
         )
     }
 }
@@ -89,7 +158,7 @@ impl<'de> Deserialize<'de> for VideoSource {
 }
 
 impl VideoSource {
-    /// Creates a source when dimensions, fps, and media type are valid.
+    /// Creates an MJPEG source with [`VideoCodec::Mjpeg`] capability.
     pub fn new(
         id: VideoSourceId,
         name: impl Into<String>,
@@ -101,8 +170,36 @@ impl VideoSource {
         fps: u32,
         media_type: impl Into<String>,
     ) -> Result<Self, A2aLabError> {
+        Self::with_capabilities(
+            id,
+            name,
+            description,
+            asset_id,
+            semantic_id,
+            width,
+            height,
+            fps,
+            media_type,
+            vec![VideoCodec::Mjpeg],
+        )
+    }
+
+    /// Creates a source when dimensions, fps, media type, and capabilities are valid.
+    pub fn with_capabilities(
+        id: VideoSourceId,
+        name: impl Into<String>,
+        description: impl Into<String>,
+        asset_id: Option<String>,
+        semantic_id: Option<String>,
+        width: u32,
+        height: u32,
+        fps: u32,
+        media_type: impl Into<String>,
+        capabilities: Vec<VideoCodec>,
+    ) -> Result<Self, A2aLabError> {
         let media_type = media_type.into();
-        check_mjpeg_media_type(&media_type)?;
+        check_capabilities(&capabilities)?;
+        validate_source_media(&capabilities, &media_type)?;
         check_positive("width", width)?;
         check_positive("height", height)?;
         check_positive("fps", fps)?;
@@ -116,7 +213,33 @@ impl VideoSource {
             height,
             fps,
             media_type,
+            capabilities,
         })
+    }
+
+    /// Creates an MJPEG source with default multipart media type.
+    pub fn new_mjpeg(
+        id: VideoSourceId,
+        name: impl Into<String>,
+        description: impl Into<String>,
+        asset_id: Option<String>,
+        semantic_id: Option<String>,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> Result<Self, A2aLabError> {
+        Self::with_capabilities(
+            id,
+            name,
+            description,
+            asset_id,
+            semantic_id,
+            width,
+            height,
+            fps,
+            MJPEG_MEDIA_TYPE,
+            vec![VideoCodec::Mjpeg],
+        )
     }
 
     /// Stable source identifier.
@@ -167,7 +290,13 @@ impl VideoSource {
         self.fps
     }
 
-    /// MJPEG multipart media type.
+    /// Supported retained and session codecs for this source.
+    #[must_use]
+    pub fn capabilities(&self) -> &[VideoCodec] {
+        &self.capabilities
+    }
+
+    /// Primary catalog media type for this source.
     #[must_use]
     pub fn media_type(&self) -> &str {
         &self.media_type
@@ -358,22 +487,16 @@ struct GetVideoClipRequestRaw {
 }
 
 impl GetVideoClipRequest {
-    /// Creates a request when `range` is valid and within the duration limit.
+    /// Creates a request when `range` is valid and non-empty.
     pub fn new(source_id: VideoSourceId, range: TimeRange) -> Result<Self, A2aLabError> {
         let request = Self { source_id, range };
         request.check()?;
         Ok(request)
     }
 
-    /// Rejects an invalid, reversed, or over-limit range.
+    /// Rejects an invalid, reversed, or empty range.
     pub fn check(&self) -> Result<(), A2aLabError> {
         self.range.check()?;
-        if self.range.duration_us() > MAX_VIDEO_CLIP_DURATION_US {
-            return Err(A2aLabError::invalid(
-                "range",
-                format!("must be at most {MAX_VIDEO_CLIP_DURATION_US} microseconds"),
-            ));
-        }
         Ok(())
     }
 
@@ -433,24 +556,17 @@ impl TckMalformedVideoRequests {
         }
     }
 
-    /// Prepares a clip whose duration is one microsecond over the 60-second limit.
+    /// Prepares a clip with the profile's empty `[start, end)` range.
     #[must_use]
-    pub fn get_video_clip_over_limit(
+    pub fn get_video_clip_empty_range(
         source_id: VideoSourceId,
-        start: UtcTimestamp,
+        at: UtcTimestamp,
     ) -> GetVideoClipRequest {
         GetVideoClipRequest {
             source_id,
-            range: TimeRange::tck_unchecked(
-                start,
-                start.saturating_add_micros(over_limit_delta_us()),
-            ),
+            range: TimeRange::tck_unchecked(at, at),
         }
     }
-}
-
-fn over_limit_delta_us() -> i64 {
-    i64::try_from(MAX_VIDEO_CLIP_DURATION_US.saturating_add(1)).unwrap_or(i64::MAX)
 }
 
 /// Short-lived clip handle. JSON never includes video bytes.
@@ -460,8 +576,11 @@ pub struct VideoClip {
     source_id: VideoSourceId,
     requested_range: TimeRange,
     effective_range: TimeRange,
+    codec: VideoCodec,
     media_type: String,
     path: String,
+    #[serde(default, skip_serializing_if = "VideoPlayback8xMetadata::is_absent")]
+    playback_8x: VideoPlayback8xMetadata,
 }
 
 #[derive(Deserialize)]
@@ -471,8 +590,16 @@ struct VideoClipRaw {
     source_id: VideoSourceId,
     requested_range: TimeRange,
     effective_range: TimeRange,
+    #[serde(default = "default_mjpeg_codec")]
+    codec: VideoCodec,
     media_type: String,
     path: String,
+    #[serde(default)]
+    playback_8x: VideoPlayback8xMetadata,
+}
+
+fn default_mjpeg_codec() -> VideoCodec {
+    VideoCodec::Mjpeg
 }
 
 impl TryFrom<VideoClipRaw> for VideoClip {
@@ -484,12 +611,14 @@ impl TryFrom<VideoClipRaw> for VideoClip {
             raw.source_id,
             raw.requested_range,
             raw.effective_range,
+            raw.codec,
             raw.media_type,
-        )?;
+        )?
+        .with_playback_8x(raw.playback_8x);
         if clip.path != raw.path {
             return Err(A2aLabError::invalid(
                 "path",
-                "must be a relative /media/video-clips/{id} path",
+                "must be a relative /media/video-clips/{id}/ gateway root",
             ));
         }
         Ok(clip)
@@ -511,20 +640,49 @@ impl VideoClip {
         source_id: VideoSourceId,
         requested_range: TimeRange,
         effective_range: TimeRange,
+        codec: VideoCodec,
         media_type: impl Into<String>,
     ) -> Result<Self, A2aLabError> {
         requested_range.check()?;
         effective_range.check()?;
         let media_type = media_type.into();
-        check_mjpeg_media_type(&media_type)?;
+        check_session_media(codec, &media_type)?;
+        let path = video_clip_path(&id);
+        check_relative_session_path(&path)?;
         Ok(Self {
-            path: video_clip_path(&id),
             id,
             source_id,
             requested_range,
             effective_range,
+            codec,
             media_type,
+            path,
+            playback_8x: VideoPlayback8xMetadata::default(),
         })
+    }
+
+    /// Attaches optional 8x trick-play metadata for encoded gateway sessions.
+    #[must_use]
+    pub fn with_playback_8x(mut self, playback_8x: VideoPlayback8xMetadata) -> Self {
+        self.playback_8x = playback_8x;
+        self
+    }
+
+    /// Creates an MJPEG finite session with the legacy multipart media type.
+    pub fn new_mjpeg(
+        id: VideoClipId,
+        source_id: VideoSourceId,
+        requested_range: TimeRange,
+        effective_range: TimeRange,
+    ) -> Result<Self, A2aLabError> {
+        Self::new(
+            id,
+            source_id,
+            requested_range,
+            effective_range,
+            VideoCodec::Mjpeg,
+            MJPEG_MEDIA_TYPE,
+        )
     }
 
     /// Clip identifier.
@@ -551,7 +709,13 @@ impl VideoClip {
         self.effective_range
     }
 
-    /// MJPEG multipart media type.
+    /// Session codec choice.
+    #[must_use]
+    pub const fn codec(&self) -> VideoCodec {
+        self.codec
+    }
+
+    /// Declared session media type.
     #[must_use]
     pub fn media_type(&self) -> &str {
         &self.media_type
@@ -561,6 +725,12 @@ impl VideoClip {
     #[must_use]
     pub fn path(&self) -> &str {
         &self.path
+    }
+
+    /// Optional 8x trick-play advertisement and recoverable fallback.
+    #[must_use]
+    pub const fn playback_8x(&self) -> &VideoPlayback8xMetadata {
+        &self.playback_8x
     }
 }
 
@@ -593,10 +763,10 @@ impl VideoFrame {
     }
 }
 
-/// Relative path `/media/video-clips/{id}`.
+/// Relative gateway root `/media/video-clips/{id}/`.
 #[must_use]
 pub fn video_clip_path(id: &VideoClipId) -> String {
-    format!("{VIDEO_CLIP_PATH_PREFIX}{id}")
+    format!("{VIDEO_CLIP_PATH_PREFIX}{id}/")
 }
 
 /// HTTP `Content-Type` for a finite MJPEG multipart body using `boundary`.
@@ -719,17 +889,6 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
-}
-
-pub(crate) fn check_mjpeg_media_type(media_type: &str) -> Result<(), A2aLabError> {
-    if media_type == MJPEG_MEDIA_TYPE {
-        Ok(())
-    } else {
-        Err(A2aLabError::invalid(
-            "media_type",
-            format!("must be {MJPEG_MEDIA_TYPE}"),
-        ))
-    }
 }
 
 fn check_positive(field: &'static str, value: u32) -> Result<(), A2aLabError> {

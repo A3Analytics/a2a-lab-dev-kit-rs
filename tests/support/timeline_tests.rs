@@ -1,26 +1,7 @@
 const INTENTIONAL_LIVE_DIFFERENCE: &str = "SiLA LabVideos exposes retained timeline metadata and finite BinaryDownload clips but has no follow command and no post-call frame stream";
 
-const MCP_MEDIA_IS_UNGATED: &str =
-    "MCP /media/* has no bearer gate and is outside the /mcp host allowlist";
-async fn listen_a2a_auth(lab: Arc<dyn A2aLabApi>) -> String {
-    let (listener, address) = bind_local().await.unwrap();
-    let server = A2aServer::new(&lab).with_security(
-        [(
-            "bearerAuth".to_owned(),
-            SecurityScheme::HttpAuth(HttpAuthSecurityScheme {
-                scheme: "bearer".to_owned(),
-                description: None,
-                bearer_format: None,
-            }),
-        )]
-        .into(),
-        vec![[("bearerAuth".to_owned(), Vec::new())].into()],
-    );
-    tokio::spawn(async move {
-        server.listen(listener).await.unwrap();
-    });
-    format!("http://{address}")
-}
+const MCP_MEDIA_GATE_PARITY: &str =
+    "MCP /media/* uses the configured bearer gate and stays outside the /mcp host allowlist";
 
 struct TimelineCase {
     name: &'static str,
@@ -120,11 +101,14 @@ async fn wait_until(mut ready: impl FnMut() -> bool) {
     panic!("condition was not met");
 }
 
-fn assert_follow_handle(follow: &a2a_lab_dev_kit::VideoFollow) {
-    assert_eq!(follow.path(), video_live_path(follow.id()));
-    assert_relative_media_path(follow.path());
-    assert_no_media_bytes(&serde_json::to_value(follow).unwrap());
-    assert_eq!(follow.media_type(), MJPEG_MEDIA_TYPE);
+macro_rules! assert_follow_handle {
+    ($follow:expr) => {{
+        let follow = $follow;
+        assert_eq!(follow.path(), video_live_path(follow.id()));
+        assert_relative_media_path(follow.path());
+        assert_no_media_bytes(&serde_json::to_value(follow).unwrap());
+        assert_eq!(follow.media_type(), MJPEG_MEDIA_TYPE);
+    }};
 }
 
 async fn authed_get(url: &str) -> reqwest::Response {
@@ -266,7 +250,7 @@ async fn live_follow_parity_keeps_the_sila_absence_explicit() {
     insert_frame(&videos, "cam", "2024-01-01T00:00:04Z").await;
     let lab = share(videos.clone());
     let a2a_base = listen_a2a_auth(Arc::clone(&lab)).await;
-    let (mcp_url, _) = listen_mcp(Arc::clone(&lab)).await;
+    let (mcp_url, _) = listen_mcp_auth(Arc::clone(&lab)).await;
     let a2a = A2aClient::new(&a2a_base)
         .unwrap()
         .with_bearer_token("lab-token");
@@ -276,8 +260,8 @@ async fn live_follow_parity_keeps_the_sila_absence_explicit() {
         .await
         .unwrap();
     let mcp_follow = follow_mcp(&mcp, "cam").await;
-    assert_follow_handle(&a2a_follow);
-    assert_follow_handle(&mcp_follow);
+    assert_follow_handle!(&a2a_follow);
+    assert_follow_handle!(&mcp_follow);
     let a2a_url = a2a.video_live_url(a2a_follow.id());
     let mcp_url_live = mcp.video_live_url(mcp_follow.id()).unwrap();
     assert!(a2a_url.ends_with(a2a_follow.path()));
@@ -316,12 +300,17 @@ async fn live_follow_parity_keeps_the_sila_absence_explicit() {
         .unwrap();
     assert_eq!(queried.status(), reqwest::StatusCode::UNAUTHORIZED);
 
-    let mut a2a_body = authed_get(&a2a_url).await;
-    let mut mcp_body = reqwest::Client::new()
-        .get(&mcp_url_live)
+    let mcp_anonymous = reqwest::Client::new().get(&mcp_url_live).send().await.unwrap();
+    assert_eq!(mcp_anonymous.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let mcp_queried = reqwest::Client::new()
+        .get(format!("{mcp_url_live}?access_token=lab-token"))
         .send()
         .await
         .unwrap();
+    assert_eq!(mcp_queried.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let mut a2a_body = authed_get(&a2a_url).await;
+    let mut mcp_body = authed_get(&mcp_url_live).await;
     assert_unshared_stream(&a2a_body);
     assert_unshared_stream(&mcp_body);
     assert_idle(&mut a2a_body).await;
@@ -350,11 +339,7 @@ async fn live_follow_parity_keeps_the_sila_absence_explicit() {
     }
     drop(a2a_body);
     let later = follow_mcp(&mcp, "cam").await;
-    let mut later_body = reqwest::Client::new()
-        .get(mcp.video_live_url(later.id()).unwrap())
-        .send()
-        .await
-        .unwrap();
+    let mut later_body = authed_get(&mcp.video_live_url(later.id()).unwrap()).await;
     assert_unshared_stream(&later_body);
     assert_idle(&mut later_body).await;
     insert_frame(&videos, "cam", "2024-01-01T00:00:07Z").await;
@@ -378,7 +363,7 @@ async fn live_follow_parity_keeps_the_sila_absence_explicit() {
 #[tokio::test]
 async fn media_security_covers_paths_cache_and_disconnect() {
     assert_sila_has_no_live_follow();
-    assert!(MCP_MEDIA_IS_UNGATED.contains("no bearer gate"));
+    assert!(MCP_MEDIA_GATE_PARITY.contains("bearer gate"));
     assert_authenticated_media_paths().await;
     assert_mcp_media_is_outside_the_host_allowlist().await;
     assert_disconnect_cleanup().await;
@@ -401,7 +386,7 @@ async fn assert_authenticated_media_paths() {
         .follow_video(FollowVideoRequest::new(cam()))
         .await
         .unwrap();
-    assert_follow_handle(&follow);
+    assert_follow_handle!(&follow);
     let url = client.video_live_url(follow.id());
     assert!(url.ends_with(follow.path()));
     assert!(!url.contains("lab-token") && !url.contains('?'));
@@ -436,15 +421,42 @@ async fn assert_authenticated_media_paths() {
     );
     drop(first);
 
-    let (mcp_url, _) = listen_mcp(lab).await;
+    let (mcp_url, _) = listen_mcp_auth(lab).await;
     let mcp = McpLab::connect(&mcp_url).await.unwrap();
     let follow = follow_mcp(&mcp, "cam").await;
-    assert_follow_handle(&follow);
+    assert_follow_handle!(&follow);
     let live = mcp.video_live_url(follow.id()).unwrap();
     assert!(!live.contains("access_token") && !live.contains('?'));
-    let response = reqwest::Client::new().get(&live).send().await.unwrap();
-    assert_unshared_stream(&response);
-    drop(response);
+    let anonymous = reqwest::Client::new().get(&live).send().await.unwrap();
+    if anonymous.status() != reqwest::StatusCode::UNAUTHORIZED {
+        diverge(
+            "no public live route",
+            "MCP",
+            &anonymous.status().to_string(),
+        );
+    }
+    let queried = reqwest::Client::new()
+        .get(format!("{live}?access_token=lab-token"))
+        .send()
+        .await
+        .unwrap();
+    if queried.status() != reqwest::StatusCode::UNAUTHORIZED {
+        diverge("bearer query", "MCP", &queried.status().to_string());
+    }
+    let first = authed_get(&live).await;
+    assert_unshared_stream(&first);
+    let second = authed_get(&live).await;
+    let (status, code, message) = media_error(second).await;
+    expect_media(
+        "no shared cache",
+        "MCP",
+        status,
+        &code,
+        &message,
+        400,
+        "invalid",
+    );
+    drop(first);
 }
 
 async fn assert_mcp_media_is_outside_the_host_allowlist() {
@@ -577,10 +589,9 @@ impl VideoProvider for CleanupProbe {
         &self,
         request: FollowVideoRequest,
     ) -> impl Future<Output = Result<VideoFollow, A2aLabError>> + Send {
-        std::future::ready(VideoFollow::new(
+        std::future::ready(VideoFollow::new_mjpeg(
             VideoFollowId::new("follow-probe").unwrap(),
             request.source_id().clone(),
-            MJPEG_MEDIA_TYPE,
         ))
     }
 

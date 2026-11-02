@@ -1,7 +1,12 @@
 //! MCP tools for lab logs, metrics, tasks, images, and videos.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use a2a_types::{SecurityRequirement, SecurityScheme};
+use axum::Router;
+use axum::extract::Request;
+use axum::middleware::{Next, from_fn};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerConfig};
@@ -12,6 +17,7 @@ use tokio::net::TcpListener;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:31001";
 
+use crate::a2a::{AccessGate, Authenticator, auth_response, security_configuration_error};
 use crate::error::A2aLabError;
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
@@ -26,14 +32,18 @@ use crate::tasks::{
 };
 use crate::videos::{
     FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip, VideoFollow, VideoSource,
-    VideoTimeline,
+    GetVideoTimelineRequest, ListVideoSourcesRequest, SharedMediaAssetProvider, VideoClip,
+    VideoFollow, VideoSource, VideoTimeline,
 };
 
 /// MCP server exposing the lab operations as tools.
 #[derive(Clone)]
 pub struct McpServer {
     lab: Arc<dyn A2aLabApi>,
+    security_schemes: Option<HashMap<String, SecurityScheme>>,
+    security_requirements: Option<Vec<SecurityRequirement>>,
+    authenticator: Option<Arc<dyn Authenticator>>,
+    media_assets: Option<SharedMediaAssetProvider>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -45,8 +55,41 @@ impl McpServer {
     pub fn new(lab: &Arc<dyn A2aLabApi>) -> Self {
         Self {
             lab: Arc::clone(lab),
+            security_schemes: None,
+            security_requirements: None,
+            authenticator: None,
+            media_assets: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Declares the same HTTP bearer requirements as [`crate::A2aServer::with_security`].
+    ///
+    /// When requirements are non-empty, every `/media/video-*` gateway route on this
+    /// listener uses the access gate. `/mcp` stays on the host allowlist only.
+    #[must_use]
+    pub fn with_security(
+        mut self,
+        schemes: HashMap<String, SecurityScheme>,
+        requirements: Vec<SecurityRequirement>,
+    ) -> Self {
+        self.security_schemes = Some(schemes);
+        self.security_requirements = Some(requirements);
+        self
+    }
+
+    /// Validates bearer tokens for OAuth2, OpenID Connect, and HTTP bearer schemes.
+    #[must_use]
+    pub fn with_authenticator(mut self, authenticator: Arc<dyn Authenticator>) -> Self {
+        self.authenticator = Some(authenticator);
+        self
+    }
+
+    /// Uses `assets` for `/media/video-*` gateway routes instead of a default local provider.
+    #[must_use]
+    pub fn with_media_assets(mut self, assets: SharedMediaAssetProvider) -> Self {
+        self.media_assets = Some(assets);
+        self
     }
 
     /// Serves newline-delimited JSON-RPC on standard input and output.
@@ -73,6 +116,12 @@ impl McpServer {
         self,
         listener: impl Into<Option<TcpListener>>,
     ) -> Result<(), A2aLabError> {
+        security_configuration_error(
+            self.security_schemes.as_ref().unwrap_or(&HashMap::new()),
+            self.security_requirements.as_deref().unwrap_or(&[]),
+            self.authenticator.is_some(),
+        )
+        .map_err(|message| A2aLabError::invalid("security", message))?;
         let listener = match listener.into() {
             Some(listener) => listener,
             None => TcpListener::bind(DEFAULT_ADDRESS)
@@ -92,15 +141,51 @@ impl McpServer {
             config = config.disable_allowed_hosts();
         }
         let lab = Arc::clone(&self.lab);
+        let gate = AccessGate::new(
+            self.security_schemes.clone(),
+            self.security_requirements.clone(),
+            self.authenticator.clone(),
+        );
+        let media = self.media_assets.clone().unwrap_or_else(|| {
+            Arc::new(crate::videos::LocalMediaAssetProvider::new(Arc::clone(
+                &lab,
+            )))
+        });
         let service = StreamableHttpService::new(
             move || Ok(self.clone()),
             Arc::new(LocalSessionManager::default()),
             config,
         );
-        let router = axum::Router::new()
+        let router = Router::new()
             .nest_service("/mcp", service)
-            .merge(crate::videos::http::router(lab));
-        axum::serve(listener, router)
+            .merge(crate::videos::http::router(media));
+        let app = if gate.enforced() {
+            let http_gate = gate;
+            router.layer(from_fn(move |request: Request, next: Next| {
+                let gate = http_gate.clone();
+                async move {
+                    if !crate::videos::http::is_gated_media_path(request.uri().path()) {
+                        return next.run(request).await;
+                    }
+                    match gate
+                        .authenticate(request.headers(), request.uri().query())
+                        .await
+                    {
+                        Ok(_caller) => next.run(request).await,
+                        Err(error) => {
+                            let mut response = auth_response(&error);
+                            if crate::videos::http::is_gated_media_path(request.uri().path()) {
+                                crate::videos::http::apply_media_security_headers(&mut response);
+                            }
+                            response
+                        }
+                    }
+                }
+            }))
+        } else {
+            router
+        };
+        axum::serve(listener, app)
             .await
             .map_err(|error| A2aLabError::transport(error.to_string()))
     }

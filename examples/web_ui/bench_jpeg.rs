@@ -7,12 +7,12 @@
     dead_code
 )]
 //!
-//! Each frame is 160 by 96. A bright bar steps across a dark field so playback
+//! Each frame is 320 by 192. A bright bar steps across a dark field so playback
 //! is visible. Blocks are solid colors, so only the JPEG DC coefficient and an
 //! end-of-block marker are encoded.
 
-const WIDTH: u32 = 160;
-const HEIGHT: u32 = 96;
+const WIDTH: u32 = 320;
+const HEIGHT: u32 = 192;
 
 const DC_LUM: [(u8, u16); 12] = [
     (2, 0b00),
@@ -203,18 +203,21 @@ fn paint_clock(
         second / 10,
         second % 10,
     ];
-    let mut column = 1_usize;
+    let mut column = 4_usize;
     for (index, digit) in digits.iter().enumerate() {
-        paint_digit(grid, column, 3, *digit);
-        column += 3;
+        paint_digit(grid, column, 8, *digit);
+        column += 5;
         if index == 1 || index == 3 {
-            paint_colon(grid, column, 3);
-            column += 1;
+            paint_colon(grid, column, 8);
+            column += 2;
         }
     }
-    let ticks = (step % 4) as usize;
+    let phase = usize::try_from((second.wrapping_add(step)) % 4).unwrap_or(0);
+    let mut column = 12_usize;
     for tick in 0..4 {
-        grid[9][8 + tick] = if tick < ticks { AMBER } else { [22, 48, 82] };
+        let color = if tick <= phase { AMBER } else { [22, 48, 82] };
+        fill_color(grid, column, 16, 3, 2, color);
+        column += 4;
     }
 }
 
@@ -222,31 +225,31 @@ fn paint_digit(grid: &mut [[[u8; 3]; BLOCKS_X]; BLOCKS_Y], column: usize, row: u
     let bits = SEGMENTS[usize::try_from(digit % 10).unwrap_or(0)];
     let on = |segment: u8| bits & (1 << segment) != 0;
     if on(0) {
-        fill(grid, column, row, 2, 1);
+        fill(grid, column, row, 4, 1);
     }
     if on(1) {
-        fill(grid, column, row + 1, 1, 1);
+        fill(grid, column, row + 1, 1, 2);
     }
     if on(2) {
-        fill(grid, column + 1, row + 1, 1, 1);
+        fill(grid, column + 3, row + 1, 1, 2);
     }
     if on(3) {
-        fill(grid, column, row + 2, 2, 1);
+        fill(grid, column, row + 3, 4, 1);
     }
     if on(4) {
-        fill(grid, column, row + 3, 1, 1);
+        fill(grid, column, row + 4, 1, 2);
     }
     if on(5) {
-        fill(grid, column + 1, row + 3, 1, 1);
+        fill(grid, column + 3, row + 4, 1, 2);
     }
     if on(6) {
-        fill(grid, column, row + 4, 2, 1);
+        fill(grid, column, row + 6, 4, 1);
     }
 }
 
 fn paint_colon(grid: &mut [[[u8; 3]; BLOCKS_X]; BLOCKS_Y], column: usize, row: usize) {
-    fill(grid, column, row + 1, 1, 1);
-    fill(grid, column, row + 3, 1, 1);
+    fill(grid, column, row + 2, 1, 1);
+    fill(grid, column, row + 5, 1, 1);
 }
 
 fn fill(
@@ -256,10 +259,21 @@ fn fill(
     width: usize,
     height: usize,
 ) {
+    fill_color(grid, column, row, width, height, AMBER);
+}
+
+fn fill_color(
+    grid: &mut [[[u8; 3]; BLOCKS_X]; BLOCKS_Y],
+    column: usize,
+    row: usize,
+    width: usize,
+    height: usize,
+    color: [u8; 3],
+) {
     for y in row..row + height {
         for x in column..column + width {
             if y < BLOCKS_Y && x < BLOCKS_X {
-                grid[y][x] = AMBER;
+                grid[y][x] = color;
             }
         }
     }

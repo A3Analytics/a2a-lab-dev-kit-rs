@@ -6,7 +6,12 @@ pub const BOUNDARY: &str = "a2alabframe";
 pub const MAX_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_FRAMES: usize = 1_800;
 pub const MAX_QUEUE: usize = 3;
-pub const MAX_DURATION_US: i64 = 60 * 1_000_000;
+pub const MAX_DURATION_US: i64 = 120_000_000;
+pub const GAP_THRESHOLD_US: i64 = 1_500_000;
+
+pub fn is_capture_gap(previous_us: i64, next_us: i64) -> bool {
+    next_us.saturating_sub(previous_us) > GAP_THRESHOLD_US
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
@@ -163,6 +168,21 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+pub fn due_wall_ms(captured_us: i64, origin_us: i64, origin_wall_ms: f64, pace: u32) -> f64 {
+    let pace = f64::from(pace.max(1));
+    origin_wall_ms + ((captured_us - origin_us) as f64 / 1_000.0 / pace)
+}
+
+pub fn is_late(
+    captured_us: i64,
+    origin_us: i64,
+    origin_wall_ms: f64,
+    now_ms: f64,
+    pace: u32,
+) -> bool {
+    now_ms > due_wall_ms(captured_us, origin_us, origin_wall_ms, pace)
+}
+
 pub fn captured_us(value: &str) -> Option<i64> {
     let body = value
         .strip_suffix('Z')
@@ -266,12 +286,50 @@ mod tests {
     }
 
     #[test]
+    fn capture_gaps_cover_leading_middle_consecutive_and_window_edges() {
+        let t0 = captured_us("2024-01-01T00:00:00Z").unwrap();
+        let t1 = captured_us("2024-01-01T00:00:01Z").unwrap();
+        let t3 = captured_us("2024-01-01T00:00:03Z").unwrap();
+        let t5 = captured_us("2024-01-01T00:00:05Z").unwrap();
+        let window = captured_us("2024-01-01T00:02:00Z").unwrap();
+        let window_next = captured_us("2024-01-01T00:02:01Z").unwrap();
+        assert!(!is_capture_gap(t0, t1));
+        assert!(is_capture_gap(t1, t3));
+        assert!(is_capture_gap(t3, t5));
+        assert!(!is_capture_gap(window, window_next));
+        assert!(is_capture_gap(t0, t0 + GAP_THRESHOLD_US + 1));
+        assert!(!is_capture_gap(t0, t0 + GAP_THRESHOLD_US));
+    }
+
+    #[test]
     fn duration_limit_uses_capture_timestamps() {
         let mut parser = Parser::new();
         let first = encode_part("2024-01-01T00:00:00Z", JPEG);
         parser.push(&first).unwrap();
-        let late = encode_part("2024-01-01T00:01:01Z", JPEG);
+        let late = encode_part("2024-01-01T00:02:01Z", JPEG);
         assert_eq!(parser.push(&late), Err(Error::TooLong));
+    }
+
+    #[test]
+    fn eight_x_hour_span_is_late_after_seven_and_a_half_minutes() {
+        let origin_us = captured_us("2024-01-01T00:00:00Z").unwrap();
+        let hour_us = captured_us("2024-01-01T01:00:00Z").unwrap();
+        let pace = 8;
+        assert_eq!(due_wall_ms(hour_us, origin_us, 0.0, pace), 450_000.0);
+        assert!(!is_late(hour_us, origin_us, 0.0, 449_999.0, pace));
+        assert!(is_late(hour_us, origin_us, 0.0, 450_001.0, pace));
+        let late = (0..=3_600)
+            .filter(|second| {
+                is_late(
+                    origin_us + i64::from(*second) * 1_000_000,
+                    origin_us,
+                    0.0,
+                    10_000.0,
+                    pace,
+                )
+            })
+            .count();
+        assert_eq!(late, 80);
     }
 
     fn encode(frames: &[(&str, &[u8])]) -> Vec<u8> {

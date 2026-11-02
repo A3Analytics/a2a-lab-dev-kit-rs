@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use futures_util::StreamExt;
 use tonic::{Request, Response, Status};
 
 use crate::error::{A2aLabError, VideoAvailability};
@@ -32,9 +31,8 @@ use crate::sila::wire::sila2::org::silastandard::{
 };
 use crate::time::{TimeRange, UtcTimestamp};
 use crate::videos::{
-    DEFAULT_MJPEG_BOUNDARY, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip, VideoSource, VideoTimeline,
-    encode_mjpeg_end, encode_mjpeg_part,
+    GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult, GetVideoTimelineRequest,
+    ListVideoSourcesRequest, VideoClip, VideoSource, VideoTimeline,
 };
 
 const LAB_VIDEOS: &str = "com.a3analytics/lab/LabVideos/v1";
@@ -195,18 +193,13 @@ impl VideoFeature {
     }
 
     async fn store_clip(&self, clip: &VideoClip) -> Result<String, Status> {
-        let mut stream = self
+        let asset = self
             .lab
-            .open_video_clip(clip.id())
+            .export_finite_video_clip(clip.id())
             .await
             .map_err(video_error)?;
-        let mut body = Vec::new();
-        while let Some(frame) = stream.next().await {
-            let frame = frame.map_err(video_error)?;
-            body.extend_from_slice(&encode_mjpeg_part(&frame, DEFAULT_MJPEG_BOUNDARY));
-        }
-        body.extend_from_slice(&encode_mjpeg_end(DEFAULT_MJPEG_BOUNDARY));
-        self.binaries.insert_shared(Arc::from(body))
+        self.binaries
+            .insert_shared(Arc::from(asset.bytes().to_vec()))
     }
 }
 

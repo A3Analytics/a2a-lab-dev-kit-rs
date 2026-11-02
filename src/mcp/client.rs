@@ -13,6 +13,7 @@ use rmcp::transport::{IntoTransport, StreamableHttpClientTransport};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::PackagedMediaAsset;
 use crate::error::A2aLabError;
 use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{DEFAULT_MAX_IMAGE_BYTES, Image, ImageTransportConfig};
@@ -286,6 +287,14 @@ impl A2aLabApi for McpLab {
         let id = id.clone();
         Box::pin(async move { self.fetch_video_clip(&id).await })
     }
+
+    fn export_finite_video_clip(
+        &self,
+        id: &VideoClipId,
+    ) -> A2aLabFuture<'_, Result<PackagedMediaAsset, A2aLabError>> {
+        let id = id.clone();
+        Box::pin(async move { self.fetch_finite_clip_export(&id).await })
+    }
 }
 
 impl McpLab {
@@ -310,6 +319,35 @@ impl McpLab {
         Ok(Box::pin(futures_util::stream::iter(
             frames.into_iter().map(Ok),
         )))
+    }
+
+    async fn fetch_finite_clip_export(
+        &self,
+        id: &VideoClipId,
+    ) -> Result<PackagedMediaAsset, A2aLabError> {
+        let origin = self.origin.as_ref().ok_or_else(|| {
+            A2aLabError::unavailable("video clip download requires an HTTP MCP origin")
+        })?;
+        let response = reqwest::Client::new()
+            .get(crate::videos::http::clip_url(origin, id))
+            .send()
+            .await
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_owned();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(media_http_error(status, &body));
+        }
+        PackagedMediaAsset::new(content_type, body.to_vec())
     }
 }
 

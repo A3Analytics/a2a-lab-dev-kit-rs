@@ -1,11 +1,14 @@
 //! Recording-availability geometry.
 //!
 //! Abutting retained intervals are one solid region. A later interval is a gap.
-//! Selection may span gaps when retained coverage overlaps and is at most 60 seconds.
+//! Selection may span gaps when retained coverage overlaps. Playback uses a bounded
+//! opaque session window; the UI selection itself is not capped.
 
-use super::domain::{self, MAX_CLIP_US, Timeline};
+use super::domain::{self, Timeline};
 
 pub const STEP_US: i64 = 1_000_000;
+/// Matches [`a2a_lab_dev_kit::DEFAULT_PLAYBACK_WINDOW_US`] for gateway sessions.
+pub const PLAYBACK_WINDOW_US: i64 = 120_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpanKind {
@@ -101,8 +104,13 @@ pub fn initial_window(track: &Track) -> Option<Window> {
 }
 
 pub fn newest_retained_window(track: &Track, newest_us: Option<i64>) -> Option<Window> {
-    let at = newest_us.or_else(|| retained(track).last().map(newest_in_span))?;
-    window_at(track, at)
+    let span = retained(track).last()?;
+    let end = newest_us
+        .map(|at| at.saturating_add(1).min(span.end_us))
+        .unwrap_or(span.end_us)
+        .max(span.start_us.saturating_add(1));
+    let start = end.saturating_sub(PLAYBACK_WINDOW_US).max(span.start_us);
+    window_at(track, start)
 }
 
 pub fn playhead_percent(track: &Track, frame_time: &str) -> Option<f64> {
@@ -111,40 +119,77 @@ pub fn playhead_percent(track: &Track, frame_time: &str) -> Option<f64> {
 }
 
 pub fn window_at(track: &Track, at_us: i64) -> Option<Window> {
-    let at_us = snap_retained(track, at_us)?;
-    let span = containing(track, at_us)?;
-    bounded(span, at_us, MAX_CLIP_US)
+    session_at(track, at_us)
+}
+
+pub fn session_at(track: &Track, anchor_us: i64) -> Option<Window> {
+    let anchor_us = snap_retained(track, anchor_us)?;
+    let span = containing(track, anchor_us)?;
+    bounded(span, anchor_us, PLAYBACK_WINDOW_US)
+}
+
+pub fn session_in_selection(track: &Track, selection: Window, anchor_us: i64) -> Option<Window> {
+    let mut session = session_at(track, anchor_us)?;
+    session.start_us = session.start_us.max(selection.start_us);
+    session.end_us = session.end_us.min(selection.end_us);
+    if session.end_us <= session.start_us {
+        let anchor = anchor_us.clamp(selection.start_us, selection.end_us.saturating_sub(1));
+        session = session_at(track, anchor)?;
+        session.start_us = session.start_us.max(selection.start_us);
+        session.end_us = session.end_us.min(selection.end_us);
+    }
+    (session.end_us > session.start_us).then_some(session)
+}
+
+pub fn needs_session_rebase(session: Window, at_us: i64) -> bool {
+    at_us < session.start_us || at_us >= session.end_us
 }
 
 pub fn drag_window(track: &Track, anchor_us: i64, point_us: i64) -> Option<Window> {
     let anchor_us = snap_retained(track, anchor_us)?;
-    let mut start = anchor_us.min(point_us).max(track.origin_us);
-    let mut end = anchor_us.max(point_us).min(track.end_us);
-    if end.saturating_sub(start) > MAX_CLIP_US {
-        if point_us >= anchor_us {
-            end = start.saturating_add(MAX_CLIP_US);
-        } else {
-            start = end.saturating_sub(MAX_CLIP_US);
-        }
-    }
+    let start = anchor_us.min(point_us).max(track.origin_us);
+    let end = anchor_us.max(point_us).min(track.end_us);
     (end > start && range_overlaps_retained(track, start, end)).then_some(Window {
         start_us: start,
         end_us: end,
     })
 }
 
-pub fn establish(track: &Track, current: Option<Window>) -> Option<Window> {
-    current.or_else(|| initial_window(track))
+pub fn establish(track: &Track, current: Option<Window>, newest_us: Option<i64>) -> Option<Window> {
+    current.or_else(|| newest_retained_window(track, newest_us))
 }
 
 pub fn move_window(track: &Track, window: Window, steps: i64) -> Window {
     let Some(span) = containing(track, window.start_us) else {
         return window;
     };
-    let duration = window.duration_us().clamp(1, MAX_CLIP_US);
-    let target = window
-        .start_us
-        .saturating_add(steps.saturating_mul(STEP_US));
+    let duration = window.duration_us().max(1);
+    let delta = steps.saturating_mul(STEP_US);
+    if steps > 0 && window.end_us >= track.end_us {
+        let start = (window.start_us.saturating_add(STEP_US))
+            .min(window.end_us.saturating_sub(1))
+            .max(span.start_us);
+        if start > window.start_us {
+            return Window {
+                start_us: start,
+                end_us: window.end_us,
+            };
+        }
+    }
+    if steps < 0 && window.start_us <= track.origin_us {
+        let end = window
+            .end_us
+            .saturating_sub(STEP_US)
+            .max(window.start_us.saturating_add(1))
+            .min(span.end_us);
+        if end < window.end_us {
+            return Window {
+                start_us: window.start_us,
+                end_us: end,
+            };
+        }
+    }
+    let target = window.start_us.saturating_add(delta);
     let shifted = Window {
         start_us: target,
         end_us: target.saturating_add(duration),
@@ -176,10 +221,7 @@ pub fn extend_window(track: &Track, window: Window, steps: i64) -> Window {
         return window;
     };
     let mut end = window.end_us.saturating_add(steps.saturating_mul(STEP_US));
-    let max_end = window
-        .start_us
-        .saturating_add(MAX_CLIP_US)
-        .min(track.end_us);
+    let max_end = track.end_us;
     let min_end = window.start_us.saturating_add(1).min(track.end_us);
     if end > max_end {
         end = max_end;
@@ -187,7 +229,7 @@ pub fn extend_window(track: &Track, window: Window, steps: i64) -> Window {
     if end < min_end {
         end = min_end;
     }
-    let _ = span; // start must anchor in retained coverage
+    let _ = span;
     Window {
         start_us: window.start_us,
         end_us: end,
@@ -198,7 +240,7 @@ pub fn jump_window(track: &Track, window: Window, to_start: bool) -> Window {
     let Some(span) = containing(track, window.start_us) else {
         return window;
     };
-    let duration = window.duration_us().clamp(1, MAX_CLIP_US);
+    let duration = window.duration_us().max(1);
     if to_start {
         place(span, span.start_us, duration)
     } else {
@@ -340,9 +382,15 @@ mod tests {
         assert_eq!(retained_count(&continuous), 1);
         assert_eq!(gap_count(&continuous), 0);
         assert_eq!(continuous.spans[0].end, "2024-01-01T00:01:00Z");
-        let across = window_at(&continuous, stamp("2024-01-01T00:00:20Z")).unwrap();
-        assert!(across.end_us > stamp("2024-01-01T00:00:30Z"));
-        assert!(across.duration_us() <= MAX_CLIP_US);
+        let across = drag_window(
+            &continuous,
+            stamp("2024-01-01T00:00:20Z"),
+            stamp("2024-01-01T00:00:50Z"),
+        )
+        .unwrap();
+        assert_eq!(across.start_us, stamp("2024-01-01T00:00:20Z"));
+        assert_eq!(across.end_us, stamp("2024-01-01T00:00:50Z"));
+        assert!(across.duration_us() > 20_000_000);
         let mut reader = ready();
         accept_timeline(&mut reader, &continuous_body());
         let ticket = reader
@@ -365,9 +413,9 @@ mod tests {
         .unwrap();
         assert_eq!(dragged.start_us, stamp("2024-01-01T00:00:00Z"));
         assert_eq!(dragged.end_us, stamp("2024-01-01T00:00:25Z"));
-        assert!(dragged.duration_us() <= MAX_CLIP_US);
+        assert!(dragged.duration_us() > 20_000_000);
 
-        let snapped = window_at(&gapped, stamp("2024-01-01T00:00:15Z")).unwrap();
+        let snapped = session_at(&gapped, stamp("2024-01-01T00:00:15Z")).unwrap();
         assert_eq!(snapped.start_us, stamp("2024-01-01T00:00:20Z"));
         assert_eq!(
             retained_instant(&gapped, stamp("2024-01-01T00:00:15Z")).unwrap(),
@@ -376,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn gap_spanning_selection_respects_sixty_second_cap() {
+    fn gap_spanning_selection_is_not_capped_at_sixty_seconds() {
         let gapped = coverage_track(&timeline(&[
             ("2024-01-01T00:00:00Z", "2024-01-01T00:00:30Z"),
             ("2024-01-01T00:01:00Z", "2024-01-01T00:02:00Z"),
@@ -387,29 +435,32 @@ mod tests {
             stamp("2024-01-01T00:02:00Z"),
         )
         .unwrap();
-        assert_eq!(dragged.duration_us(), MAX_CLIP_US);
+        assert_eq!(dragged.duration_us(), 120_000_000);
         let extended = extend_window(
             &gapped,
-            window_at(&gapped, stamp("2024-01-01T00:00:00Z")).unwrap(),
+            Window {
+                start_us: stamp("2024-01-01T00:00:00Z"),
+                end_us: stamp("2024-01-01T00:00:30Z"),
+            },
             120,
         );
-        assert_eq!(extended.duration_us(), MAX_CLIP_US);
-        assert!(extended.end_us > stamp("2024-01-01T00:00:30Z"));
+        assert_eq!(extended.end_us, stamp("2024-01-01T00:02:00Z"));
     }
 
     #[test]
-    fn keyboard_selection_stays_inside_coverage_and_sixty_seconds() {
+    fn keyboard_selection_can_span_more_than_playback_window() {
         let long = coverage_track(&timeline(&[(
             "2024-01-01T00:00:00Z",
-            "2024-01-01T00:02:00Z",
+            "2024-01-01T00:03:00Z",
         )]));
-        let initial = initial_window(&long).unwrap();
-        assert_eq!(initial.duration_us(), MAX_CLIP_US);
-        let extended = extend_window(&long, initial, 5);
-        assert_eq!(extended.duration_us(), MAX_CLIP_US);
-        let shifted = move_window(&long, initial, 1);
-        assert_eq!(shifted.duration_us(), MAX_CLIP_US);
-        assert_eq!(shifted.start_us, initial.start_us.saturating_add(STEP_US));
+        let draft = Window {
+            start_us: stamp("2024-01-01T00:00:00Z"),
+            end_us: stamp("2024-01-01T00:00:30Z"),
+        };
+        let extended = extend_window(&long, draft, 100);
+        assert!(extended.duration_us() > PLAYBACK_WINDOW_US);
+        let shifted = move_window(&long, extended, 1);
+        assert_eq!(shifted.start_us, extended.start_us.saturating_add(STEP_US));
         assert!(retained_instant(&long, shifted.start_us).is_some());
 
         let gapped = coverage_track(&timeline(&[
@@ -427,6 +478,39 @@ mod tests {
     }
 
     #[test]
+    fn session_rebase_stays_inside_selection_and_bounded() {
+        let long = coverage_track(&timeline(&[(
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:03:00Z",
+        )]));
+        let selection = Window {
+            start_us: stamp("2024-01-01T00:00:00Z"),
+            end_us: stamp("2024-01-01T00:02:30Z"),
+        };
+        let first = session_in_selection(&long, selection, selection.start_us).unwrap();
+        assert!(first.duration_us() <= PLAYBACK_WINDOW_US);
+        let later = session_in_selection(&long, selection, stamp("2024-01-01T00:02:20Z")).unwrap();
+        assert!(needs_session_rebase(first, stamp("2024-01-01T00:02:20Z")));
+        assert!(later.start_us > first.start_us);
+        assert!(later.end_us <= selection.end_us);
+    }
+
+    #[test]
+    fn short_retention_window_nudges_at_track_end() {
+        let short = coverage_track(&timeline(&[(
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:01:11Z",
+        )]));
+        let window = Window {
+            start_us: stamp("2024-01-01T00:00:00Z"),
+            end_us: stamp("2024-01-01T00:01:11Z"),
+        };
+        let nudged = move_window(&short, window, 1);
+        assert_eq!(nudged.start_us, stamp("2024-01-01T00:00:01Z"));
+        assert_eq!(nudged.end_us, window.end_us);
+    }
+
+    #[test]
     fn utc_labels_round_trip_through_range_checks() {
         for stamp in [
             "2024-01-01T00:00:00Z",
@@ -440,6 +524,9 @@ mod tests {
         let start = stamp("2024-01-01T00:00:00Z");
         let range = domain::check_range(&format_utc(start), &format_utc(start + STEP_US)).unwrap();
         assert_eq!(range.end_us - range.start_us, STEP_US);
+        let hour =
+            domain::check_range(&format_utc(start), &format_utc(start + 3_600_000_000)).unwrap();
+        assert_eq!(hour.end_us - hour.start_us, 3_600_000_000);
     }
 
     fn ready() -> Reader {

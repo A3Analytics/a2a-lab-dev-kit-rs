@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
-    A2aClient, A2aLabApi, A2aLabCommand, A2aLabService, A2aServer, MAX_VIDEO_CLIP_DURATION_US,
-    McpLab, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos,
-    TckMalformedVideoRequests, TimeRange, UtcTimestamp, VideoSourceId, bind_local,
+    A2aClient, A2aLabApi, A2aLabCommand, A2aLabService, A2aServer, McpLab, McpServer, MemoryLogs,
+    MemoryMetrics, MemoryTasks, MemoryVideos, TckMalformedVideoRequests, TimeRange, UtcTimestamp,
+    VideoSourceId, bind_local,
 };
 use serde_json::json;
 
@@ -41,10 +41,7 @@ async fn public_tck_seam_preserves_and_rejects_three_malformed_video_requests() 
     let list_sources = TckMalformedVideoRequests::list_video_sources_zero_limit();
     let reversed =
         TckMalformedVideoRequests::get_video_clip_reversed_range(source_id.clone(), range);
-    let over_limit = TckMalformedVideoRequests::get_video_clip_over_limit(source_id, start);
-    let over_end = start.saturating_add_micros(
-        i64::try_from(MAX_VIDEO_CLIP_DURATION_US.saturating_add(1)).unwrap_or(i64::MAX),
-    );
+    let empty_range = TckMalformedVideoRequests::get_video_clip_empty_range(source_id, start);
 
     assert_eq!(
         serde_json::to_value(&list_sources).unwrap(),
@@ -58,10 +55,10 @@ async fn public_tck_seam_preserves_and_rejects_three_malformed_video_requests() 
         })
     );
     assert_eq!(
-        serde_json::to_value(&over_limit).unwrap(),
+        serde_json::to_value(&empty_range).unwrap(),
         json!({
             "source_id": "camera",
-            "range": {"start": start.to_rfc3339(), "end": over_end.to_rfc3339()}
+            "range": {"start": start.to_rfc3339(), "end": start.to_rfc3339()}
         })
     );
 
@@ -74,7 +71,7 @@ async fn public_tck_seam_preserves_and_rejects_three_malformed_video_requests() 
             .await
             .unwrap_err(),
         a2a.get_video_clip(reversed.clone()).await.unwrap_err(),
-        a2a.get_video_clip(over_limit.clone()).await.unwrap_err(),
+        a2a.get_video_clip(empty_range.clone()).await.unwrap_err(),
     ];
     let mcp_errors = [
         mcp.execute(A2aLabCommand::ListVideoSources(list_sources))
@@ -83,7 +80,7 @@ async fn public_tck_seam_preserves_and_rejects_three_malformed_video_requests() 
         mcp.execute(A2aLabCommand::GetVideoClip(reversed))
             .await
             .unwrap_err(),
-        mcp.execute(A2aLabCommand::GetVideoClip(over_limit))
+        mcp.execute(A2aLabCommand::GetVideoClip(empty_range))
             .await
             .unwrap_err(),
     ];

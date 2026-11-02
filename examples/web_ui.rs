@@ -99,12 +99,18 @@ async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
 
 async fn seed_videos() -> Result<MemoryVideos, A2aLabError> {
     let videos = MemoryVideos::new();
-    let source = VideoSourceId::new("bench")?;
+    seed_memory_playback(&videos).await?;
+    seed_day_archive(&videos).await?;
+    Ok(videos)
+}
+
+async fn seed_memory_playback(videos: &MemoryVideos) -> Result<(), A2aLabError> {
+    let source = VideoSourceId::new("memory-2min")?;
     videos
         .insert_source(VideoSource::new(
             source.clone(),
-            "Bench",
-            "Bench camera recording",
+            "2 min memory playback",
+            "Rolling two-minute in-memory recording",
             None,
             None,
             bench_jpeg::FRAME_WIDTH,
@@ -115,9 +121,8 @@ async fn seed_videos() -> Result<MemoryVideos, A2aLabError> {
         .await?;
     videos.set_live_available(&source, true).await?;
     let mut next = snap_down(UtcTimestamp::now().saturating_add_micros(-bench_jpeg::RETAIN_US));
-    publish_until(&videos, &source, &mut next).await?;
+    publish_until(videos, &source, &mut next).await?;
     let running = videos.clone();
-    let followed = source.clone();
     tokio::spawn(async move {
         let mut next = next;
         loop {
@@ -125,12 +130,44 @@ async fn seed_videos() -> Result<MemoryVideos, A2aLabError> {
                 u64::try_from(bench_jpeg::FRAME_STEP_US).unwrap_or(250_000),
             ))
             .await;
-            if publish_until(&running, &followed, &mut next).await.is_err() {
+            if publish_until(&running, &source, &mut next).await.is_err() {
                 break;
             }
         }
     });
-    Ok(videos)
+    Ok(())
+}
+
+async fn seed_day_archive(videos: &MemoryVideos) -> Result<(), A2aLabError> {
+    let source = VideoSourceId::new("day-2026")?;
+    videos
+        .insert_source(VideoSource::new(
+            source.clone(),
+            "24 hour Jan 1 2026",
+            "Twenty-four hours of retained video starting 2026-01-01T00:00:00Z",
+            None,
+            None,
+            bench_jpeg::FRAME_WIDTH,
+            bench_jpeg::FRAME_HEIGHT,
+            1,
+            MJPEG_MEDIA_TYPE,
+        )?)
+        .await?;
+    let start = UtcTimestamp::parse("2026-01-01T00:00:00Z")?;
+    let end = UtcTimestamp::parse("2026-01-02T00:00:00Z")?;
+    let mut next = start;
+    while next.as_micros() < end.as_micros() {
+        let (hour, minute, second, step) = bench_jpeg::clock_parts(next.as_micros());
+        videos
+            .insert_frame(
+                source.clone(),
+                next,
+                bench_jpeg::clock_frame(hour, minute, second, step),
+            )
+            .await?;
+        next = next.saturating_add_micros(1_000_000);
+    }
+    Ok(())
 }
 
 fn snap_down(stamp: UtcTimestamp) -> UtcTimestamp {
