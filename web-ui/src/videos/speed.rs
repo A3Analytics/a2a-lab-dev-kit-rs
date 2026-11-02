@@ -2,8 +2,31 @@
 
 pub const HLS_PLAYLIST: &str = "index.m3u8";
 pub const HLS_TRICK_8X_PLAYLIST: &str = "index-8x.m3u8";
+/// A frame this close to the retained live edge is playing live.
+pub const LIVE_SYNC_LAG_US: i64 = 2_000_000;
 
-const OPTIONS: [PlaybackSpeed; 4] = [
+/// True while follow-live is selected, or a live source's playhead has reached its edge.
+pub fn synced_with_live(
+    following_live: bool,
+    live_available: bool,
+    newest_us: Option<i64>,
+    frame_time: &str,
+) -> bool {
+    if following_live {
+        return true;
+    }
+    if !live_available {
+        return false;
+    }
+    let Some(newest) = newest_us else {
+        return false;
+    };
+    super::mjpeg::captured_us(frame_time)
+        .is_some_and(|frame| frame >= newest.saturating_sub(LIVE_SYNC_LAG_US))
+}
+
+const OPTIONS: [PlaybackSpeed; 5] = [
+    PlaybackSpeed::Half,
     PlaybackSpeed::One,
     PlaybackSpeed::Two,
     PlaybackSpeed::Four,
@@ -12,6 +35,7 @@ const OPTIONS: [PlaybackSpeed; 4] = [
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PlaybackSpeed {
+    Half,
     #[default]
     One,
     Two,
@@ -20,12 +44,13 @@ pub enum PlaybackSpeed {
 }
 
 impl PlaybackSpeed {
-    pub const fn all() -> &'static [PlaybackSpeed; 4] {
+    pub const fn all() -> &'static [PlaybackSpeed; 5] {
         &OPTIONS
     }
 
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Half => "0.5x",
             Self::One => "1x",
             Self::Two => "2x",
             Self::Four => "4x",
@@ -37,17 +62,19 @@ impl PlaybackSpeed {
         self.label()
     }
 
-    pub const fn mjpeg_pace(self) -> u32 {
+    pub const fn mjpeg_rate(self) -> f64 {
         match self {
-            Self::One => 1,
-            Self::Two => 2,
-            Self::Four => 4,
-            Self::Eight => 8,
+            Self::Half => 0.5,
+            Self::One => 1.0,
+            Self::Two => 2.0,
+            Self::Four => 4.0,
+            Self::Eight => 8.0,
         }
     }
 
     pub const fn ordinary_hls_rate(self) -> f64 {
         match self {
+            Self::Half => 0.5,
             Self::One => 1.0,
             Self::Two => 2.0,
             Self::Four => 4.0,
@@ -57,6 +84,7 @@ impl PlaybackSpeed {
 
     pub fn parse_control(raw: &str) -> Self {
         match raw.trim() {
+            "0.5x" => Self::Half,
             "1x" => Self::One,
             "2x" => Self::Two,
             "4x" => Self::Four,
@@ -106,7 +134,7 @@ impl Playback8xMetadata {
 pub struct StreamPlan {
     pub fetch_path: String,
     pub hls_playback_rate: f64,
-    pub mjpeg_pace: u32,
+    pub mjpeg_rate: f64,
     pub trick_fallback: bool,
 }
 
@@ -133,7 +161,7 @@ pub fn plan_stream(
         StreamPlan {
             fetch_path: gateway_root.to_owned(),
             hls_playback_rate: 1.0,
-            mjpeg_pace: speed.mjpeg_pace(),
+            mjpeg_rate: speed.mjpeg_rate(),
             trick_fallback: false,
         }
     }
@@ -155,14 +183,14 @@ fn plan_hls(
                 StreamPlan {
                     fetch_path: join_gateway(gateway_root, rendition),
                     hls_playback_rate: 1.0,
-                    mjpeg_pace: 8,
+                    mjpeg_rate: 8.0,
                     trick_fallback: false,
                 }
             } else {
                 StreamPlan {
                     fetch_path: join_gateway(gateway_root, fallback),
                     hls_playback_rate: 1.0,
-                    mjpeg_pace: 8,
+                    mjpeg_rate: 8.0,
                     trick_fallback: true,
                 }
             }
@@ -170,7 +198,7 @@ fn plan_hls(
         rate => StreamPlan {
             fetch_path: join_gateway(gateway_root, fallback),
             hls_playback_rate: rate.ordinary_hls_rate(),
-            mjpeg_pace: rate.mjpeg_pace(),
+            mjpeg_rate: rate.mjpeg_rate(),
             trick_fallback: false,
         },
     }
@@ -205,19 +233,75 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn control_offers_four_rates_with_one_x_default() {
-        assert_eq!(PlaybackSpeed::all().len(), 4);
+    fn control_offers_five_rates_with_one_x_default() {
+        assert_eq!(PlaybackSpeed::all().len(), 5);
         assert_eq!(PlaybackSpeed::default(), PlaybackSpeed::One);
         assert_eq!(
             PlaybackSpeed::all()
                 .iter()
                 .map(|rate| rate.label())
                 .collect::<Vec<_>>(),
-            ["1x", "2x", "4x", "8x"]
+            ["0.5x", "1x", "2x", "4x", "8x"]
         );
+        assert_eq!(PlaybackSpeed::parse_control("0.5x"), PlaybackSpeed::Half);
     }
 
     #[test]
+    fn hls_half_x_uses_fallback_playlist_and_playback_rate() {
+        let root = "/media/video-clips/clip-1/";
+        let meta = Playback8xMetadata {
+            rendition_path: Some(HLS_TRICK_8X_PLAYLIST.to_owned()),
+            fallback_path: HLS_PLAYLIST.to_owned(),
+            unavailable_reason: None,
+        };
+        let plan = plan_stream(
+            PlaybackSpeed::Half,
+            root,
+            "application/vnd.apple.mpegurl",
+            &meta,
+        );
+        assert_eq!(plan.fetch_path, "/media/video-clips/clip-1/index.m3u8");
+        assert_eq!(plan.hls_playback_rate, 0.5);
+        assert!(!plan.trick_fallback);
+    }
+
+    #[test]
+    fn speed_locks_to_one_x_only_while_synced_with_live() {
+        let edge = crate::videos::mjpeg::captured_us("2024-01-01T00:02:00Z").unwrap();
+        assert!(synced_with_live(true, true, Some(edge), ""));
+        assert!(synced_with_live(
+            false,
+            true,
+            Some(edge),
+            "2024-01-01T00:01:59Z"
+        ));
+        assert!(synced_with_live(
+            false,
+            true,
+            Some(edge),
+            "2024-01-01T00:01:58Z"
+        ));
+        assert!(!synced_with_live(
+            false,
+            true,
+            Some(edge),
+            "2024-01-01T00:01:57.999999Z"
+        ));
+        assert!(!synced_with_live(
+            false,
+            true,
+            Some(edge),
+            "2024-01-01T00:01:00Z"
+        ));
+        assert!(!synced_with_live(
+            false,
+            false,
+            Some(edge),
+            "2024-01-01T00:02:00Z"
+        ));
+        assert!(!synced_with_live(false, true, None, "2024-01-01T00:02:00Z"));
+    }
+
     fn stale_speed_values_resolve_to_one_x() {
         assert_eq!(PlaybackSpeed::parse_control(""), PlaybackSpeed::One);
         assert_eq!(

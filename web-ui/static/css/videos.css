@@ -135,6 +135,46 @@
   display: none;
 }
 
+.video-seek {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.video-seek .video-track {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.video-pause {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid oklch(0.985 0 0);
+  border-radius: 9999px;
+  background: var(--media-overlay);
+  color: var(--media-overlay-foreground);
+  box-shadow: none;
+}
+
+.video-transport-icon {
+  display: block;
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.video-pause:hover {
+  background: var(--media-overlay);
+  color: var(--media-overlay-foreground);
+  filter: brightness(1.2);
+}
+
 .video-live-badge {
   position: absolute;
   top: 0.65rem;
@@ -344,7 +384,6 @@
 .video-interval,
 .video-gap,
 .video-selection,
-.video-newest,
 .video-playhead {
   position: absolute;
   pointer-events: none;
@@ -357,6 +396,17 @@
   height: 0.5rem;
   box-sizing: border-box;
   border-radius: 9999px;
+}
+
+.video-playhead {
+  top: -0.2rem;
+  bottom: -0.2rem;
+  z-index: var(--z-raised);
+  width: 0.2rem;
+  margin-left: -0.1rem;
+  border: 1px solid var(--media-overlay);
+  border-radius: 9999px;
+  background: var(--media-overlay-foreground);
 }
 
 .video-interval {
@@ -372,24 +422,6 @@
   height: 0.5rem;
   background: color-mix(in oklab, var(--media-overlay-foreground) 28%, transparent);
   box-shadow: inset 0 0 0 2px var(--media-overlay-foreground);
-}
-
-.video-newest {
-  top: -0.125rem;
-  bottom: -0.125rem;
-  width: 2px;
-  background: var(--media-overlay-foreground);
-}
-
-.video-playhead {
-  top: -0.2rem;
-  bottom: -0.2rem;
-  z-index: var(--z-raised);
-  width: 0.2rem;
-  margin-left: -0.1rem;
-  border: 1px solid var(--media-overlay);
-  border-radius: 9999px;
-  background: var(--media-overlay-foreground);
 }
 
 #video-follow-newest.video-live-active,

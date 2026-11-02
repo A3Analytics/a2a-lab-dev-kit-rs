@@ -38,6 +38,20 @@ fn hls_flow(base: &str) {
     page.wait_until(
         "document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'connecting'",
     );
+    assert_mse_trace(&mut page, base);
+    assert_authenticated_media_fetches(base, &page);
+    assert_live_speed_lock(&mut page);
+    page.click("video-follow-newest");
+    page.wait_until("window.__a2aHlsTrace?.cleaned === true");
+    let leaked = page.eval("(() => { const player = document.getElementById('video-player'); return (player?.src ?? '').startsWith('blob:'); })()");
+    assert_eq!(
+        leaked,
+        serde_json::json!(false),
+        "object URL leaked after teardown"
+    );
+}
+
+fn assert_mse_trace(page: &mut Browser, base: &str) {
     page.wait_until("(() => { const trace = window.__a2aHlsTrace; return trace && trace.appendOrder && trace.appendOrder.length >= 2; })()");
     page.wait_until(
         "(() => (window.__a2aHlsTrace?.appendOrder ?? []).some((item) => item.endsWith('.m4s')))()",
@@ -55,6 +69,25 @@ fn hls_flow(base: &str) {
         player_src.starts_with("blob:") || player_src.is_empty(),
         "expected blob MediaSource URL, got {player_src}"
     );
+    let trace = page.eval("window.__a2aHlsTrace");
+    let order = trace["appendOrder"].as_array().expect("append order");
+    assert_eq!(order.first().and_then(|v| v.as_str()), Some("index.m3u8"));
+    let segment_in_trace = order
+        .iter()
+        .any(|item| item.as_str().is_some_and(hls_playback_bench::is_m4s_uri));
+    let segment_fetched = page.requests(base).into_iter().any(|request| {
+        request_url(&request).contains("/media/video-live/")
+            && std::path::Path::new(request_url(&request))
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("m4s"))
+    });
+    assert!(
+        segment_in_trace || segment_fetched,
+        "segment gateway fetch or append missing"
+    );
+}
+
+fn assert_authenticated_media_fetches(base: &str, page: &Browser) {
     let media_requests: Vec<_> = page
         .requests(base)
         .into_iter()
@@ -75,39 +108,24 @@ fn hls_flow(base: &str) {
         assert!(!url.contains("token="), "credential leaked into URL {url}");
         assert!(!url.contains("Bearer"), "credential leaked into URL {url}");
     }
-    let trace = page.eval("window.__a2aHlsTrace");
-    let order = trace["appendOrder"].as_array().expect("append order");
-    assert_eq!(order.first().and_then(|v| v.as_str()), Some("index.m3u8"));
-    let segment_in_trace = order
-        .iter()
-        .any(|item| item.as_str().is_some_and(hls_playback_bench::is_m4s_uri));
-    let segment_fetched = page.requests(base).into_iter().any(|request| {
-        request_url(&request).contains("/media/video-live/")
-            && std::path::Path::new(request_url(&request))
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("m4s"))
-    });
-    assert!(
-        segment_in_trace || segment_fetched,
-        "segment gateway fetch or append missing"
+}
+
+fn assert_live_speed_lock(page: &mut Browser) {
+    page.wait_until(
+        "(() => { const select = document.getElementById('video-speed'); if (!select || select.options.length !== 5) return false; return [...select.options].filter((option) => option.value !== '1x').every((option) => option.disabled); })()",
     );
-    page.eval("(() => { const select = document.getElementById('video-speed'); select.value = '2x'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
-    page.wait_until("document.getElementById('video-speed')?.value === '2x'");
-    let rate = page
+    assert_eq!(
+        page.eval("document.getElementById('video-speed')?.value"),
+        serde_json::json!("1x")
+    );
+    page.eval("(() => { const select = document.getElementById('video-speed'); select.value = '0.5x'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    page.wait_until("document.getElementById('video-speed')?.value === '1x'");
+    let live_rate = page
         .eval("document.getElementById('video-player')?.playbackRate ?? 0")
         .as_f64()
         .unwrap_or(0.0);
-    assert!((rate - 2.0).abs() < 0.01, "playbackRate at 2x was {rate}");
-    page.eval("(() => { const select = document.getElementById('video-speed'); select.value = '8x'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
-    page.wait_until("document.getElementById('video-speed')?.value === '8x'");
-    page.wait_until("(() => { const order = window.__a2aHlsTrace?.appendOrder ?? []; const note = document.getElementById('video-status')?.textContent ?? ''; return order.includes('index-8x.m3u8') || note.includes('1x'); })()");
-    page.wait_until("(() => { const order = window.__a2aHlsTrace?.appendOrder ?? []; return order.filter((item) => item.endsWith('.m3u8')).length >= 2; })()");
-    page.click("video-follow-newest");
-    page.wait_until("window.__a2aHlsTrace?.cleaned === true");
-    let leaked = page.eval("(() => { const player = document.getElementById('video-player'); return (player?.src ?? '').startsWith('blob:'); })()");
-    assert_eq!(
-        leaked,
-        serde_json::json!(false),
-        "object URL leaked after teardown"
+    assert!(
+        (live_rate - 1.0).abs() < 0.01,
+        "LIVE playbackRate should stay 1x, got {live_rate}"
     );
 }

@@ -2,6 +2,7 @@
 
 use dioxus::prelude::*;
 
+use super::speed_control::sync_live_speed;
 use super::{bound, playback, run};
 use crate::shell::playback::StreamOutcome;
 
@@ -62,6 +63,7 @@ pub(super) fn on_frame(generation: u32, captured_at: &str) {
         let mut next = ui.peek().clone();
         if next.reader.note_frame(generation, &captured_at) {
             ui.set(next);
+            sync_live_speed();
         }
     });
 }

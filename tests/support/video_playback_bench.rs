@@ -38,6 +38,10 @@ pub async fn bench_catalog() -> MemoryVideos {
             .unwrap();
     }
     videos
+        .set_live_available(&VideoSourceId::new("bench").unwrap(), true)
+        .await
+        .unwrap();
+    videos
 }
 
 pub async fn serve_bench(videos: MemoryVideos) -> String {
@@ -54,6 +58,18 @@ pub async fn serve_bench(videos: MemoryVideos) -> String {
 
 pub async fn bench_lab() -> String {
     serve_bench(bench_catalog().await).await
+}
+
+pub fn bench_newest_stamp() -> String {
+    bench_jpeg::captured_at(bench_jpeg::FRAME_COUNT - 1)
+}
+
+pub fn bench_stamp_before_newest(whole_seconds: u32) -> String {
+    let frames = whole_seconds.saturating_mul(4);
+    let index = bench_jpeg::FRAME_COUNT
+        .saturating_sub(1)
+        .saturating_sub(frames);
+    bench_jpeg::captured_at(index)
 }
 
 pub fn load_range_js(start: &str, end: &str) -> String {

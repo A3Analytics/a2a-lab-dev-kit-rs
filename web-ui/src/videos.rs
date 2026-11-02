@@ -501,19 +501,6 @@ impl Reader {
         self.details_open = open;
     }
 
-    pub fn details(&self) -> Details {
-        let Some((start, end)) = video_range(self) else {
-            return Details {
-                open: false,
-                facts: Vec::new(),
-            };
-        };
-        Details {
-            open: true,
-            facts: vec![fact("Start", start), fact("End", end)],
-        }
-    }
-
     fn request_follow(&mut self) -> Result<Ticket, &'static str> {
         need_source(self)?;
         if self
@@ -663,6 +650,19 @@ pub fn shows_live_button(reader: &Reader) -> bool {
         .timeline
         .as_ref()
         .is_some_and(|timeline| timeline.live_available)
+}
+
+pub fn reader_details(reader: &Reader) -> Details {
+    let Some((start, end)) = video_range(reader) else {
+        return Details {
+            open: false,
+            facts: Vec::new(),
+        };
+    };
+    Details {
+        open: true,
+        facts: vec![fact("Start", start), fact("End", end)],
+    }
 }
 
 pub fn begin_auto_playback(reader: &mut Reader) -> Option<AutoPlayback> {

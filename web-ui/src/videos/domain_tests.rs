@@ -287,9 +287,9 @@ fn frame_at_time_keeps_the_public_operation_and_details_start_closed() {
     assert_eq!(frame.captured_at, "2024-01-01T00:00:00Z");
 
     let mut reader = ready(&["cam"]);
-    assert!(!reader.details().open);
+    assert!(!reader_details(&reader).open);
     assert!(!reader.has_media());
-    assert!(reader.details().facts.is_empty());
+    assert!(reader_details(&reader).facts.is_empty());
     reader.note_capability(SourceCapability {
         id: "cam".to_owned(),
         name: "Camera A".to_owned(),
@@ -301,8 +301,8 @@ fn frame_at_time_keeps_the_public_operation_and_details_start_closed() {
     let ticket = reader.frame_at_time("2024-01-01T00:00:00").unwrap();
     assert!(matches!(ticket.kind, Kind::FrameAtTime { .. }));
     assert!(reader.accept_frame(&ticket, frame));
-    assert!(!reader.details().open);
-    assert!(reader.details().facts.is_empty());
+    assert!(!reader_details(&reader).open);
+    assert!(reader_details(&reader).facts.is_empty());
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn details_omit_facts_that_are_not_available() {
     assert_eq!(labels_of(&reader), ["Start", "End"]);
     assert!(reader.accept_clip(&clip, sample_clip("clip-1")));
     assert!(reader.playing(clip.generation));
-    let facts = reader.details().facts;
+    let facts = reader_details(&reader).facts;
     assert_eq!(
         facts.iter().map(|item| item.label).collect::<Vec<_>>(),
         ["Start", "End"]
@@ -406,8 +406,7 @@ fn details_omit_facts_that_are_not_available() {
 }
 
 fn labels_of(reader: &Reader) -> Vec<&str> {
-    reader
-        .details()
+    reader_details(reader)
         .facts
         .iter()
         .map(|item| item.label)
@@ -704,7 +703,7 @@ fn playback_speed_preserves_selection_pause_and_session_window() {
             MJPEG_MEDIA_TYPE,
             &Playback8xMetadata::absent(),
         );
-        assert_eq!(plan.mjpeg_pace, speed.mjpeg_pace());
+        assert_eq!(plan.mjpeg_rate, speed.mjpeg_rate());
         assert_eq!(reader.selection, selection);
         assert_eq!(reader.playback, Playback::Paused);
     }

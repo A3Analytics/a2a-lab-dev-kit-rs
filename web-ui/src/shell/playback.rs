@@ -60,7 +60,7 @@ thread_local! {
     static START_PAUSED: Cell<bool> = const { Cell::new(false) };
     static HOLD: Cell<bool> = const { Cell::new(false) };
     static IGNORE_PAUSE: Cell<u32> = const { Cell::new(0) };
-    static MJPEG_PACE: Cell<u32> = const { Cell::new(1) };
+    static MJPEG_RATE: Cell<f64> = const { Cell::new(1.0) };
     static HLS_PLAYBACK_RATE: Cell<f64> = const { Cell::new(1.0) };
     static REBASE_PACING: Cell<bool> = const { Cell::new(false) };
     static PLAY_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
@@ -207,17 +207,6 @@ pub fn pause_element() {
     }
 }
 
-pub fn toggle_element() {
-    let Some(video) = player() else {
-        return;
-    };
-    if video.paused() {
-        play_element();
-    } else {
-        pause_element();
-    }
-}
-
 pub fn take_ignore_pause() -> bool {
     IGNORE_PAUSE.with(|cell| {
         let n = cell.get();
@@ -250,7 +239,7 @@ fn stop_session() {
     });
 }
 
-fn frames_held() -> bool {
+pub(crate) fn frames_held() -> bool {
     HOLD.with(|slot| slot.get())
 }
 
@@ -264,14 +253,14 @@ pub fn set_paused(paused: bool) {
 }
 
 pub fn apply_plan(plan: &StreamPlan) {
-    MJPEG_PACE.with(|slot| slot.set(plan.mjpeg_pace.max(1)));
+    MJPEG_RATE.with(|slot| slot.set(plan.mjpeg_rate.max(mjpeg::MIN_MJPEG_RATE)));
     HLS_PLAYBACK_RATE.with(|slot| slot.set(plan.hls_playback_rate.max(0.1)));
     apply_hls_playback_rate();
     rebase_pacing();
 }
 
-fn mjpeg_pace() -> u32 {
-    MJPEG_PACE.with(Cell::get).max(1)
+fn mjpeg_rate() -> f64 {
+    MJPEG_RATE.with(Cell::get).max(mjpeg::MIN_MJPEG_RATE)
 }
 
 fn rebase_pacing() {
@@ -638,13 +627,13 @@ async fn drain(
             continue;
         }
         if !jumped {
-            let pace = mjpeg_pace();
-            if mjpeg::is_late(frame.captured_us, capture, wall, js_sys::Date::now(), pace) {
+            let rate = mjpeg_rate();
+            if mjpeg::is_late(frame.captured_us, capture, wall, js_sys::Date::now(), rate) {
                 notify_frame(generation, &frame.captured_at);
                 *prev_capture = Some(frame.captured_us);
                 continue;
             }
-            sleep_until(mjpeg::due_wall_ms(frame.captured_us, capture, wall, pace)).await;
+            sleep_until(mjpeg::due_wall_ms(frame.captured_us, capture, wall, rate)).await;
             if !live(generation) {
                 queue.clear();
                 return Err(StreamOutcome::Stopped { generation });

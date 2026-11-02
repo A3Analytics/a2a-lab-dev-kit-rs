@@ -21,15 +21,18 @@ mod details;
 mod playback_hooks;
 mod speed_control;
 mod timeline;
+mod timeline_fields;
 use details::VideoDetails;
 use playback_hooks::{apply_stream, on_buffering, on_frame, on_gap_skipped, on_playing};
-use speed_control::{active_stream_plan, change_speed, note_trick_fallback};
+use speed_control::{
+    active_stream_plan, change_speed, lock_live_speed, note_trick_fallback, speed_option_disabled,
+};
 use timeline::{
-    abort_commands, alert_text, bands, begin_command, commit_at, commit_typed_range,
-    display_clock, display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest,
-    newest_style, playhead_style, remember_window, replay_retained_start, reselect_range,
-    selection_slug, slider_now, slider_text, timeline_click, timeline_down, timeline_key,
-    timeline_move, timeline_up,
+    abort_commands, alert_text, bands, begin_command, commit_at, commit_typed_range, display_clock,
+    display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest,
+    playhead_style, remember_window, replay_retained_start, reselect_range, selection_slug,
+    slider_now,
+    slider_text, timeline_click, timeline_down, timeline_key, timeline_move, timeline_up,
 };
 
 #[derive(Clone, PartialEq)]
@@ -323,6 +326,7 @@ fn FilterRail(state: VideoUi) -> Element {
                                 key: "{rate.label()}",
                                 value: "{rate.control_value()}",
                                 selected: state.speed == *rate,
+                                disabled: speed_option_disabled(&state, *rate),
                                 "{rate.label()}"
                             }
                         }
@@ -384,7 +388,7 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
                             },
                             onplay: move |_| native_play(),
                             onpause: move |_| native_pause(),
-                            onclick: move |_| playback::toggle_element(),
+                            onclick: move |_| toggle_playback(),
                         }
                         TimelineScrubber { state: state.clone() }
                         if show_loading {
@@ -465,8 +469,6 @@ fn TimelineScrubber(state: VideoUi) -> Element {
         .as_ref()
         .map(|item| bands(item, local))
         .unwrap_or_default();
-    let newest_style = newest_style(track.as_ref(), state.reader.timeline.as_ref());
-    let playhead_style = playhead_style(&state);
     let ready = state.reader.timeline.is_some();
     let empty_track = track.as_ref().is_some_and(|item| item.spans.is_empty());
     let value_now = slider_now(track.as_ref(), window);
@@ -490,6 +492,9 @@ fn TimelineScrubber(state: VideoUi) -> Element {
     let draft_end = window
         .map(|item| track::format_utc(item.end_us))
         .unwrap_or_default();
+    let playhead = playhead_style(&state);
+    let paused = state.reader.playback == Playback::Paused;
+    let show_transport = state.reader.has_media();
     let now = if state.reader.frame_time.is_empty() {
         value_text.clone()
     } else {
@@ -523,16 +528,42 @@ fn TimelineScrubber(state: VideoUi) -> Element {
                 p { id: "video-timeline-empty", "No retained video." }
             }
             p { id: "video-timeline-now", class: "video-timeline-now", "{now}" }
-            if !bars.is_empty() {
-                div { class: "video-track", aria_hidden: "true",
-                    for band in bars {
-                        BandMark { key: "{band.id}-{band.style}", band: band.clone() }
+            if show_transport || !bars.is_empty() {
+                div { class: "video-seek",
+                    if show_transport {
+                        button {
+                            id: "video-pause",
+                            class: "video-pause",
+                            r#type: "button",
+                            aria_label: if paused { "Play" } else { "Pause" },
+                            aria_pressed: if paused { "true" } else { "false" },
+                            onpointerdown: move |event| event.stop_propagation(),
+                            onclick: move |event| {
+                                event.stop_propagation();
+                                toggle_playback();
+                            },
+                            svg {
+                                class: "video-transport-icon",
+                                view_box: "0 0 16 16",
+                                "aria-hidden": "true",
+                                if paused {
+                                    polygon { points: "4.5,2.5 13.5,8 4.5,13.5", fill: "currentColor" }
+                                } else {
+                                    rect { x: "3", y: "2.5", width: "3.2", height: "11", rx: "0.6", fill: "currentColor" }
+                                    rect { x: "9.8", y: "2.5", width: "3.2", height: "11", rx: "0.6", fill: "currentColor" }
+                                }
+                            }
+                        }
                     }
-                    if let Some(style) = newest_style.clone() {
-                        Placed { key: "newest-{style}", id: "video-newest".to_owned(), class: "video-newest", style }
-                    }
-                    if let Some(style) = playhead_style.clone() {
-                        Placed { key: "playhead-{style}", id: "video-playhead".to_owned(), class: "video-playhead", style }
+                    if !bars.is_empty() {
+                        div { class: "video-track", aria_hidden: "true",
+                            for band in bars {
+                                BandMark { key: "{band.id}-{band.style}", band: band.clone() }
+                            }
+                            if let Some(style) = playhead.clone() {
+                                Placed { key: "playhead-{style}", id: "video-playhead".to_owned(), class: "video-playhead", style }
+                            }
+                        }
                     }
                 }
             }
@@ -757,6 +788,17 @@ fn force_pause() {
         let _ = playback::take_ignore_pause();
         pause();
     });
+}
+
+fn toggle_playback() {
+    let paused = bound().is_some_and(|ui| ui.peek().reader.playback == Playback::Paused);
+    if paused {
+        resume();
+        playback::play_element();
+    } else {
+        pause();
+        playback::pause_element();
+    }
 }
 
 fn pause() {
@@ -1160,6 +1202,7 @@ fn apply_meta(outcome: MetaOutcome) {
             if !next.reader.accept_follow(&ticket, follow) {
                 return;
             }
+            lock_live_speed(&mut next);
             Some((ticket.generation, path))
         }
         MetaOutcome::Failed { ticket, message } => {

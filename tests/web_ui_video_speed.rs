@@ -30,7 +30,7 @@ fn speed_flow(base: &str) {
     page.wait_until("document.getElementById('video-speed')");
     assert_eq!(
         page.eval(
-            "(() => { const select = document.getElementById('video-speed'); return select?.value === '1x' && select?.options?.length === 4; })()"
+            "(() => { const select = document.getElementById('video-speed'); return select?.value === '1x' && select?.options?.length === 5; })()"
         ),
         serde_json::json!(true)
     );
@@ -42,7 +42,7 @@ fn speed_flow(base: &str) {
     let before = page.eval(
         "(() => ({ source: document.getElementById('video-source')?.value ?? '', start: document.getElementById('video-timeline')?.dataset.start ?? '', end: document.getElementById('video-timeline')?.dataset.end ?? '', frame: document.getElementById('video-status')?.dataset.frameTime ?? '' }))()",
     );
-    for rate in ["2x", "4x", "8x", "1x"] {
+    for rate in ["0.5x", "2x", "4x", "8x", "1x"] {
         page.eval(&format!(
             "(() => {{ const select = document.getElementById('video-speed'); select.value = '{rate}'; select.dispatchEvent(new Event('change', {{ bubbles: true }})); }})()"
         ));
@@ -63,6 +63,19 @@ fn speed_flow(base: &str) {
     assert_eq!(after["start"], before["start"]);
     assert_eq!(after["end"], before["end"]);
     assert_eq!(after["frame"], before["frame"]);
+    page.eval("(() => { const select = document.getElementById('video-speed'); select.value = '0.5x'; select.dispatchEvent(new Event('change', { bubbles: true })); })()");
+    page.wait_until("document.getElementById('video-speed')?.value === '0.5x'");
+    page.click("video-follow-newest");
+    page.wait_until(
+        "document.getElementById('video-follow-newest')?.classList.contains('video-live-active')",
+    );
+    page.wait_until("document.getElementById('video-speed')?.value === '1x'");
+    assert_eq!(
+        page.eval(
+            "(() => { const select = document.getElementById('video-speed'); return select && [...select.options].filter((option) => option.value !== '1x').every((option) => option.disabled); })()"
+        ),
+        serde_json::json!(true)
+    );
 }
 
 fn load_range(page: &mut Browser, start: &str, end: &str) {

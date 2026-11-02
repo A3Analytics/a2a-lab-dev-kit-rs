@@ -168,9 +168,11 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-pub fn due_wall_ms(captured_us: i64, origin_us: i64, origin_wall_ms: f64, pace: u32) -> f64 {
-    let pace = f64::from(pace.max(1));
-    origin_wall_ms + ((captured_us - origin_us) as f64 / 1_000.0 / pace)
+pub(crate) const MIN_MJPEG_RATE: f64 = 0.01;
+
+pub fn due_wall_ms(captured_us: i64, origin_us: i64, origin_wall_ms: f64, rate: f64) -> f64 {
+    let rate = rate.max(MIN_MJPEG_RATE);
+    origin_wall_ms + ((captured_us - origin_us) as f64 / 1_000.0 / rate)
 }
 
 pub fn is_late(
@@ -178,9 +180,9 @@ pub fn is_late(
     origin_us: i64,
     origin_wall_ms: f64,
     now_ms: f64,
-    pace: u32,
+    rate: f64,
 ) -> bool {
-    now_ms > due_wall_ms(captured_us, origin_us, origin_wall_ms, pace)
+    now_ms > due_wall_ms(captured_us, origin_us, origin_wall_ms, rate)
 }
 
 pub fn captured_us(value: &str) -> Option<i64> {
@@ -314,10 +316,10 @@ mod tests {
     fn eight_x_hour_span_is_late_after_seven_and_a_half_minutes() {
         let origin_us = captured_us("2024-01-01T00:00:00Z").unwrap();
         let hour_us = captured_us("2024-01-01T01:00:00Z").unwrap();
-        let pace = 8;
-        assert_eq!(due_wall_ms(hour_us, origin_us, 0.0, pace), 450_000.0);
-        assert!(!is_late(hour_us, origin_us, 0.0, 449_999.0, pace));
-        assert!(is_late(hour_us, origin_us, 0.0, 450_001.0, pace));
+        let rate = 8.0;
+        assert_eq!(due_wall_ms(hour_us, origin_us, 0.0, rate), 450_000.0);
+        assert!(!is_late(hour_us, origin_us, 0.0, 449_999.0, rate));
+        assert!(is_late(hour_us, origin_us, 0.0, 450_001.0, rate));
         let late = (0..=3_600)
             .filter(|second| {
                 is_late(
@@ -325,11 +327,18 @@ mod tests {
                     origin_us,
                     0.0,
                     10_000.0,
-                    pace,
+                    rate,
                 )
             })
             .count();
         assert_eq!(late, 80);
+    }
+
+    #[test]
+    fn half_x_minute_of_capture_is_due_after_two_minutes() {
+        let origin_us = captured_us("2024-01-01T00:00:00Z").unwrap();
+        let minute_us = origin_us + 60_000_000;
+        assert_eq!(due_wall_ms(minute_us, origin_us, 0.0, 0.5), 120_000.0);
     }
 
     fn encode(frames: &[(&str, &[u8])]) -> Vec<u8> {
