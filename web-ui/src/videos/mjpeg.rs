@@ -41,7 +41,6 @@ pub enum Error {
 pub struct Parser {
     marker: Vec<u8>,
     buf: Vec<u8>,
-    bytes_seen: usize,
     frames: usize,
     first_us: Option<i64>,
     closed: bool,
@@ -52,7 +51,6 @@ impl Parser {
         Self {
             marker: format!("--{BOUNDARY}").into_bytes(),
             buf: Vec::new(),
-            bytes_seen: 0,
             frames: 0,
             first_us: None,
             closed: false,
@@ -60,10 +58,9 @@ impl Parser {
     }
 
     pub fn push(&mut self, chunk: &[u8]) -> Result<Vec<Event>, Error> {
-        if self.bytes_seen.saturating_add(chunk.len()) > MAX_BYTES {
+        if self.buf.len().saturating_add(chunk.len()) > MAX_BYTES {
             return Err(Error::TooManyBytes);
         }
-        self.bytes_seen += chunk.len();
         self.buf.extend_from_slice(chunk);
         self.extract()
     }
@@ -301,6 +298,18 @@ mod tests {
         assert!(!is_capture_gap(window, window_next));
         assert!(is_capture_gap(t0, t0 + GAP_THRESHOLD_US + 1));
         assert!(!is_capture_gap(t0, t0 + GAP_THRESHOLD_US));
+    }
+
+    #[test]
+    fn byte_limit_applies_to_the_buffered_part_not_the_session() {
+        let mut parser = Parser::new();
+        let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9].repeat(64 * 1024);
+        let part = encode_part("2024-01-01T00:00:00Z", &jpeg);
+        let parts = (MAX_BYTES / part.len()) + 4;
+        for _ in 0..parts {
+            let events = parser.push(&part).unwrap();
+            assert!(matches!(events.as_slice(), [Event::Frame(_)]));
+        }
     }
 
     #[test]

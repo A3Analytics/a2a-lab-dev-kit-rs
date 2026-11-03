@@ -460,7 +460,16 @@ async fn consume(
                             return outcome;
                         }
                     }
-                    Err(_) => {
+                    Err(error) => {
+                        if !from_start
+                            && matches!(
+                                error,
+                                mjpeg::Error::TooLong | mjpeg::Error::TooManyFrames
+                            )
+                        {
+                            parser = MjpegParser::new();
+                            continue;
+                        }
                         queue.clear();
                         return failed(generation, "The clip stream was malformed.");
                     }
