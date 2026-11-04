@@ -1,8 +1,10 @@
 //! Video sources, frame-at-time lookup, timelines, live follow, and bounded clips.
 //!
-//! Saved images stay in the images domain. This crate does not capture cameras
-//! and does not persist recordings.
+//! Saved images stay in the images domain. [`CapturedColorFrame`] is an owned
+//! capture snapshot and is distinct from delivery [`VideoCodec`]. This crate
+//! does not open cameras and does not persist recordings.
 
+mod capture;
 mod catalog;
 mod cmaf;
 mod codec;
@@ -15,6 +17,11 @@ mod packager;
 mod provider;
 mod timeline;
 
+pub use capture::{
+    CaptureCapabilities, CaptureClock, CaptureFormat, CaptureIdentity, CaptureMode, CaptureTiming,
+    CapturedColorFrame, ColorCaptureSource, ColorMatrix, ColorProperties, ColorRange,
+    MemoryColorCapture,
+};
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
 pub use codec::VideoCodec;
 pub use dvr_store::{

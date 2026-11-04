@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn byte_limit_applies_to_the_buffered_part_not_the_session() {
         let mut parser = Parser::new();
-        let jpeg = vec![0xFF, 0xD8, 0xFF, 0xD9].repeat(64 * 1024);
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xD9].repeat(64 * 1024);
         let part = encode_part("2024-01-01T00:00:00Z", &jpeg);
         let parts = (MAX_BYTES / part.len()) + 4;
         for _ in 0..parts {

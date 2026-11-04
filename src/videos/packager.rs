@@ -874,13 +874,11 @@ fn trick_sample_timing(
     let scale = i64::try_from(TRICK_8X_DECIMATION).unwrap_or(1).max(1);
     let decode_time_us =
         u64::try_from(start_us.saturating_sub(origin_us).div_euclid(scale)).unwrap_or(0);
-    let duration_us = next_start_us
-        .map(|next| {
-            let next_decode =
-                u64::try_from(next.saturating_sub(origin_us).div_euclid(scale)).unwrap_or(0);
-            next_decode.saturating_sub(decode_time_us).max(1)
-        })
-        .unwrap_or(natural_us.max(1));
+    let duration_us = next_start_us.map_or(natural_us.max(1), |next| {
+        let next_decode =
+            u64::try_from(next.saturating_sub(origin_us).div_euclid(scale)).unwrap_or(0);
+        next_decode.saturating_sub(decode_time_us).max(1)
+    });
     let sequence = u32::try_from(decode_time_us / 1000).unwrap_or(u32::MAX);
     (sequence, decode_time_us, duration_us)
 }
@@ -889,20 +887,8 @@ fn assign_trick_durations(segments: &mut [PackagedHlsSegment]) {
     let scale = i64::try_from(TRICK_8X_DECIMATION).unwrap_or(1).max(1);
     for index in 0..segments.len() {
         let start = segments[index].range().start().as_micros();
-        let duration_us = segments
-            .get(index + 1)
-            .map(|next| {
-                u64::try_from(
-                    next.range()
-                        .start()
-                        .as_micros()
-                        .saturating_sub(start)
-                        .div_euclid(scale),
-                )
-                .unwrap_or(1)
-                .max(1)
-            })
-            .unwrap_or_else(|| {
+        let duration_us = segments.get(index + 1).map_or_else(
+            || {
                 u64::try_from(
                     segments[index]
                         .range()
@@ -912,7 +898,19 @@ fn assign_trick_durations(segments: &mut [PackagedHlsSegment]) {
                 )
                 .unwrap_or(1)
                 .max(1)
-            });
+            },
+            |next| {
+                u64::try_from(
+                    next.range()
+                        .start()
+                        .as_micros()
+                        .saturating_sub(start)
+                        .div_euclid(scale),
+                )
+                .unwrap_or(1)
+                .max(1)
+            },
+        );
         #[allow(clippy::cast_precision_loss)]
         {
             segments[index].duration_secs = duration_us as f64 / 1_000_000.0;
