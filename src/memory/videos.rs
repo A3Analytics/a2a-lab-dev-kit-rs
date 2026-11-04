@@ -780,11 +780,10 @@ fn cached_asset(session: &crate::videos::PackagedHlsSession, path: &str) -> bool
         return true;
     }
     session.trick_8x().is_some_and(|trick| {
-        path == trick.playlist_relative_path()
-            || trick
-                .segments()
-                .iter()
-                .any(|item| item.relative_path() == path)
+        trick
+            .segments()
+            .iter()
+            .any(|item| item.relative_path() == path)
     })
 }
 

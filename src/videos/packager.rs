@@ -508,6 +508,15 @@ impl DvrMediaPackager {
         let next_segment_start = listed
             .get(index.saturating_add(1))
             .map(|next| next.range().start().as_micros());
+        let trick = segment.relative_path().starts_with(TRICK_8X_SEGMENT_PREFIX);
+        let frames: Vec<DvrMediaSegment> = if trick {
+            frames
+                .into_iter()
+                .filter(|frame| frame.range().start() == segment.range().start())
+                .collect()
+        } else {
+            frames
+        };
         let mut parts = Vec::with_capacity(frames.len());
         for (frame_index, frame) in frames.iter().enumerate() {
             let start = frame.range().start().as_micros();
@@ -516,14 +525,28 @@ impl DvrMediaPackager {
                 .get(frame_index.saturating_add(1))
                 .map(|next| next.range().start().as_micros())
                 .or(next_segment_start);
-            let sequence = u32::try_from(start.saturating_sub(origin) / 1000).unwrap_or(u32::MAX);
+            let (sequence, decode_time_us, duration_us) = if trick {
+                trick_sample_timing(origin, start, natural, next_start)
+            } else {
+                (
+                    u32::try_from(start.saturating_sub(origin) / 1000).unwrap_or(u32::MAX),
+                    u64::try_from(start.saturating_sub(origin)).unwrap_or(0),
+                    abutted_duration_us(start, natural, next_start),
+                )
+            };
             parts.push((
                 frame,
                 cmaf::FragmentTiming {
                     sequence,
-                    decode_time_us: u64::try_from(start.saturating_sub(origin)).unwrap_or(0),
-                    duration_us: abutted_duration_us(start, natural, next_start),
+                    decode_time_us,
+                    duration_us,
                 },
+            ));
+        }
+        if parts.is_empty() {
+            return Err(A2aLabError::not_found(
+                "packaged segment",
+                segment.relative_path().to_owned(),
             ));
         }
         let bytes = cmaf::media_fragments(&session.track, &parts)?;
@@ -615,7 +638,8 @@ impl DvrMediaPackager {
         validate_session_root(session_root)?;
         cmaf::init_segment(&track)?;
         let stored = read_all_spans(store, source_id, track.id(), window).await?;
-        let segments = plan_hls_segments(&stored, coverage, window, NORMAL_SEGMENT_PREFIX, kind);
+        let segments =
+            plan_hls_segments(&stored, coverage, window, NORMAL_SEGMENT_PREFIX, kind, true);
         let playlist = match kind {
             PlaylistKind::Finite => render_finite_playlist(&segments)?,
             PlaylistKind::Live => render_live_playlist(&segments)?,
@@ -761,6 +785,7 @@ fn plan_hls_segments(
     window: TimeRange,
     segment_prefix: &str,
     kind: PlaylistKind,
+    declare_gaps: bool,
 ) -> Vec<PackagedHlsSegment> {
     let frames: Vec<&DvrMediaSegment> = stored
         .iter()
@@ -781,11 +806,11 @@ fn plan_hls_segments(
                     .start()
                     .as_micros()
                     .div_euclid(HLS_SEGMENT_TARGET_US);
-            let gap = frames_are_separated(previous, frame)
-                || discontinuity_before_segment(frame.range().start(), coverage);
-            if gap || bucket_changed {
+            let separated = frames_are_separated(previous, frame);
+            let coverage_break = discontinuity_before_segment(frame.range().start(), coverage);
+            if separated || coverage_break || bucket_changed {
                 groups.push((current_break, std::mem::take(&mut current)));
-                current_break = gap;
+                current_break = coverage_break || (declare_gaps && separated);
             }
         } else {
             current_break = discontinuity_before_segment(frame.range().start(), coverage);
@@ -840,6 +865,61 @@ fn frames_are_separated(previous: &DvrMediaSegment, next: &DvrMediaSegment) -> b
         > period.max(1)
 }
 
+fn trick_sample_timing(
+    origin_us: i64,
+    start_us: i64,
+    natural_us: u64,
+    next_start_us: Option<i64>,
+) -> (u32, u64, u64) {
+    let scale = i64::try_from(TRICK_8X_DECIMATION).unwrap_or(1).max(1);
+    let decode_time_us =
+        u64::try_from(start_us.saturating_sub(origin_us).div_euclid(scale)).unwrap_or(0);
+    let duration_us = next_start_us
+        .map(|next| {
+            let next_decode =
+                u64::try_from(next.saturating_sub(origin_us).div_euclid(scale)).unwrap_or(0);
+            next_decode.saturating_sub(decode_time_us).max(1)
+        })
+        .unwrap_or(natural_us.max(1));
+    let sequence = u32::try_from(decode_time_us / 1000).unwrap_or(u32::MAX);
+    (sequence, decode_time_us, duration_us)
+}
+
+fn assign_trick_durations(segments: &mut [PackagedHlsSegment]) {
+    let scale = i64::try_from(TRICK_8X_DECIMATION).unwrap_or(1).max(1);
+    for index in 0..segments.len() {
+        let start = segments[index].range().start().as_micros();
+        let duration_us = segments
+            .get(index + 1)
+            .map(|next| {
+                u64::try_from(
+                    next.range()
+                        .start()
+                        .as_micros()
+                        .saturating_sub(start)
+                        .div_euclid(scale),
+                )
+                .unwrap_or(1)
+                .max(1)
+            })
+            .unwrap_or_else(|| {
+                u64::try_from(
+                    segments[index]
+                        .range()
+                        .end()
+                        .as_micros()
+                        .saturating_sub(start),
+                )
+                .unwrap_or(1)
+                .max(1)
+            });
+        #[allow(clippy::cast_precision_loss)]
+        {
+            segments[index].duration_secs = duration_us as f64 / 1_000_000.0;
+        }
+    }
+}
+
 fn abutted_duration_us(start: i64, natural: u64, next_start: Option<i64>) -> u64 {
     let Some(next) = next_start else {
         return natural.max(1);
@@ -886,7 +966,7 @@ fn plan_trick_8x_rendition(
         .filter(|segment| segment.keyframe())
         .cloned()
         .collect();
-    if keyframe_only.len() < normal_segment_count
+    if keyframe_only.len() < in_window.len()
         && let Ok(trick) = build_trick_8x_rendition(
             &keyframe_only,
             coverage,
@@ -904,7 +984,7 @@ fn plan_trick_8x_rendition(
         .filter(|&(index, _)| index % TRICK_8X_DECIMATION == 0)
         .map(|(_, segment)| segment.clone())
         .collect();
-    if decimated.len() < normal_segment_count
+    if decimated.len() < in_window.len()
         && decimated.iter().all(DvrMediaSegment::keyframe)
         && let Ok(trick) =
             build_trick_8x_rendition(&decimated, coverage, window, kind, TRICK_8X_SEGMENT_PREFIX)
@@ -929,7 +1009,8 @@ fn build_trick_8x_rendition(
     kind: PlaylistKind,
     segment_prefix: &str,
 ) -> Result<PackagedHlsTrick8xRendition, A2aLabError> {
-    let segments = plan_hls_segments(stored, coverage, window, segment_prefix, kind);
+    let mut segments = plan_hls_segments(stored, coverage, window, segment_prefix, kind, false);
+    assign_trick_durations(&mut segments);
     if segments.is_empty() {
         return Err(A2aLabError::no_recording(
             "trick-play window contains no segments",
@@ -1082,6 +1163,7 @@ mod unit_tests {
             window,
             NORMAL_SEGMENT_PREFIX,
             PlaylistKind::Finite,
+            true,
         );
         let playlist = render_finite_playlist(&planned).unwrap();
         assert!(playlist.contains("#EXT-X-PROGRAM-DATE-TIME:"));
@@ -1112,6 +1194,7 @@ mod unit_tests {
             window,
             NORMAL_SEGMENT_PREFIX,
             PlaylistKind::Live,
+            true,
         );
         let playlist = render_live_playlist(&planned).unwrap();
         assert!(playlist.contains("#EXT-X-PLAYLIST-TYPE:EVENT"));
@@ -1146,6 +1229,7 @@ mod unit_tests {
             window,
             NORMAL_SEGMENT_PREFIX,
             PlaylistKind::Finite,
+            true,
         );
         assert_eq!(finite.len(), 2);
         assert!((finite[0].duration_secs() - 5.0).abs() < 0.001);
@@ -1156,6 +1240,7 @@ mod unit_tests {
             window,
             NORMAL_SEGMENT_PREFIX,
             PlaylistKind::Live,
+            true,
         );
         assert_eq!(live.len(), 1);
     }
@@ -1191,10 +1276,49 @@ mod unit_tests {
             window,
             NORMAL_SEGMENT_PREFIX,
             PlaylistKind::Finite,
+            true,
         );
         assert_eq!(finite.len(), 2);
         assert!((finite[0].duration_secs() - 4.0).abs() < 0.001);
         let boundary = start.saturating_add_micros(5_000_000).as_micros();
         assert!(finite[1].relative_path().contains(&boundary.to_string()));
+    }
+
+    #[test]
+    fn all_intra_frames_publish_an_eight_x_rendition() {
+        let start = UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap();
+        let frames: Vec<DvrMediaSegment> = (0..16)
+            .map(|index| {
+                let at = start.saturating_add_micros(index * 200_000);
+                DvrMediaSegment::new(
+                    DvrTrackId::new("h264").unwrap(),
+                    TimeRange::new(at, at.saturating_add_micros(200_000)).unwrap(),
+                    true,
+                    DvrMediaPayload::EncodedSample {
+                        codec: VideoCodec::H264,
+                        bytes: vec![1],
+                    },
+                )
+                .unwrap()
+            })
+            .collect();
+        let end = frames.last().unwrap().range().end();
+        let coverage = DvrMediaCoverage::new(vec![TimeRange::new(start, end).unwrap()]).unwrap();
+        let window = TimeRange::new(start, end).unwrap();
+        let (trick, reason) =
+            plan_trick_8x_rendition(&frames, &coverage, window, PlaylistKind::Finite, 1);
+        let trick = trick.expect("all-intra frames should decimate into 8x");
+        assert!(reason.is_none());
+        assert!(trick.segments().len() < frames.len());
+        assert!(trick.playlist().contains("seg-8x-"));
+        assert!(!trick.playlist().contains("#EXT-X-DISCONTINUITY"));
+        let timing = trick_sample_timing(
+            start.as_micros(),
+            frames[8].range().start().as_micros(),
+            200_000,
+            Some(frames[8].range().start().as_micros() + 1_600_000),
+        );
+        assert_eq!(timing.1, 200_000);
+        assert_eq!(timing.2, 200_000);
     }
 }

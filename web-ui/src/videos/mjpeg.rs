@@ -127,17 +127,16 @@ impl Parser {
             return Err(Error::EmptyJpeg);
         }
         let captured_us = captured_us(&captured).ok_or(Error::CapturedAt)?;
-        if let Some(first) = self.first_us {
-            if captured_us.saturating_sub(first) > MAX_DURATION_US {
-                return Err(Error::TooLong);
-            }
-        } else {
-            self.first_us = Some(captured_us);
+        if self
+            .first_us
+            .is_some_and(|first| captured_us.saturating_sub(first) > MAX_DURATION_US)
+            || self.frames >= MAX_FRAMES
+        {
+            self.first_us = None;
+            self.frames = 0;
         }
+        self.first_us.get_or_insert(captured_us);
         self.frames += 1;
-        if self.frames > MAX_FRAMES {
-            return Err(Error::TooManyFrames);
-        }
         Ok(Some(Event::Frame(Frame {
             captured_at: captured,
             captured_us,
@@ -318,7 +317,8 @@ mod tests {
         let first = encode_part("2024-01-01T00:00:00Z", JPEG);
         parser.push(&first).unwrap();
         let late = encode_part("2024-01-01T00:02:01Z", JPEG);
-        assert_eq!(parser.push(&late), Err(Error::TooLong));
+        let events = parser.push(&late).unwrap();
+        assert!(matches!(events.as_slice(), [Event::Frame(_)]));
     }
 
     #[test]
