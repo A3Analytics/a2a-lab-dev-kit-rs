@@ -105,6 +105,16 @@ pub trait VideoProvider: Send + Sync {
         std::future::ready(timeline_unavailable())
     }
 
+    /// Resolves one gateway asset for a prepared H.264 clip. MJPEG clips return not-found.
+    fn resolve_clip_playback_asset(
+        &self,
+        id: &VideoClipId,
+        relative_path: Option<&str>,
+    ) -> impl Future<Output = Result<ResolvedMediaAsset, A2aLabError>> + Send {
+        let _ = (self, id, relative_path);
+        std::future::ready(Err(A2aLabError::not_found("video clip", id.to_string())))
+    }
+
     /// Resolves one gateway asset for a prepared live session.
     fn resolve_live_playback_asset(
         &self,

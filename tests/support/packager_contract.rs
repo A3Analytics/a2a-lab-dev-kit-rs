@@ -51,12 +51,12 @@ async fn packager_produces_cmaf_assets_without_jpeg_transcoding() {
     assert_eq!(init.content_type(), "video/mp4");
     assert!(init.bytes().windows(4).any(|window| window == b"ftyp"));
     let segment = packager
-        .load_hls_asset(&store, &session, "seg-0000.m4s")
+        .load_hls_asset(&store, &session, session.segments()[0].relative_path())
         .await
         .unwrap();
     assert_eq!(segment.content_type(), "video/iso.segment");
     assert!(segment.bytes().windows(4).any(|window| window == b"styp"));
-    assert!(segment.bytes().ends_with(&[0x00, 0x00]));
+    assert!(segment.bytes().windows(4).any(|window| window == b"moof"));
 }
 
 #[tokio::test]

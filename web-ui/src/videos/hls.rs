@@ -56,6 +56,42 @@ pub enum CodecProbe {
     Unsupported,
 }
 
+/// Segments the live player still has to append.
+///
+/// The first batch is the newest few seconds. Later batches continue from the
+/// newest segment already appended, so a slow fetch cannot skip the frames
+/// that arrived while it was running.
+pub fn live_pending<'a>(
+    segments: &'a [SegmentLine],
+    appended: &std::collections::HashSet<String>,
+) -> &'a [SegmentLine] {
+    if let Some(position) = segments
+        .iter()
+        .rposition(|segment| appended.contains(&segment.uri))
+    {
+        return &segments[position + 1..];
+    }
+    live_tail(segments)
+}
+
+/// The newest few seconds of a live playlist. Older segments stay on the server.
+pub fn live_tail(segments: &[SegmentLine]) -> &[SegmentLine] {
+    const TAIL_SECS: f64 = 3.0;
+    if segments.len() <= 2 {
+        return segments;
+    }
+    let mut covered = 0.0;
+    let mut start = segments.len();
+    for (index, segment) in segments.iter().enumerate().rev() {
+        start = index;
+        covered += segment.duration_secs.max(0.0);
+        if covered >= TAIL_SECS {
+            break;
+        }
+    }
+    &segments[start..]
+}
+
 pub fn parse_playlist(text: &str) -> Option<ParsedPlaylist> {
     let mut map_uri = None;
     let mut segments = Vec::new();
@@ -342,6 +378,30 @@ seg-0000.m4s
             }
             other => panic!("expected supported avc1, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn live_tail_keeps_the_newest_three_seconds() {
+        let segments: Vec<SegmentLine> = (0..20)
+            .map(|index| SegmentLine {
+                uri: format!("seg-{index}.m4s"),
+                duration_secs: 0.2,
+                program_date_time: None,
+                discontinuity_before: false,
+            })
+            .collect();
+        let tail = live_tail(&segments);
+        assert_eq!(tail.len(), 15);
+        assert_eq!(tail[0].uri, "seg-5.m4s");
+        assert_eq!(live_tail(&segments[..2]).len(), 2);
+        let mut appended = std::collections::HashSet::new();
+        appended.insert("seg-10.m4s".to_owned());
+        let pending = live_pending(&segments, &appended);
+        assert_eq!(
+            pending.first().map(|segment| segment.uri.as_str()),
+            Some("seg-11.m4s")
+        );
+        assert_eq!(pending.len(), 9);
     }
 
     fn full_box(fourcc: &[u8; 4], content: &[u8]) -> Vec<u8> {

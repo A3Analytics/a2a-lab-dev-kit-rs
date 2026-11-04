@@ -321,6 +321,13 @@ impl MemoryVideos {
         Ok(())
     }
 
+    /// Whether `source_id` is currently marked live.
+    pub async fn live_available(&self, source_id: &VideoSourceId) -> Result<bool, A2aLabError> {
+        let state = self.lock().await;
+        require_source(&state, source_id)?;
+        Ok(is_live(&state, source_id))
+    }
+
     /// Marks one source live-available or live-unavailable.
     ///
     /// Turning availability off stops open followers for that source.
@@ -695,6 +702,7 @@ impl VideoProvider for MemoryVideos {
                 "live session `{id}` has expired"
             )));
         }
+        state.prepared[index].expires_at = Instant::now() + state.follow_ttl;
         let source_id = state.prepared[index].source_id.clone();
         if !is_live(&state, &source_id)
             && matches!(state.prepared[index].anchor, LiveAnchor::LiveEdge)
@@ -719,12 +727,27 @@ impl VideoProvider for MemoryVideos {
                 let track_id = track_id.clone();
                 let anchor = state.prepared[index].anchor;
                 let root = video_live_path(id);
+                let cached = state.prepared[index].hls.clone();
                 drop(state);
                 let packager = DvrMediaPackager::default();
+                if let Some(path) = relative.as_deref()
+                    && path != HLS_PLAYLIST_RELATIVE_PATH
+                    && let Some(session) = cached.as_ref()
+                    && cached_asset(session, path)
+                {
+                    let asset = packager.load_hls_asset(self, session, path).await?;
+                    return Ok(ResolvedMediaAsset::Bytes(asset));
+                }
+                let timeline_origin_us = cached
+                    .as_ref()
+                    .map(crate::videos::PackagedHlsSession::timeline_origin_us);
                 let anchor = resolve_live_anchor(self, &source_id, anchor).await?;
-                let session = packager
+                let mut session = packager
                     .package_live_hls_at(self, &root, &source_id, &track_id, anchor)
                     .await?;
+                if let Some(origin_us) = timeline_origin_us {
+                    session.pin_timeline_origin(origin_us);
+                }
                 let path = relative.as_deref().unwrap_or(HLS_PLAYLIST_RELATIVE_PATH);
                 let asset = packager.load_hls_asset(self, &session, path).await?;
                 let mut state = self.lock().await;
@@ -743,6 +766,26 @@ impl VideoProvider for MemoryVideos {
             }
         }
     }
+}
+
+fn cached_asset(session: &crate::videos::PackagedHlsSession, path: &str) -> bool {
+    if path == session.init_relative_path() {
+        return true;
+    }
+    if session
+        .segments()
+        .iter()
+        .any(|item| item.relative_path() == path)
+    {
+        return true;
+    }
+    session.trick_8x().is_some_and(|trick| {
+        path == trick.playlist_relative_path()
+            || trick
+                .segments()
+                .iter()
+                .any(|item| item.relative_path() == path)
+    })
 }
 
 async fn live_follow_next(

@@ -129,6 +129,15 @@ impl MediaAssetProvider for LocalMediaAssetProvider {
         'life1: 'life0,
     {
         let relative = normalize_media_asset_path(request.relative_path)?;
+        match self
+            .lab
+            .resolve_clip_playback_asset(request.id, relative.as_deref())
+            .await
+        {
+            Ok(asset) => return Ok(asset),
+            Err(error) if error.code() == "not_found" => {}
+            Err(error) => return Err(error),
+        }
         if let Some(entry) = self.registered_hls(request.id)? {
             let path = relative.as_deref().unwrap_or(entry.default_path.as_str());
             let asset = entry

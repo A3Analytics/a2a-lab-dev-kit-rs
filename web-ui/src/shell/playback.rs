@@ -462,10 +462,7 @@ async fn consume(
                     }
                     Err(error) => {
                         if !from_start
-                            && matches!(
-                                error,
-                                mjpeg::Error::TooLong | mjpeg::Error::TooManyFrames
-                            )
+                            && matches!(error, mjpeg::Error::TooLong | mjpeg::Error::TooManyFrames)
                         {
                             parser = MjpegParser::new();
                             continue;

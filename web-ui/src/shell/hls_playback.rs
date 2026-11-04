@@ -265,9 +265,11 @@ async fn play_appended_segments(
         playlist_path,
         secret,
         abort,
+        from_start,
         transport,
         parsed,
         source_buffer,
+        video,
         appended,
         trace,
     )
@@ -286,15 +288,14 @@ async fn play_appended_segments(
     if parsed.end_list && !live_playlist_session(playlist_path) {
         let _ = media_source.end_of_stream();
         playback::apply_hls_playback_rate();
-        if from_start {
-            video.set_current_time(0.0);
-        }
         let _ = video.play();
         return wait_until_end(generation, abort, true, video, source_buffer).await;
     }
     playback::apply_hls_playback_rate();
     if from_start {
         video.set_current_time(0.0);
+    } else if live_playlist_session(playlist_path) {
+        skip_forward_if_gapped(video, source_buffer);
     }
     let _ = video.play();
     refresh_live(
@@ -317,13 +318,21 @@ async fn append_segments(
     playlist_path: &str,
     secret: Option<&str>,
     abort: &AbortController,
+    from_start: bool,
     transport: &Transport,
     parsed: &crate::videos::hls::ParsedPlaylist,
     source_buffer: &SourceBuffer,
+    video: &HtmlVideoElement,
     appended: &mut HashSet<String>,
     trace: &mut Trace,
 ) -> Result<(), StreamOutcome> {
-    for segment in &parsed.segments {
+    let segments = if live_playlist_session(playlist_path) {
+        crate::videos::hls::live_pending(&parsed.segments, appended)
+    } else {
+        parsed.segments.as_slice()
+    };
+    let mut started = false;
+    for segment in segments {
         if abort.signal().aborted() {
             return Err(stopped(generation));
         }
@@ -337,7 +346,12 @@ async fn append_segments(
         let segment_bytes =
             match fetch_bytes(transport, &segment_path, secret, abort, generation).await {
                 Ok(bytes) => bytes,
-                Err(outcome) => return Err(outcome),
+                Err(outcome) => {
+                    if live_playlist_session(playlist_path) && !abort.signal().aborted() {
+                        continue;
+                    }
+                    return Err(outcome);
+                }
             };
         trace.append_order.push(segment.uri.clone());
         publish_trace(trace);
@@ -351,6 +365,14 @@ async fn append_segments(
             return Err(stopped(generation));
         }
         appended.insert(segment.uri.clone());
+        if live_playlist_session(playlist_path) {
+            let _ = video.play();
+        }
+        if from_start && !started {
+            video.set_current_time(0.0);
+            let _ = video.play();
+            started = true;
+        }
         if segment.discontinuity_before {
             playback::notify_gap_skipped(generation);
         }
@@ -400,9 +422,11 @@ async fn refresh_live(
             playlist_path,
             secret,
             abort,
+            false,
             transport,
             &parsed,
             source_buffer,
+            video,
             appended,
             trace,
         )
@@ -462,6 +486,13 @@ fn skip_forward_if_gapped(video: &HtmlVideoElement, buffer: &SourceBuffer) {
             continue;
         };
         if t >= start - 0.05 && t < end {
+            if end - t < 0.3
+                && index + 1 < ranges.length()
+                && let Ok(next) = ranges.start(index + 1)
+                && next > end + 0.5
+            {
+                video.set_current_time(next);
+            }
             return;
         }
         if start > t + 0.05 {

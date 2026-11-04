@@ -185,6 +185,19 @@ pub trait A2aLabApi: Send + Sync {
         ))))
     }
 
+    /// Resolves one authenticated H.264 clip asset. MJPEG clips return not-found.
+    fn resolve_clip_playback_asset(
+        &self,
+        id: &VideoClipId,
+        relative_path: Option<&str>,
+    ) -> A2aLabFuture<'_, Result<ResolvedMediaAsset, A2aLabError>> {
+        let _ = (self, id, relative_path);
+        Box::pin(std::future::ready(Err(A2aLabError::not_found(
+            "video clip",
+            id.to_string(),
+        ))))
+    }
+
     /// Resolves one authenticated live session asset or MJPEG stream.
     fn resolve_live_playback_asset(
         &self,
@@ -655,6 +668,17 @@ where
         self.videos.open_video_follow(id).await
     }
 
+    /// Resolves one authenticated H.264 clip asset. MJPEG clips return not-found.
+    pub async fn resolve_clip_playback_asset(
+        &self,
+        id: &VideoClipId,
+        relative_path: Option<&str>,
+    ) -> Result<ResolvedMediaAsset, A2aLabError> {
+        self.videos
+            .resolve_clip_playback_asset(id, relative_path)
+            .await
+    }
+
     /// Resolves one authenticated live session asset or MJPEG stream.
     pub async fn resolve_live_playback_asset(
         &self,
@@ -767,6 +791,18 @@ where
     ) -> A2aLabFuture<'_, Result<VideoLiveStream, A2aLabError>> {
         let id = id.clone();
         Box::pin(async move { A2aLabService::open_video_follow(self, &id).await })
+    }
+
+    fn resolve_clip_playback_asset(
+        &self,
+        id: &VideoClipId,
+        relative_path: Option<&str>,
+    ) -> A2aLabFuture<'_, Result<ResolvedMediaAsset, A2aLabError>> {
+        let id = id.clone();
+        let relative_path = relative_path.map(str::to_owned);
+        Box::pin(async move {
+            A2aLabService::resolve_clip_playback_asset(self, &id, relative_path.as_deref()).await
+        })
     }
 
     fn resolve_live_playback_asset(

@@ -394,6 +394,17 @@ pub trait DvrMediaStore: Send + Sync {
         request: ReadDvrMediaWindowRequest,
     ) -> impl Future<Output = Result<Page<DvrMediaSegment>, A2aLabError>> + Send;
 
+    /// Lists the same page as [`Self::read_media_window`] without loading payloads.
+    ///
+    /// Playlist planning only needs ranges and keyframe flags. The default
+    /// reads payloads; stores with large samples override this.
+    fn read_media_spans(
+        &self,
+        request: ReadDvrMediaWindowRequest,
+    ) -> impl Future<Output = Result<Page<DvrMediaSegment>, A2aLabError>> + Send {
+        self.read_media_window(request)
+    }
+
     /// Returns the nearest retained sample at `request.at()`.
     fn frame_at(
         &self,

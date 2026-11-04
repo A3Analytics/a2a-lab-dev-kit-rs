@@ -41,6 +41,7 @@ pub const TRICK_8X_UNAVAILABLE_NO_REDUCTION: &str = "no_sample_reduction";
 const TRICK_8X_DECIMATION: usize = 8;
 const NORMAL_SEGMENT_PREFIX: &str = "seg-";
 const TRICK_8X_SEGMENT_PREFIX: &str = "seg-8x-";
+const HLS_SEGMENT_TARGET_US: i64 = 5_000_000;
 
 /// Configuration for bounded manifest generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +191,9 @@ pub struct PackagedHlsSession {
     playlist_relative_path: String,
     playlist: String,
     segments: Vec<PackagedHlsSegment>,
+    /// Decode-time zero for every segment in this follow. Live refreshes keep the
+    /// first session's origin so later segments continue on the same timeline.
+    timeline_origin_us: i64,
     track: DvrMediaTrack,
     trick_8x: Option<PackagedHlsTrick8xRendition>,
     trick_8x_unavailable_reason: Option<String>,
@@ -254,6 +258,17 @@ impl PackagedHlsSession {
     #[must_use]
     pub fn segments(&self) -> &[PackagedHlsSegment] {
         &self.segments
+    }
+
+    /// Microsecond instant encoded as decode time zero for this session.
+    #[must_use]
+    pub const fn timeline_origin_us(&self) -> i64 {
+        self.timeline_origin_us
+    }
+
+    /// Keeps segment timestamps on the timeline established by an earlier refresh.
+    pub(crate) fn pin_timeline_origin(&mut self, origin_us: i64) {
+        self.timeline_origin_us = origin_us;
     }
 
     /// Optional 8x trick-play rendition for the same bounded window.
@@ -332,6 +347,32 @@ impl DvrMediaPackager {
             track,
             anchor,
             window,
+            &coverage,
+            PlaylistKind::Finite,
+        )
+        .await
+    }
+
+    /// Packages the retained range itself as one finite HLS session.
+    pub async fn package_hls_range(
+        &self,
+        store: &impl DvrMediaStore,
+        session_root: &str,
+        source_id: &VideoSourceId,
+        track_id: &DvrTrackId,
+        range: TimeRange,
+    ) -> Result<PackagedHlsSession, A2aLabError> {
+        range.check()?;
+        let coverage = store.media_coverage(source_id).await?;
+        let track = find_track(store, source_id, track_id).await?;
+        ensure_encoded_track(&track)?;
+        self.build_hls_session(
+            store,
+            session_root,
+            source_id,
+            track,
+            range.start(),
+            range,
             &coverage,
             PlaylistKind::Finite,
         )
@@ -446,31 +487,46 @@ impl DvrMediaPackager {
         segment: &PackagedHlsSegment,
         listed: &[PackagedHlsSegment],
     ) -> Result<PackagedMediaAsset, A2aLabError> {
-        let stored = load_single_segment(
+        let frames = read_all_segments(
             store,
             session.source_id(),
             session.track_id(),
             segment.range(),
         )
         .await?;
+        if frames.is_empty() {
+            return Err(A2aLabError::not_found(
+                "packaged segment",
+                segment.relative_path().to_owned(),
+            ));
+        }
         let index = listed
             .iter()
             .position(|item| item.relative_path() == segment.relative_path())
             .unwrap_or(0);
-        let decode_time_us = u64::try_from(
-            stored
-                .range()
-                .start()
-                .as_micros()
-                .saturating_sub(session.window().start().as_micros()),
-        )
-        .unwrap_or(0);
-        let bytes = cmaf::media_segment(
-            &session.track,
-            &stored,
-            u32::try_from(index).unwrap_or(0),
-            decode_time_us,
-        )?;
+        let origin = session.timeline_origin_us();
+        let next_segment_start = listed
+            .get(index.saturating_add(1))
+            .map(|next| next.range().start().as_micros());
+        let mut parts = Vec::with_capacity(frames.len());
+        for (frame_index, frame) in frames.iter().enumerate() {
+            let start = frame.range().start().as_micros();
+            let natural = cmaf::segment_duration_us(frame.range());
+            let next_start = frames
+                .get(frame_index.saturating_add(1))
+                .map(|next| next.range().start().as_micros())
+                .or(next_segment_start);
+            let sequence = u32::try_from(start.saturating_sub(origin) / 1000).unwrap_or(u32::MAX);
+            parts.push((
+                frame,
+                cmaf::FragmentTiming {
+                    sequence,
+                    decode_time_us: u64::try_from(start.saturating_sub(origin)).unwrap_or(0),
+                    duration_us: abutted_duration_us(start, natural, next_start),
+                },
+            ));
+        }
+        let bytes = cmaf::media_fragments(&session.track, &parts)?;
         PackagedMediaAsset::new("video/iso.segment", bytes)
     }
 
@@ -558,14 +614,18 @@ impl DvrMediaPackager {
     ) -> Result<PackagedHlsSession, A2aLabError> {
         validate_session_root(session_root)?;
         cmaf::init_segment(&track)?;
-        let stored = read_all_segments(store, source_id, track.id(), window).await?;
-        let segments = plan_hls_segments(&stored, coverage, window, NORMAL_SEGMENT_PREFIX);
+        let stored = read_all_spans(store, source_id, track.id(), window).await?;
+        let segments = plan_hls_segments(&stored, coverage, window, NORMAL_SEGMENT_PREFIX, kind);
         let playlist = match kind {
             PlaylistKind::Finite => render_finite_playlist(&segments)?,
             PlaylistKind::Live => render_live_playlist(&segments)?,
         };
         let (trick_8x, trick_8x_unavailable_reason) =
             plan_trick_8x_rendition(&stored, coverage, window, kind, segments.len());
+        let timeline_origin_us = segments.first().map_or_else(
+            || window.start().as_micros(),
+            |segment| segment.range().start().as_micros(),
+        );
         Ok(PackagedHlsSession {
             session_root: normalize_session_root(session_root),
             source_id: source_id.clone(),
@@ -577,6 +637,7 @@ impl DvrMediaPackager {
             playlist_relative_path: HLS_PLAYLIST_RELATIVE_PATH.to_owned(),
             playlist,
             segments,
+            timeline_origin_us,
             track,
             trick_8x,
             trick_8x_unavailable_reason,
@@ -642,6 +703,32 @@ fn intervals_overlap(left: TimeRange, right: TimeRange) -> bool {
     left.start() < right.end() && right.start() < left.end()
 }
 
+async fn read_all_spans(
+    store: &impl DvrMediaStore,
+    source_id: &VideoSourceId,
+    track_id: &DvrTrackId,
+    window: TimeRange,
+) -> Result<Vec<DvrMediaSegment>, A2aLabError> {
+    let mut cursor = None;
+    let mut collected = Vec::new();
+    loop {
+        let page = store
+            .read_media_spans(ReadDvrMediaWindowRequest::new(
+                source_id.clone(),
+                track_id.clone(),
+                window,
+                PageRequest::new(cursor, MAX_PAGE_LIMIT)?,
+            )?)
+            .await?;
+        collected.extend(page.items().iter().cloned());
+        cursor = page.next_cursor().map(str::to_owned);
+        if cursor.is_none() {
+            break;
+        }
+    }
+    Ok(collected)
+}
+
 async fn read_all_segments(
     store: &impl DvrMediaStore,
     source_id: &VideoSourceId,
@@ -668,54 +755,101 @@ async fn read_all_segments(
     Ok(collected)
 }
 
-async fn load_single_segment(
-    store: &impl DvrMediaStore,
-    source_id: &VideoSourceId,
-    track_id: &DvrTrackId,
-    range: TimeRange,
-) -> Result<DvrMediaSegment, A2aLabError> {
-    let page = store
-        .read_media_window(ReadDvrMediaWindowRequest::new(
-            source_id.clone(),
-            track_id.clone(),
-            range,
-            PageRequest::new(None, 1)?,
-        )?)
-        .await?;
-    page.items()
-        .first()
-        .cloned()
-        .ok_or_else(|| A2aLabError::not_found("packaged segment", range.start().to_string()))
-}
-
 fn plan_hls_segments(
     stored: &[DvrMediaSegment],
     coverage: &DvrMediaCoverage,
     window: TimeRange,
     segment_prefix: &str,
+    kind: PlaylistKind,
 ) -> Vec<PackagedHlsSegment> {
-    let mut planned = Vec::new();
-    let mut previous_end: Option<UtcTimestamp> = None;
-    for segment in stored {
-        if !intervals_overlap(segment.range(), window) {
-            continue;
+    let frames: Vec<&DvrMediaSegment> = stored
+        .iter()
+        .filter(|segment| intervals_overlap(segment.range(), window))
+        .collect();
+    let mut groups: Vec<(bool, Vec<&DvrMediaSegment>)> = Vec::new();
+    let mut current: Vec<&DvrMediaSegment> = Vec::new();
+    let mut current_break = false;
+    for frame in frames {
+        if let Some(previous) = current.last().copied() {
+            let bucket_changed = frame
+                .range()
+                .start()
+                .as_micros()
+                .div_euclid(HLS_SEGMENT_TARGET_US)
+                != current[0]
+                    .range()
+                    .start()
+                    .as_micros()
+                    .div_euclid(HLS_SEGMENT_TARGET_US);
+            let gap = frames_are_separated(previous, frame)
+                || discontinuity_before_segment(frame.range().start(), coverage);
+            if gap || bucket_changed {
+                groups.push((current_break, std::mem::take(&mut current)));
+                current_break = gap;
+            }
+        } else {
+            current_break = discontinuity_before_segment(frame.range().start(), coverage);
         }
-        let index = planned.len();
-        let discontinuity_before =
-            discontinuity_before_segment(segment.range().start(), previous_end, coverage);
-        let duration_us = cmaf::segment_duration_us(segment.range());
-        #[allow(clippy::cast_precision_loss)]
-        let duration_secs = duration_us as f64 / 1_000_000.0;
-        planned.push(PackagedHlsSegment {
-            relative_path: format!("{segment_prefix}{index:04}.m4s"),
-            range: segment.range(),
-            duration_secs,
-            program_date_time: segment.range().start(),
-            discontinuity_before,
-        });
-        previous_end = Some(segment.range().end());
+        current.push(frame);
     }
-    planned
+    if !current.is_empty() {
+        let span = current
+            .last()
+            .map_or(0, |frame| frame.range().end().as_micros())
+            .saturating_sub(current[0].range().start().as_micros());
+        if kind != PlaylistKind::Live || span >= HLS_SEGMENT_TARGET_US || groups.is_empty() {
+            groups.push((current_break, current));
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(discontinuity_before, frames)| {
+            grouped_segment(segment_prefix, discontinuity_before, &frames)
+        })
+        .collect()
+}
+
+fn grouped_segment(
+    segment_prefix: &str,
+    discontinuity_before: bool,
+    frames: &[&DvrMediaSegment],
+) -> PackagedHlsSegment {
+    let start = frames[0].range().start();
+    let end = frames.last().map_or(start, |frame| frame.range().end());
+    let duration_us = u64::try_from(end.as_micros().saturating_sub(start.as_micros())).unwrap_or(0);
+    #[allow(clippy::cast_precision_loss)]
+    let duration_secs = duration_us as f64 / 1_000_000.0;
+    PackagedHlsSegment {
+        relative_path: format!(
+            "{segment_prefix}{}.m4s",
+            frames[0].range().start().as_micros()
+        ),
+        range: TimeRange::new(start, end).unwrap_or_else(|_| frames[0].range()),
+        duration_secs,
+        program_date_time: start,
+        discontinuity_before,
+    }
+}
+
+fn frames_are_separated(previous: &DvrMediaSegment, next: &DvrMediaSegment) -> bool {
+    let period = i64::try_from(cmaf::segment_duration_us(previous.range())).unwrap_or(1);
+    next.range()
+        .start()
+        .as_micros()
+        .saturating_sub(previous.range().end().as_micros())
+        > period.max(1)
+}
+
+fn abutted_duration_us(start: i64, natural: u64, next_start: Option<i64>) -> u64 {
+    let Some(next) = next_start else {
+        return natural.max(1);
+    };
+    let gap = u64::try_from(next.saturating_sub(start)).unwrap_or(natural);
+    if gap > 0 && gap < natural.saturating_mul(2) {
+        gap
+    } else {
+        natural.max(1)
+    }
 }
 
 fn segments_in_window(stored: &[DvrMediaSegment], window: TimeRange) -> Vec<DvrMediaSegment> {
@@ -795,7 +929,7 @@ fn build_trick_8x_rendition(
     kind: PlaylistKind,
     segment_prefix: &str,
 ) -> Result<PackagedHlsTrick8xRendition, A2aLabError> {
-    let segments = plan_hls_segments(stored, coverage, window, segment_prefix);
+    let segments = plan_hls_segments(stored, coverage, window, segment_prefix, kind);
     if segments.is_empty() {
         return Err(A2aLabError::no_recording(
             "trick-play window contains no segments",
@@ -812,16 +946,7 @@ fn build_trick_8x_rendition(
     })
 }
 
-fn discontinuity_before_segment(
-    start: UtcTimestamp,
-    previous_end: Option<UtcTimestamp>,
-    coverage: &DvrMediaCoverage,
-) -> bool {
-    if let Some(previous_end) = previous_end
-        && previous_end != start
-    {
-        return true;
-    }
+fn discontinuity_before_segment(start: UtcTimestamp, coverage: &DvrMediaCoverage) -> bool {
     coverage
         .discontinuities()
         .iter()
@@ -956,11 +1081,13 @@ mod unit_tests {
             &coverage,
             window,
             NORMAL_SEGMENT_PREFIX,
+            PlaylistKind::Finite,
         );
         let playlist = render_finite_playlist(&planned).unwrap();
         assert!(playlist.contains("#EXT-X-PROGRAM-DATE-TIME:"));
         assert!(playlist.contains("#EXT-X-DISCONTINUITY"));
-        assert!(playlist.contains("seg-0001.m4s"));
+        assert!(playlist.contains(&planned[1].relative_path));
+        assert_ne!(planned[0].relative_path, planned[1].relative_path);
     }
 
     #[test]
@@ -979,10 +1106,95 @@ mod unit_tests {
         )
         .unwrap();
         let window = TimeRange::new(start, end).unwrap();
-        let planned = plan_hls_segments(&[segment], &coverage, window, NORMAL_SEGMENT_PREFIX);
+        let planned = plan_hls_segments(
+            &[segment],
+            &coverage,
+            window,
+            NORMAL_SEGMENT_PREFIX,
+            PlaylistKind::Live,
+        );
         let playlist = render_live_playlist(&planned).unwrap();
         assert!(playlist.contains("#EXT-X-PLAYLIST-TYPE:EVENT"));
         assert!(playlist.contains("#EXT-X-PROGRAM-DATE-TIME:"));
         assert!(!playlist.contains("#EXT-X-ENDLIST"));
+    }
+
+    #[test]
+    fn frames_group_into_five_second_segments() {
+        let start = UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap();
+        let frames: Vec<DvrMediaSegment> = (0..30)
+            .map(|index| {
+                let at = start.saturating_add_micros(index * 200_000);
+                DvrMediaSegment::new(
+                    DvrTrackId::new("h264").unwrap(),
+                    TimeRange::new(at, at.saturating_add_micros(200_000)).unwrap(),
+                    true,
+                    DvrMediaPayload::EncodedSample {
+                        codec: VideoCodec::H264,
+                        bytes: vec![1],
+                    },
+                )
+                .unwrap()
+            })
+            .collect();
+        let end = frames.last().unwrap().range().end();
+        let coverage = DvrMediaCoverage::new(vec![TimeRange::new(start, end).unwrap()]).unwrap();
+        let window = TimeRange::new(start, end).unwrap();
+        let finite = plan_hls_segments(
+            &frames,
+            &coverage,
+            window,
+            NORMAL_SEGMENT_PREFIX,
+            PlaylistKind::Finite,
+        );
+        assert_eq!(finite.len(), 2);
+        assert!((finite[0].duration_secs() - 5.0).abs() < 0.001);
+        assert!((finite[1].duration_secs() - 1.0).abs() < 0.001);
+        let live = plan_hls_segments(
+            &frames,
+            &coverage,
+            window,
+            NORMAL_SEGMENT_PREFIX,
+            PlaylistKind::Live,
+        );
+        assert_eq!(live.len(), 1);
+    }
+
+    #[test]
+    fn segment_boundaries_stay_on_absolute_five_second_marks() {
+        let start = UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap();
+        let frames: Vec<DvrMediaSegment> = (5..30)
+            .map(|index| {
+                let at = start.saturating_add_micros(index * 200_000);
+                DvrMediaSegment::new(
+                    DvrTrackId::new("h264").unwrap(),
+                    TimeRange::new(at, at.saturating_add_micros(200_000)).unwrap(),
+                    true,
+                    DvrMediaPayload::EncodedSample {
+                        codec: VideoCodec::H264,
+                        bytes: vec![1],
+                    },
+                )
+                .unwrap()
+            })
+            .collect();
+        let window = TimeRange::new(
+            frames[0].range().start(),
+            frames.last().unwrap().range().end(),
+        )
+        .unwrap();
+        let coverage =
+            DvrMediaCoverage::new(vec![TimeRange::new(start, window.end()).unwrap()]).unwrap();
+        let finite = plan_hls_segments(
+            &frames,
+            &coverage,
+            window,
+            NORMAL_SEGMENT_PREFIX,
+            PlaylistKind::Finite,
+        );
+        assert_eq!(finite.len(), 2);
+        assert!((finite[0].duration_secs() - 4.0).abs() < 0.001);
+        let boundary = start.saturating_add_micros(5_000_000).as_micros();
+        assert!(finite[1].relative_path().contains(&boundary.to_string()));
     }
 }
