@@ -295,7 +295,7 @@ async fn play_appended_segments(
     if from_start {
         video.set_current_time(0.0);
     } else if live_playlist_session(playlist_path) {
-        skip_forward_if_gapped(video, source_buffer);
+        skip_forward_if_gapped(generation, video, source_buffer);
     }
     let _ = video.play();
     refresh_live(
@@ -347,10 +347,11 @@ async fn append_segments(
             match fetch_bytes(transport, &segment_path, secret, abort, generation).await {
                 Ok(bytes) => bytes,
                 Err(outcome) => {
-                    if live_playlist_session(playlist_path) && !abort.signal().aborted() {
-                        continue;
+                    if abort.signal().aborted() {
+                        return Err(outcome);
                     }
-                    return Err(outcome);
+                    skip_missing_segment(generation, video, source_buffer, appended, segment);
+                    continue;
                 }
             };
         trace.append_order.push(segment.uri.clone());
@@ -359,12 +360,14 @@ async fn append_segments(
             .await
             .is_err()
         {
-            if live_playlist_session(playlist_path) {
-                continue;
+            if abort.signal().aborted() {
+                return Err(stopped(generation));
             }
-            return Err(stopped(generation));
+            skip_missing_segment(generation, video, source_buffer, appended, segment);
+            continue;
         }
         appended.insert(segment.uri.clone());
+        skip_forward_if_gapped(generation, video, source_buffer);
         if live_playlist_session(playlist_path) {
             let _ = video.play();
         }
@@ -434,7 +437,7 @@ async fn refresh_live(
         {
             return outcome;
         }
-        skip_forward_if_gapped(video, source_buffer);
+        skip_forward_if_gapped(generation, video, source_buffer);
         if parsed.end_list && !live_playlist_session(playlist_path) {
             let _ = media_source.end_of_stream();
             return wait_until_end(generation, abort, true, video, source_buffer).await;
@@ -456,7 +459,7 @@ async fn wait_until_end(
                 return stopped(generation);
             }
             playback::wait_if_paused(generation).await;
-            skip_forward_if_gapped(video, source_buffer);
+            skip_forward_if_gapped(generation, video, source_buffer);
             playback::sleep_ms(200).await;
         }
     }
@@ -465,7 +468,7 @@ async fn wait_until_end(
             return stopped(generation);
         }
         playback::wait_if_paused(generation).await;
-        skip_forward_if_gapped(video, source_buffer);
+        skip_forward_if_gapped(generation, video, source_buffer);
         if video.ended() {
             return stopped(generation);
         }
@@ -473,11 +476,26 @@ async fn wait_until_end(
     }
 }
 
-fn skip_forward_if_gapped(video: &HtmlVideoElement, buffer: &SourceBuffer) {
+fn skip_missing_segment(
+    generation: u32,
+    video: &HtmlVideoElement,
+    source_buffer: &SourceBuffer,
+    appended: &mut HashSet<String>,
+    segment: &crate::videos::hls::SegmentLine,
+) {
+    appended.insert(segment.uri.clone());
+    playback::notify_gap_skipped(generation);
+    skip_forward_if_gapped(generation, video, source_buffer);
+    let _ = video.play();
+}
+
+fn skip_forward_if_gapped(generation: u32, video: &HtmlVideoElement, buffer: &SourceBuffer) {
     let t = video.current_time();
     let Ok(ranges) = buffer.buffered() else {
         return;
     };
+    let mut containing_end = None;
+    let mut ahead = None;
     for index in 0..ranges.length() {
         let Ok(start) = ranges.start(index) else {
             continue;
@@ -486,19 +504,28 @@ fn skip_forward_if_gapped(video: &HtmlVideoElement, buffer: &SourceBuffer) {
             continue;
         };
         if t >= start - 0.05 && t < end {
-            if end - t < 0.3
-                && index + 1 < ranges.length()
-                && let Ok(next) = ranges.start(index + 1)
-                && next > end + 0.5
-            {
-                video.set_current_time(next);
+            if t < end - 1.0 {
+                return;
             }
-            return;
+            containing_end = Some(end);
+            continue;
         }
-        if start > t + 0.05 {
-            video.set_current_time(start);
-            return;
+        if start >= t - 0.05 {
+            ahead = Some(start);
+            break;
         }
+    }
+    let Some(start) = ahead else {
+        return;
+    };
+    let hole = match containing_end {
+        Some(end) => start > end + 0.3,
+        None => start > t + 0.2,
+    };
+    if hole {
+        video.set_current_time(start);
+        let _ = video.play();
+        playback::notify_gap_skipped(generation);
     }
 }
 
