@@ -40,6 +40,6 @@ else
   printf 'wasm32-unknown-unknown is not installed; browser isolation stays on the web-ui feature-off check\n'
 fi
 
-printf 'not executed here: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-pc-windows-msvc\n'
+printf 'skipped extra-target builds: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-pc-windows-msvc\n'
 printf 'apple smoke: cargo test --test media_validate --features yuv,openh264\n'
 cargo test --test media_validate --features yuv,openh264 -- --test-threads=8

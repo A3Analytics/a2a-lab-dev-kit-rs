@@ -22,14 +22,8 @@ The same command then ran `cargo test --test media_validate --features yuv,openh
 
 OpenH264 0.9.9 is pinned with the `source` feature, so the C++ codec is built with the crate. This host already had a C++ toolchain; the check did not download a runtime codec. Licenses for the pinned crates: OpenH264 BSD-2-Clause, `yuv` 0.8.20 BSD-3-Clause OR Apache-2.0, `image` 0.25.10 MIT OR Apache-2.0, Nokhwa 0.10.11 Apache-2.0. `image` is pulled only by the `yuv` feature, with default features off and `jpeg` on.
 
-## What did not run
+## Extra-target builds
 
-These targets were not executed. This document does not claim they build or decode:
+Linux GNU/musl and Windows x86_64 builds are skipped for this task. They are not compile-only coverage and they are not a runtime pass. The `media-features` script names those targets as skipped extra-target builds. No Windows OT-2 release is claimed. The fixture has no operating-system gate; it ran on Darwin arm64.
 
-- x86_64-unknown-linux-gnu
-- aarch64-unknown-linux-gnu
-- x86_64-unknown-linux-musl
-- aarch64-unknown-linux-musl
-- x86_64-pc-windows-msvc
-
-No Windows release of the OT-2 application is claimed here. The fixture itself has no operating-system gate; it was only executed on Darwin arm64.
+Pinned toolchain: Rust 1.98.1. OpenH264 is built from bundled C++ source on this host, which already had a C++ toolchain. There is no downloaded runtime codec. Application code does not select these crates by operating system. If an extra-target toolchain is later required, that is a later check, not this task.
