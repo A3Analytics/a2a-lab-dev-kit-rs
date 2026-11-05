@@ -11,6 +11,8 @@ mod codec;
 #[cfg(feature = "yuv")]
 mod color_convert;
 mod dvr_store;
+#[cfg(feature = "openh264")]
+mod h264_encode;
 pub(crate) mod http;
 mod local_media;
 mod media_asset;
@@ -35,6 +37,8 @@ pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrRetentionBounds, ReadDvrMediaWindowRequest,
 };
+#[cfg(feature = "openh264")]
+pub use h264_encode::{AllIdrEncoder, I420Picture, decode_luma};
 pub use http::{apply_media_security_headers, is_gated_media_path, router, router_for_lab};
 pub use local_media::LocalMediaAssetProvider;
 pub use media_asset::{

@@ -39,6 +39,7 @@ sila2 = [
     "dep:protoc-bin-vendored",
 ]
 yuv = ["dep:yuv"]
+openh264 = ["dep:openh264"]
 
 [[example]]
 name = "web_ui"
@@ -112,6 +113,7 @@ yuv = { version = "0.8.20", default-features = false, optional = true, features 
     "rdm",
     "sse",
 ] }
+openh264 = { version = "0.9.9", features = ["source"], optional = true }
 
 [dev-dependencies]
 a2a-client = { version = "0.2.7", package = "a2a-client-lf" }
