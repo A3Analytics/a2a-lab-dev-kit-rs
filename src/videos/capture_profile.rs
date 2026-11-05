@@ -184,6 +184,20 @@ pub struct SelectedCaptureProfile {
 }
 
 impl SelectedCaptureProfile {
+    /// Records a device-negotiated mode without running selection again.
+    #[must_use]
+    pub const fn negotiated(
+        mode: CaptureMode,
+        sensor_rate: CaptureRate,
+        output_rate: CaptureRate,
+    ) -> Self {
+        Self {
+            mode,
+            sensor_rate,
+            output_rate,
+        }
+    }
+
     /// Selected raw mode.
     #[must_use]
     pub const fn mode(self) -> CaptureMode {

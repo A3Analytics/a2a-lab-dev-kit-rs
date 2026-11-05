@@ -6,6 +6,7 @@
 
 mod capture;
 mod capture_profile;
+mod capture_session;
 mod catalog;
 mod cmaf;
 mod codec;
@@ -27,6 +28,8 @@ mod media_asset;
 #[cfg(feature = "yuv")]
 mod mjpeg_decode;
 mod model;
+#[cfg(feature = "nokhwa")]
+mod nokhwa_device;
 mod packager;
 mod provider;
 mod timeline;
@@ -41,6 +44,7 @@ pub use capture_profile::{
     CaptureRate, DEFAULT_CAPTURE_OUTPUT_FPS, SelectedCaptureProfile, confirm_selected_profile,
     select_capture_profile,
 };
+pub use capture_session::{CaptureSession, ColorCamera, RawCameraSample, captured_frame};
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
 pub use codec::VideoCodec;
 #[cfg(feature = "yuv")]
@@ -89,6 +93,8 @@ pub use model::{
     VideoPlayback8xMetadata, VideoSource, decode_mjpeg_multipart, encode_mjpeg_end,
     encode_mjpeg_multipart, encode_mjpeg_part, mjpeg_content_type, video_clip_path,
 };
+#[cfg(feature = "nokhwa")]
+pub use nokhwa_device::{NokhwaCamera, profiles_from_nokhwa};
 pub use packager::{
     DEFAULT_PLAYBACK_WINDOW_US, DvrMediaPackager, DvrPackagerConfig, HLS_INIT_RELATIVE_PATH,
     HLS_PLAYLIST_RELATIVE_PATH, HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH, PackagedHlsSegment,
