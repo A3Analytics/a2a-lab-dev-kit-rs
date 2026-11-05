@@ -13,6 +13,7 @@ mod color_convert;
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 mod color_pipeline;
 mod dvr_store;
+mod epoch_hls;
 mod frame_select;
 #[cfg(feature = "openh264")]
 mod h264_encode;
@@ -47,6 +48,9 @@ pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPictureProperties, DvrRetentionBounds,
     H264TrackRelation, ReadDvrMediaWindowRequest, h264_track_relation,
+};
+pub use epoch_hls::{
+    EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind, package_h264_epochs,
 };
 pub use frame_select::{FrameRejection, FreshFrameGate, OUTPUT_5FPS_PERIOD_NS, RejectedFrame};
 #[cfg(feature = "openh264")]
