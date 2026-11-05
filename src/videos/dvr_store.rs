@@ -99,6 +99,56 @@ impl DvrMediaCoverage {
     }
 }
 
+/// Declared picture properties bound to one codec epoch.
+///
+/// These values are fixed when the epoch is opened. A later encoder
+/// configuration uses a new track id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DvrPictureProperties {
+    width: u32,
+    height: u32,
+}
+
+impl DvrPictureProperties {
+    /// Accepts a positive even width and height. I420 epochs are even on both edges.
+    pub fn new(width: u32, height: u32) -> Result<Self, A2aLabError> {
+        if width == 0 || !width.is_multiple_of(2) {
+            return Err(A2aLabError::invalid(
+                "width",
+                "H.264 epoch width must be a positive even number",
+            ));
+        }
+        if height == 0 || !height.is_multiple_of(2) {
+            return Err(A2aLabError::invalid(
+                "height",
+                "H.264 epoch height must be a positive even number",
+            ));
+        }
+        Ok(Self { width, height })
+    }
+
+    /// Declared frame width.
+    #[must_use]
+    pub const fn width(self) -> u32 {
+        self.width
+    }
+
+    /// Declared frame height.
+    #[must_use]
+    pub const fn height(self) -> u32 {
+        self.height
+    }
+}
+
+/// How retained H.264 tracks relate to each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum H264TrackRelation {
+    /// Ordered, non-overlapping epochs. A gap between them stays a gap.
+    SequentialEpoch,
+    /// Time ranges overlap, so the tracks are simultaneous alternatives.
+    SimultaneousAlternate,
+}
+
 /// One indexed media track for a source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DvrMediaTrack {
@@ -106,6 +156,7 @@ pub struct DvrMediaTrack {
     codec: VideoCodec,
     codec_initialization: Vec<u8>,
     bounds: TimeRange,
+    picture: Option<DvrPictureProperties>,
 }
 
 impl DvrMediaTrack {
@@ -122,7 +173,35 @@ impl DvrMediaTrack {
             codec,
             codec_initialization,
             bounds,
+            picture: None,
         })
+    }
+
+    /// Same as [`Self::new`] with declared picture properties.
+    ///
+    /// H.264 initialization and the picture size are immutable for this track id.
+    pub fn with_picture(
+        id: DvrTrackId,
+        codec: VideoCodec,
+        codec_initialization: Vec<u8>,
+        bounds: TimeRange,
+        picture: DvrPictureProperties,
+    ) -> Result<Self, A2aLabError> {
+        if codec != VideoCodec::H264 {
+            return Err(A2aLabError::invalid(
+                "codec",
+                "declared picture properties are bound to an H.264 epoch",
+            ));
+        }
+        if codec_initialization.is_empty() {
+            return Err(A2aLabError::invalid(
+                "codec_initialization",
+                "an H.264 epoch requires decoder initialization",
+            ));
+        }
+        let mut track = Self::new(id, codec, codec_initialization, bounds)?;
+        track.picture = Some(picture);
+        Ok(track)
     }
 
     /// Track identifier.
@@ -148,6 +227,38 @@ impl DvrMediaTrack {
     pub const fn bounds(&self) -> TimeRange {
         self.bounds
     }
+
+    /// Declared picture size when this track was opened as an H.264 epoch.
+    #[must_use]
+    pub const fn picture(&self) -> Option<DvrPictureProperties> {
+        self.picture
+    }
+}
+
+/// Classifies retained H.264 tracks as sequential epochs or overlapping alternates.
+///
+/// MJPEG and other codecs are ignored. Sequential tracks keep their own bounds,
+/// so a gap between epochs is not filled in.
+pub fn h264_track_relation(tracks: &[DvrMediaTrack]) -> Result<H264TrackRelation, A2aLabError> {
+    let mut h264: Vec<&DvrMediaTrack> = tracks
+        .iter()
+        .filter(|track| track.codec() == VideoCodec::H264)
+        .collect();
+    if h264.len() < 2 {
+        return Err(A2aLabError::invalid(
+            "tracks",
+            "H.264 epoch classification requires at least two H.264 tracks",
+        ));
+    }
+    h264.sort_by_key(|track| track.bounds().start());
+    let overlaps = h264
+        .windows(2)
+        .any(|pair| pair[1].bounds().start() < pair[0].bounds().end());
+    Ok(if overlaps {
+        H264TrackRelation::SimultaneousAlternate
+    } else {
+        H264TrackRelation::SequentialEpoch
+    })
 }
 
 /// Payload for one indexed segment or frame-at-time sample.

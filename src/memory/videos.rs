@@ -15,12 +15,13 @@ use crate::time::{TimeRange, UtcTimestamp};
 use crate::videos::{
     DEFAULT_MJPEG_BOUNDARY, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage,
     DvrMediaPackager, DvrMediaPayload, DvrMediaSegment, DvrMediaStore, DvrMediaTrack,
-    DvrRetentionBounds, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, HLS_PLAYLIST_RELATIVE_PATH,
-    ListVideoSourcesRequest, PackagedMediaAsset, ReadDvrMediaWindowRequest, ResolvedMediaAsset,
-    VideoClip, VideoClipStream, VideoCodec, VideoFollow, VideoFrame, VideoLiveStream,
-    VideoProvider, VideoSource, VideoTimeline, encode_mjpeg_end, encode_mjpeg_multipart,
-    mjpeg_content_type, normalize_media_asset_path, video_live_path,
+    DvrPictureProperties, DvrRetentionBounds, FollowVideoRequest, GetVideoClipRequest,
+    GetVideoFrameAtRequest, GetVideoFrameAtResult, GetVideoTimelineRequest,
+    HLS_PLAYLIST_RELATIVE_PATH, ListVideoSourcesRequest, PackagedMediaAsset,
+    ReadDvrMediaWindowRequest, ResolvedMediaAsset, VideoClip, VideoClipStream, VideoCodec,
+    VideoFollow, VideoFrame, VideoLiveStream, VideoProvider, VideoSource, VideoTimeline,
+    encode_mjpeg_end, encode_mjpeg_multipart, mjpeg_content_type, normalize_media_asset_path,
+    video_live_path,
 };
 
 /// Default clip handle lifetime. Not durable storage.
@@ -31,11 +32,12 @@ struct StoredFrame {
     jpeg: Vec<u8>,
 }
 
-struct StoredDvrTrack {
-    source_id: VideoSourceId,
-    id: DvrTrackId,
-    codec: VideoCodec,
-    codec_initialization: Vec<u8>,
+pub(crate) struct StoredDvrTrack {
+    pub(crate) source_id: VideoSourceId,
+    pub(crate) id: DvrTrackId,
+    pub(crate) codec: VideoCodec,
+    pub(crate) codec_initialization: Vec<u8>,
+    pub(crate) picture: Option<DvrPictureProperties>,
 }
 
 struct StoredDvrSegment {
@@ -113,10 +115,10 @@ impl Drop for LiveCursor {
     }
 }
 
-struct VideoState {
+pub(crate) struct VideoState {
     sources: Vec<VideoSource>,
     frames: Vec<(VideoSourceId, StoredFrame)>,
-    dvr_tracks: Vec<StoredDvrTrack>,
+    pub(crate) dvr_tracks: Vec<StoredDvrTrack>,
     dvr_segments: Vec<StoredDvrSegment>,
     clips: Vec<StoredClip>,
     next_clip: u64,
@@ -256,6 +258,7 @@ impl MemoryVideos {
             id: track_id,
             codec,
             codec_initialization,
+            picture: None,
         });
         Ok(())
     }
@@ -377,7 +380,7 @@ impl MemoryVideos {
         self.lock().await.unavailable = None;
     }
 
-    async fn lock(&self) -> MutexGuard<'_, VideoState> {
+    pub(crate) async fn lock(&self) -> MutexGuard<'_, VideoState> {
         self.inner.lock().await
     }
 }
@@ -1037,7 +1040,10 @@ fn find_source<'a>(
         .ok_or_else(|| A2aLabError::not_found("video source", source_id.to_string()))
 }
 
-fn require_source(state: &VideoState, source_id: &VideoSourceId) -> Result<(), A2aLabError> {
+pub(crate) fn require_source(
+    state: &VideoState,
+    source_id: &VideoSourceId,
+) -> Result<(), A2aLabError> {
     find_source(state, source_id).map(|_| ())
 }
 
@@ -1203,6 +1209,7 @@ fn ensure_mjpeg_track(state: &mut VideoState, source_id: &VideoSourceId, track_i
         id: track_id.clone(),
         codec: VideoCodec::Mjpeg,
         codec_initialization: Vec::new(),
+        picture: None,
     });
 }
 
@@ -1287,12 +1294,21 @@ fn dvr_list_tracks(
         .into_iter()
         .map(|track| {
             let bounds = track_bounds(state, source_id, &track.id)?;
-            DvrMediaTrack::new(
-                track.id.clone(),
-                track.codec,
-                track.codec_initialization.clone(),
-                bounds,
-            )
+            match track.picture {
+                Some(picture) => DvrMediaTrack::with_picture(
+                    track.id.clone(),
+                    track.codec,
+                    track.codec_initialization.clone(),
+                    bounds,
+                    picture,
+                ),
+                None => DvrMediaTrack::new(
+                    track.id.clone(),
+                    track.codec,
+                    track.codec_initialization.clone(),
+                    bounds,
+                ),
+            }
         })
         .collect()
 }

@@ -1,6 +1,7 @@
 //! In-memory providers for examples and tests.
 
 mod catalog;
+mod h264_epoch;
 mod images;
 mod logs;
 mod metrics;
