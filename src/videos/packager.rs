@@ -822,7 +822,12 @@ fn plan_hls_segments(
             .last()
             .map_or(0, |frame| frame.range().end().as_micros())
             .saturating_sub(current[0].range().start().as_micros());
-        if kind != PlaylistKind::Live || span >= HLS_SEGMENT_TARGET_US || groups.is_empty() {
+        let publish_short_live_tail = current_break;
+        if kind != PlaylistKind::Live
+            || span >= HLS_SEGMENT_TARGET_US
+            || groups.is_empty()
+            || publish_short_live_tail
+        {
             groups.push((current_break, current));
         }
     }

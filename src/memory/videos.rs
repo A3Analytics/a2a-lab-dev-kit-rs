@@ -1123,8 +1123,8 @@ impl DvrMediaStore for MemoryVideos {
     ) -> Result<DvrMediaCoverage, A2aLabError> {
         let state = self.lock().await;
         require_available(&state)?;
-        let period = find_source(&state, source_id)?.frame_period_us();
-        dvr_media_coverage(&state, source_id, period)
+        find_source(&state, source_id)?;
+        dvr_media_coverage(&state, source_id)
     }
 
     async fn list_tracks(
@@ -1156,8 +1156,8 @@ impl DvrMediaStore for MemoryVideos {
     async fn frame_at(&self, request: DvrFrameAtRequest) -> Result<DvrFrameAtResult, A2aLabError> {
         let state = self.lock().await;
         require_available(&state)?;
-        let period = find_source(&state, request.source_id())?.frame_period_us();
-        dvr_frame_at(&state, &request, period)
+        find_source(&state, request.source_id())?;
+        dvr_frame_at(&state, &request)
     }
 }
 
@@ -1245,7 +1245,6 @@ fn dvr_retention_bounds(
 fn dvr_media_coverage(
     state: &VideoState,
     source_id: &VideoSourceId,
-    period_us: u64,
 ) -> Result<DvrMediaCoverage, A2aLabError> {
     let segments = dvr_segments_for_source(state, source_id);
     if segments.is_empty() {
@@ -1253,20 +1252,21 @@ fn dvr_media_coverage(
             "source has no retained DVR media",
         ));
     }
-    let mut points: Vec<UtcTimestamp> = segments
-        .iter()
-        .map(|segment| segment.range.start())
-        .collect();
-    points.sort();
-    points.dedup();
-    let pseudo_frames: Vec<StoredFrame> = points
-        .into_iter()
-        .map(|captured_at| StoredFrame {
-            captured_at,
-            jpeg: Vec::new(),
-        })
-        .collect();
-    retained_intervals(&pseudo_frames, period_us).and_then(DvrMediaCoverage::new)
+    let mut ranges: Vec<TimeRange> = segments.iter().map(|segment| segment.range).collect();
+    ranges.sort_by_key(|range| range.start());
+    let mut merged: Vec<TimeRange> = Vec::new();
+    for range in ranges {
+        if let Some(last) = merged.last_mut()
+            && range.start() <= last.end()
+        {
+            if range.end() > last.end() {
+                *last = TimeRange::new(last.start(), range.end())?;
+            }
+            continue;
+        }
+        merged.push(range);
+    }
+    DvrMediaCoverage::new(merged)
 }
 
 fn dvr_list_tracks(
@@ -1385,10 +1385,9 @@ fn paginate_dvr_segments(
 fn dvr_frame_at(
     state: &VideoState,
     request: &DvrFrameAtRequest,
-    period_us: u64,
 ) -> Result<DvrFrameAtResult, A2aLabError> {
     let at = request.at();
-    let coverage = dvr_media_coverage(state, request.source_id(), period_us)?;
+    let coverage = dvr_media_coverage(state, request.source_id())?;
     if !coverage
         .intervals()
         .iter()
