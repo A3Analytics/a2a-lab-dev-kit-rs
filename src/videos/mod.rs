@@ -5,6 +5,7 @@
 //! does not open cameras and does not persist recordings.
 
 mod capture;
+mod capture_profile;
 mod catalog;
 mod cmaf;
 mod codec;
@@ -34,6 +35,11 @@ pub use capture::{
     CaptureCapabilities, CaptureClock, CaptureFormat, CaptureIdentity, CaptureMode, CaptureTiming,
     CapturedColorFrame, ColorCaptureSource, ColorMatrix, ColorProperties, ColorRange,
     MemoryColorCapture,
+};
+pub use capture_profile::{
+    AdvertisedCaptureProfile, CaptureFormatPreference, CaptureProfileError, CaptureProfileRequest,
+    CaptureRate, DEFAULT_CAPTURE_OUTPUT_FPS, SelectedCaptureProfile, confirm_selected_profile,
+    select_capture_profile,
 };
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
 pub use codec::VideoCodec;
