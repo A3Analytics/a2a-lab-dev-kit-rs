@@ -18,6 +18,8 @@ mod h264_sample;
 pub(crate) mod http;
 mod local_media;
 mod media_asset;
+#[cfg(feature = "yuv")]
+mod mjpeg_decode;
 mod model;
 mod packager;
 mod provider;
@@ -32,8 +34,8 @@ pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
 pub use codec::VideoCodec;
 #[cfg(feature = "yuv")]
 pub use color_convert::{
-    InterleavedColor, InterleavedRgb, MAX_ENCODER_EDGE, OwnedI420, PackedYuy2, rgb_to_yuy2,
-    yuy2_to_i420,
+    InterleavedColor, InterleavedRgb, MAX_ENCODER_EDGE, OwnedI420, PackedYuy2, rgb_to_i420,
+    rgb_to_yuy2, yuy2_to_i420,
 };
 pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
@@ -51,6 +53,11 @@ pub use media_asset::{
     ClipAssetRequest, LiveAssetRequest, MediaAssetProvider, ResolvedMediaAsset,
     SharedMediaAssetProvider, media_query_carries_credential, normalize_media_asset_path,
     validate_media_asset_path,
+};
+#[cfg(feature = "yuv")]
+pub use mjpeg_decode::{
+    DecodedMjpeg, DecodedPicture, MAX_MJPEG_BYTES, MjpegDecodeLimits, MjpegDecodeTarget,
+    decode_mjpeg,
 };
 pub use model::{
     DEFAULT_MJPEG_BOUNDARY, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,

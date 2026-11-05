@@ -38,7 +38,7 @@ sila2 = [
     "dep:tonic-prost-build",
     "dep:protoc-bin-vendored",
 ]
-yuv = ["dep:yuv"]
+yuv = ["dep:yuv", "dep:image"]
 openh264 = ["dep:openh264"]
 
 [[example]]
@@ -113,6 +113,7 @@ yuv = { version = "0.8.20", default-features = false, optional = true, features 
     "rdm",
     "sse",
 ] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg"], optional = true }
 openh264 = { version = "0.9.9", features = ["source"], optional = true }
 
 [dev-dependencies]

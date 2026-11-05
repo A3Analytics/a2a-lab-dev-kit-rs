@@ -152,14 +152,58 @@ pub fn yuy2_to_i420(frame: PackedYuy2<'_>) -> Result<OwnedI420, A2aLabError> {
         height: frame.height,
     };
     yuv::yuyv422_to_yuv420(&mut planar, &packed).map_err(|error| yuv_error(&error))?;
-    Ok(OwnedI420 {
-        width: frame.width,
-        height: frame.height,
+    Ok(owned_planes(
+        frame.width,
+        frame.height,
+        frame.properties,
+        &planar,
+    ))
+}
+
+/// Converts interleaved RGB or BGR directly to owned I420.
+pub fn rgb_to_i420(frame: InterleavedRgb<'_>) -> Result<OwnedI420, A2aLabError> {
+    validate_encoder_picture(frame.width, frame.height)?;
+    let rgb_row = rgb_row_bytes(frame.width)?;
+    require_stride(frame.stride, rgb_row, "stride")?;
+    require_buffer(frame.bytes, frame.stride, frame.height)?;
+    let (range, matrix) = known_color(frame.properties)?;
+    let mut planar =
+        yuv::YuvPlanarImageMut::alloc(frame.width, frame.height, yuv::YuvChromaSubsampling::Yuv420);
+    let convert = match frame.order {
+        InterleavedColor::Rgb => yuv::rgb_to_yuv420,
+        InterleavedColor::Bgr => yuv::bgr_to_yuv420,
+    };
+    convert(
+        &mut planar,
+        frame.bytes,
+        frame.stride,
+        range,
+        matrix,
+        yuv::YuvConversionMode::Balanced,
+    )
+    .map_err(|error| yuv_error(&error))?;
+    Ok(owned_planes(
+        frame.width,
+        frame.height,
+        frame.properties,
+        &planar,
+    ))
+}
+
+fn owned_planes(
+    width: u32,
+    height: u32,
+    properties: ColorProperties,
+    planar: &yuv::YuvPlanarImageMut<'_, u8>,
+) -> OwnedI420 {
+    OwnedI420 {
+        width,
+        height,
         y: planar.y_plane.borrow().to_vec(),
         u: planar.u_plane.borrow().to_vec(),
         v: planar.v_plane.borrow().to_vec(),
-        properties: frame.properties,
-    })
+        properties,
+    }
 }
 
 /// Converts interleaved RGB or BGR to packed YUY2 at the same dimensions.
