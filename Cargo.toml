@@ -46,6 +46,10 @@ yuv = ["dep:yuv", "dep:image"]
 name = "web_ui"
 required-features = ["web-ui"]
 
+[[example]]
+name = "media_bench"
+required-features = ["yuv", "openh264"]
+
 [build-dependencies]
 protoc-bin-vendored = { version = "3.2.0", optional = true }
 sha2 = "0.10.9"

@@ -96,6 +96,10 @@ run = "bash .mise/scripts/web-ui.sh watch"
 description = "Serve the web UI with the local webcam as the video source"
 run = "cargo run --manifest-path examples/webcam/Cargo.toml"
 
+[media-bench]
+description = "Opt-in MJPEG and YUY2 conversion and encode measurement. Not part of quality and not a CI timing gate."
+run = "cargo run --release --example media_bench --features yuv,openh264"
+
 [media-features]
 description = "Check OpenH264 and Nokhwa stay out of default and WASM graphs, then decode the Apple media fixture when this host can."
 run = "bash .mise/scripts/media-features.sh"
