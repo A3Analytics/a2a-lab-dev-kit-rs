@@ -8,6 +8,8 @@ mod capture;
 mod catalog;
 mod cmaf;
 mod codec;
+#[cfg(feature = "yuv")]
+mod color_convert;
 mod dvr_store;
 pub(crate) mod http;
 mod local_media;
@@ -24,6 +26,11 @@ pub use capture::{
 };
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
 pub use codec::VideoCodec;
+#[cfg(feature = "yuv")]
+pub use color_convert::{
+    InterleavedColor, InterleavedRgb, MAX_ENCODER_EDGE, OwnedI420, PackedYuy2, rgb_to_yuy2,
+    yuy2_to_i420,
+};
 pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrRetentionBounds, ReadDvrMediaWindowRequest,

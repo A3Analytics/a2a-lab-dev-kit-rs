@@ -38,6 +38,7 @@ sila2 = [
     "dep:tonic-prost-build",
     "dep:protoc-bin-vendored",
 ]
+yuv = ["dep:yuv"]
 
 [[example]]
 name = "web_ui"
@@ -106,6 +107,11 @@ tokio = { version = "1.53.1", features = [
 ] }
 tonic = { version = "0.14.6", features = ["tls-ring"] }
 tonic-prost = { version = "0.14.6", optional = true }
+yuv = { version = "0.8.20", default-features = false, optional = true, features = [
+    "avx",
+    "rdm",
+    "sse",
+] }
 
 [dev-dependencies]
 a2a-client = { version = "0.2.7", package = "a2a-client-lf" }
