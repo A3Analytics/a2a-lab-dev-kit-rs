@@ -11,6 +11,7 @@ mod codec;
 #[cfg(feature = "yuv")]
 mod color_convert;
 mod dvr_store;
+mod frame_select;
 #[cfg(feature = "openh264")]
 mod h264_encode;
 mod h264_sample;
@@ -38,6 +39,7 @@ pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrRetentionBounds, ReadDvrMediaWindowRequest,
 };
+pub use frame_select::{FrameRejection, FreshFrameGate, OUTPUT_5FPS_PERIOD_NS, RejectedFrame};
 #[cfg(feature = "openh264")]
 pub use h264_encode::{
     AllIdrEncoder, EncodedAccessUnit, I420Picture, OPENH264_NOTICE, decode_luma,
