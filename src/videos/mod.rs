@@ -10,6 +10,8 @@ mod cmaf;
 mod codec;
 #[cfg(feature = "yuv")]
 mod color_convert;
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+mod color_pipeline;
 mod dvr_store;
 mod frame_select;
 #[cfg(feature = "openh264")]
@@ -39,6 +41,8 @@ pub use color_convert::{
     InterleavedColor, InterleavedRgb, MAX_ENCODER_EDGE, OwnedI420, PackedYuy2, rgb_to_i420,
     rgb_to_yuy2, yuy2_to_i420,
 };
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+pub use color_pipeline::{ColorEncodeCounters, ColorEncodePipeline, ColorEncodedFrame};
 pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrRetentionBounds, ReadDvrMediaWindowRequest,
