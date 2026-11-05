@@ -50,7 +50,8 @@ pub use dvr_store::{
     H264TrackRelation, ReadDvrMediaWindowRequest, h264_track_relation,
 };
 pub use epoch_hls::{
-    EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind, package_h264_epochs,
+    EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind, FiniteH264Clip,
+    export_finite_h264_epochs, package_h264_epochs,
 };
 pub use frame_select::{FrameRejection, FreshFrameGate, OUTPUT_5FPS_PERIOD_NS, RejectedFrame};
 #[cfg(feature = "openh264")]

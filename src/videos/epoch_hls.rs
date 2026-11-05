@@ -4,6 +4,7 @@
 //! `#EXT-X-DISCONTINUITY` and a new `#EXT-X-MAP`. Gaps stay empty. Overlapping
 //! H.264 tracks are rejected instead of being merged into one timeline.
 
+use super::packager::{DvrMediaPackager, DvrPackagerConfig};
 use crate::error::A2aLabError;
 use crate::id::{DvrTrackId, VideoSourceId};
 use crate::page::{MAX_PAGE_LIMIT, PageRequest};
@@ -174,6 +175,108 @@ pub async fn package_h264_epochs(
     }
     let session = build_session(&selected, &coverage, kind)?;
     Ok(session)
+}
+
+/// One finite MP4 for a single H.264 epoch inside the requested window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FiniteH264Clip {
+    track_id: DvrTrackId,
+    initialization: Vec<u8>,
+    range: TimeRange,
+    mp4: Vec<u8>,
+}
+
+impl FiniteH264Clip {
+    /// Epoch whose initialization was written into this asset.
+    #[must_use]
+    pub const fn track_id(&self) -> &DvrTrackId {
+        &self.track_id
+    }
+
+    /// Decoder initialization retained for this epoch.
+    #[must_use]
+    pub fn initialization(&self) -> &[u8] {
+        &self.initialization
+    }
+
+    /// UTC span of the retained segments in this asset.
+    #[must_use]
+    pub const fn range(&self) -> TimeRange {
+        self.range
+    }
+
+    /// Finite fragmented MP4 using only this epoch's initialization.
+    #[must_use]
+    pub fn mp4(&self) -> &[u8] {
+        &self.mp4
+    }
+}
+
+/// Exports each sequential epoch that intersects `window` as its own finite MP4.
+///
+/// Differing declared picture sizes fail before any asset is built. Gaps stay
+/// empty. This does not re-encode samples or change the single-track exporter.
+pub async fn export_finite_h264_epochs(
+    store: &impl DvrMediaStore,
+    source_id: &VideoSourceId,
+    window: TimeRange,
+) -> Result<Vec<FiniteH264Clip>, A2aLabError> {
+    window.check()?;
+    let tracks = store.list_tracks(source_id).await?;
+    let epochs = ordered_epochs(&tracks)?;
+    let mut selected = Vec::new();
+    for track in epochs {
+        if track.bounds().end() <= window.start() || track.bounds().start() >= window.end() {
+            continue;
+        }
+        let segments = read_segments(store, source_id, track.id(), window).await?;
+        if segments.is_empty() {
+            continue;
+        }
+        selected.push((track, segments));
+    }
+    if selected.is_empty() {
+        return Err(A2aLabError::no_recording(
+            "export window contains no H.264 epochs",
+        ));
+    }
+    reject_dimension_change(&selected)?;
+    let packager = DvrMediaPackager::new(DvrPackagerConfig::default());
+    let mut clips = Vec::new();
+    for (track, segments) in selected {
+        let start = segments[0].range().start();
+        let end = segments[segments.len() - 1].range().end();
+        let asset = packager
+            .export_finite_mp4(store, source_id, track.id(), window)
+            .await?;
+        clips.push(FiniteH264Clip {
+            track_id: track.id().clone(),
+            initialization: track.codec_initialization().to_vec(),
+            range: TimeRange::new(start, end)?,
+            mp4: asset.bytes().to_vec(),
+        });
+    }
+    Ok(clips)
+}
+
+fn reject_dimension_change(
+    epochs: &[(&DvrMediaTrack, Vec<DvrMediaSegment>)],
+) -> Result<(), A2aLabError> {
+    let mut seen = None;
+    for (track, _) in epochs {
+        let Some(picture) = track.picture() else {
+            continue;
+        };
+        let size = (picture.width(), picture.height());
+        if seen.is_some_and(|previous| previous != size) {
+            return Err(A2aLabError::invalid(
+                "picture",
+                "H.264 epoch dimensions cannot change inside one export",
+            ));
+        }
+        seen = Some(size);
+    }
+    Ok(())
 }
 
 fn ordered_epochs(tracks: &[DvrMediaTrack]) -> Result<Vec<&DvrMediaTrack>, A2aLabError> {

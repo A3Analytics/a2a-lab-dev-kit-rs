@@ -83,8 +83,9 @@ pub use videos::{
     DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPackager, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPackagerConfig, DvrPictureProperties,
     DvrRetentionBounds, EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind,
-    FinitePlaybackSession, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, H264PictureSample, H264TrackRelation,
+    FiniteH264Clip, FinitePlaybackSession, FollowVideoRequest, GetVideoClipRequest,
+    GetVideoFrameAtRequest, GetVideoFrameAtResult, GetVideoTimelineRequest, H264PictureSample,
+    H264TrackRelation,
     HLS_INIT_RELATIVE_PATH, HLS_PLAYLIST_RELATIVE_PATH, HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH,
     ListVideoSourcesRequest, LiveAssetRequest, LivePlaybackSession, LocalMediaAssetProvider,
     MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, MediaAssetProvider, PackagedHlsSegment,
@@ -94,7 +95,8 @@ pub use videos::{
     VIDEO_LIVE_PATH_PREFIX, VideoCatalog, VideoClip, VideoClipStream, VideoCodec, VideoFollow,
     VideoFrame, VideoLiveStream, VideoPlayback8xMetadata, VideoProvider, VideoSource,
     VideoTimeline, decode_mjpeg_multipart, encode_mjpeg_end, encode_mjpeg_multipart,
-    encode_mjpeg_part, frame_h264_picture, h264_track_relation, mjpeg_content_type,
+    encode_mjpeg_part, export_finite_h264_epochs, frame_h264_picture, h264_track_relation,
+    mjpeg_content_type,
     package_h264_epochs, router, router_for_lab, video_clip_path, video_live_path,
 };
 
