@@ -16,6 +16,8 @@ mod frame_select;
 mod h264_encode;
 mod h264_sample;
 pub(crate) mod http;
+#[cfg(feature = "yuv")]
+mod jpeg_derivative;
 mod local_media;
 mod media_asset;
 #[cfg(feature = "yuv")]
@@ -48,6 +50,11 @@ pub use h264_encode::{
 };
 pub use h264_sample::{H264PictureSample, frame_h264_picture};
 pub use http::{apply_media_security_headers, is_gated_media_path, router, router_for_lab};
+#[cfg(feature = "yuv")]
+pub use jpeg_derivative::{
+    JpegDerivative, JpegDerivativeCache, JpegDerivativeLimits, MAX_JPEG_QUALITY, MIN_JPEG_QUALITY,
+    jpeg_derivative,
+};
 pub use local_media::LocalMediaAssetProvider;
 pub use media_asset::{
     ClipAssetRequest, LiveAssetRequest, MediaAssetProvider, ResolvedMediaAsset,

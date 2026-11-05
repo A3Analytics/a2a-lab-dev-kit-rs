@@ -251,7 +251,7 @@ pub fn rgb_to_yuy2(frame: InterleavedRgb<'_>) -> Result<Vec<u8>, A2aLabError> {
     }
 }
 
-fn known_color(
+pub(crate) fn known_color(
     properties: ColorProperties,
 ) -> Result<(yuv::YuvRange, yuv::YuvStandardMatrix), A2aLabError> {
     let range = match properties.range() {
