@@ -83,7 +83,7 @@ pub use videos::{
     DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPackager, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPackagerConfig, DvrRetentionBounds,
     FinitePlaybackSession, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, HLS_INIT_RELATIVE_PATH,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, H264PictureSample, HLS_INIT_RELATIVE_PATH,
     HLS_PLAYLIST_RELATIVE_PATH, HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH, ListVideoSourcesRequest,
     LiveAssetRequest, LivePlaybackSession, LocalMediaAssetProvider, MAX_VIDEO_CLIP_DURATION_US,
     MJPEG_MEDIA_TYPE, MediaAssetProvider, PackagedHlsSegment, PackagedHlsSession,
@@ -93,8 +93,8 @@ pub use videos::{
     VIDEO_LIVE_PATH_PREFIX, VideoCatalog, VideoClip, VideoClipStream, VideoCodec, VideoFollow,
     VideoFrame, VideoLiveStream, VideoPlayback8xMetadata, VideoProvider, VideoSource,
     VideoTimeline, decode_mjpeg_multipart, encode_mjpeg_end, encode_mjpeg_multipart,
-    encode_mjpeg_part, mjpeg_content_type, router, router_for_lab, video_clip_path,
-    video_live_path,
+    encode_mjpeg_part, frame_h264_picture, mjpeg_content_type, router, router_for_lab,
+    video_clip_path, video_live_path,
 };
 
 /// Returns the crate version.

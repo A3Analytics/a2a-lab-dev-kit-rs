@@ -13,6 +13,7 @@ mod color_convert;
 mod dvr_store;
 #[cfg(feature = "openh264")]
 mod h264_encode;
+mod h264_sample;
 pub(crate) mod http;
 mod local_media;
 mod media_asset;
@@ -41,6 +42,7 @@ pub use dvr_store::{
 pub use h264_encode::{
     AllIdrEncoder, EncodedAccessUnit, I420Picture, OPENH264_NOTICE, decode_luma,
 };
+pub use h264_sample::{H264PictureSample, frame_h264_picture};
 pub use http::{apply_media_security_headers, is_gated_media_path, router, router_for_lab};
 pub use local_media::LocalMediaAssetProvider;
 pub use media_asset::{
