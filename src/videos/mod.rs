@@ -38,7 +38,9 @@ pub use dvr_store::{
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrRetentionBounds, ReadDvrMediaWindowRequest,
 };
 #[cfg(feature = "openh264")]
-pub use h264_encode::{AllIdrEncoder, I420Picture, decode_luma};
+pub use h264_encode::{
+    AllIdrEncoder, EncodedAccessUnit, I420Picture, OPENH264_NOTICE, decode_luma,
+};
 pub use http::{apply_media_security_headers, is_gated_media_path, router, router_for_lab};
 pub use local_media::LocalMediaAssetProvider;
 pub use media_asset::{

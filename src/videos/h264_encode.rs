@@ -13,7 +13,11 @@ use openh264::encoder::{
 use openh264::formats::{YUVBuffer, YUVSource};
 
 use crate::error::A2aLabError;
-use crate::videos::{ColorMatrix, ColorProperties, ColorRange};
+use crate::videos::{CaptureIdentity, ColorMatrix, ColorProperties, ColorRange};
+
+/// Bundled OpenH264 crate version. The codec is BSD-2-Clause and is compiled
+/// from source; this crate does not download a runtime library or use FFmpeg.
+pub const OPENH264_NOTICE: &str = "openh264 0.9.9 BSD-2-Clause";
 
 /// Largest width or height accepted by this encoder.
 pub const MAX_ENCODER_EDGE: u32 = 3840;
@@ -57,6 +61,48 @@ impl<'a> I420Picture<'a> {
     }
 }
 
+/// One owned all-IDR access unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodedAccessUnit {
+    bytes: Vec<u8>,
+    initialization: Vec<u8>,
+    keyframe: bool,
+    identity: CaptureIdentity,
+    timestamp_ns: u64,
+}
+
+impl EncodedAccessUnit {
+    /// Annex B bytes, copied before the next encode.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// SPS/PPS copied out of this access unit.
+    #[must_use]
+    pub fn initialization(&self) -> &[u8] {
+        &self.initialization
+    }
+
+    /// Always true for this encoder. Checked from the NAL types.
+    #[must_use]
+    pub const fn keyframe(&self) -> bool {
+        self.keyframe
+    }
+
+    /// Identity supplied with the picture.
+    #[must_use]
+    pub const fn identity(&self) -> &CaptureIdentity {
+        &self.identity
+    }
+
+    /// Timestamp supplied with the picture, in nanoseconds.
+    #[must_use]
+    pub const fn timestamp_ns(&self) -> u64 {
+        self.timestamp_ns
+    }
+}
+
 /// OpenH264 encoder fixed to one picture size, rate, and color description.
 pub struct AllIdrEncoder {
     encoder: Encoder,
@@ -64,6 +110,7 @@ pub struct AllIdrEncoder {
     height: u32,
     fps: f32,
     properties: ColorProperties,
+    closed: bool,
 }
 
 impl AllIdrEncoder {
@@ -101,6 +148,7 @@ impl AllIdrEncoder {
             height,
             fps,
             properties,
+            closed: false,
         })
     }
 
@@ -116,12 +164,20 @@ impl AllIdrEncoder {
         self.properties
     }
 
-    /// Encodes one picture and returns an owned Annex B bitstream.
-    pub fn encode(&mut self, picture: I420Picture<'_>) -> Result<Vec<u8>, A2aLabError> {
+    /// Encodes one picture and returns an owned Annex B access unit.
+    pub fn encode(
+        &mut self,
+        picture: I420Picture<'_>,
+        identity: &CaptureIdentity,
+        timestamp_ns: u64,
+    ) -> Result<EncodedAccessUnit, A2aLabError> {
+        if self.closed {
+            return Err(A2aLabError::invalid("encoder", "encoder is shut down"));
+        }
         if picture.width != self.width || picture.height != self.height {
             return Err(A2aLabError::invalid(
                 "picture",
-                "picture size does not match the encoder",
+                "picture size does not match the encoder; open a new encoder for the new size",
             ));
         }
         if picture.properties != self.properties {
@@ -145,7 +201,25 @@ impl AllIdrEncoder {
                 "encoder did not emit an all-IDR access unit",
             ));
         }
-        Ok(owned)
+        let initialization = parameter_sets(&owned);
+        if initialization.is_empty() {
+            return Err(A2aLabError::invalid(
+                "bitstream",
+                "access unit is missing SPS/PPS initialization",
+            ));
+        }
+        Ok(EncodedAccessUnit {
+            bytes: owned,
+            initialization,
+            keyframe: true,
+            identity: identity.clone(),
+            timestamp_ns,
+        })
+    }
+
+    /// Rejects later encodes. Already returned access units stay owned by the caller.
+    pub fn shutdown(&mut self) {
+        self.closed = true;
     }
 }
 
@@ -227,6 +301,48 @@ fn vui_for(properties: ColorProperties) -> Result<VuiConfig, A2aLabError> {
 
 fn encode_error(error: impl std::fmt::Display) -> A2aLabError {
     A2aLabError::invalid("encoder", error.to_string())
+}
+
+fn parameter_sets(annex_b: &[u8]) -> Vec<u8> {
+    let mut sets = Vec::new();
+    for (start, nal_type) in nal_headers(annex_b) {
+        if nal_type == 7 || nal_type == 8 {
+            let next = nal_headers(annex_b)
+                .find(|(offset, _)| *offset > start)
+                .map_or(annex_b.len(), |(offset, _)| {
+                    offset.saturating_sub(start_code_len(annex_b, offset))
+                });
+            let prefix = start.saturating_sub(start_code_len(annex_b, start));
+            sets.extend_from_slice(&annex_b[prefix..next]);
+        }
+    }
+    sets
+}
+
+fn start_code_len(annex_b: &[u8], header: usize) -> usize {
+    if header >= 4 && annex_b[header - 4..header] == [0, 0, 0, 1] {
+        4
+    } else if header >= 3 && annex_b[header - 3..header] == [0, 0, 1] {
+        3
+    } else {
+        0
+    }
+}
+
+fn nal_headers(annex_b: &[u8]) -> impl Iterator<Item = (usize, u8)> + '_ {
+    annex_b
+        .windows(4)
+        .enumerate()
+        .filter_map(|(index, window)| {
+            let header = if window.starts_with(&[0, 0, 0, 1]) {
+                index + 4
+            } else if window.starts_with(&[0, 0, 1]) {
+                index + 3
+            } else {
+                return None;
+            };
+            annex_b.get(header).map(|byte| (header, byte & 0x1F))
+        })
 }
 
 fn contains_idr(annex_b: &[u8]) -> bool {
