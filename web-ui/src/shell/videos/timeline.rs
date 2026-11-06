@@ -1,7 +1,6 @@
 //! Timeline selection, coverage drawing, and command cancellation.
 
 use dioxus::prelude::*;
-use wasm_bindgen::JsCast;
 use web_sys::AbortController;
 
 use super::speed_control::{lock_live_speed, sync_live_speed};
@@ -290,9 +289,6 @@ pub(super) fn timeline_up(event: Event<PointerData>) {
     };
     release_pointer(&event);
     cancel_preview();
-    if !drag.moved {
-        return;
-    }
     SUPPRESS_CLICK.with(|cell| cell.set(true));
     let x = event.data().client_coordinates().x;
     let at_us = held_at(x).unwrap_or(drag.at_us);
@@ -467,28 +463,10 @@ pub(super) fn timeline_click(event: Event<MouseData>) {
     if SUPPRESS_CLICK.with(|cell| cell.replace(false)) {
         return;
     }
-    let point = event.data().client_coordinates();
-    let Some(at_us) = interval_start_at(point.x, point.y).or_else(|| us_at(point.x)) else {
+    let Some(at_us) = us_at(event.data().client_coordinates().x) else {
         return;
     };
     commit_at(at_us);
-}
-
-fn interval_start_at(x: f64, y: f64) -> Option<i64> {
-    let nodes = web_sys::window()?
-        .document()?
-        .query_selector_all("#video-timeline .video-interval")
-        .ok()?;
-    for index in 0..nodes.length() {
-        let element = nodes.get(index)?.dyn_into::<web_sys::Element>().ok()?;
-        let rect = element.get_bounding_client_rect();
-        if x < rect.left() || x > rect.right() || y < rect.top() || y > rect.bottom() {
-            continue;
-        }
-        let start = element.get_attribute("data-start")?;
-        return crate::videos::mjpeg::captured_us(&start);
-    }
-    None
 }
 
 pub(super) fn commit_typed_range() {

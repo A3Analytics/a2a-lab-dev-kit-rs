@@ -32,7 +32,7 @@ use timeline::{
     display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest,
     playhead_style, remember_window, replay_retained_start, reselect_range, selection_slug,
     slider_now, slider_text, timeline_click, timeline_down, timeline_key, timeline_move,
-    timeline_up,
+    timeline_up, us_at,
 };
 
 #[derive(Clone, PartialEq)]
@@ -596,7 +596,6 @@ fn BandMark(band: Band) -> Element {
     let id = band.id.clone();
     let style = band.style.clone();
     let label = band.label.clone();
-    let start_us = band.start_us;
     rsx! {
         div {
             id: "{band.id}",
@@ -609,7 +608,13 @@ fn BandMark(band: Band) -> Element {
             onmounted: move |_| place_style(&id, &style),
             onclick: move |event| {
                 event.stop_propagation();
-                commit_at(start_us);
+                if SUPPRESS_CLICK.with(|cell| cell.replace(false)) {
+                    return;
+                }
+                let Some(at_us) = us_at(event.data().client_coordinates().x) else {
+                    return;
+                };
+                commit_at(at_us);
             },
         }
     }
