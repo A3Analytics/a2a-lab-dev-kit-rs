@@ -11,6 +11,7 @@ pub mod a2a;
 #[cfg(feature = "aas")]
 pub mod aas;
 pub mod catalog;
+pub mod config;
 pub mod error;
 pub mod id;
 pub mod images;
@@ -42,6 +43,10 @@ pub use a2a::{
 pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
+};
+pub use config::{
+    A2A_LAB_CONFIG_SCHEMA_VERSION, A2aLabConfig, ChatConfig, ChatProvider, ConfigDuration,
+    LoadedLabConfig, VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
 };
 pub use error::{A2aLabError, VideoAvailability};
 pub use id::{
