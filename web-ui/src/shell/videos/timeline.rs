@@ -151,6 +151,18 @@ fn commit_selection(selection: Window, anchor: Option<i64>) {
     ui.set(next);
 }
 
+pub(super) fn replay_session() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let Some(session) = ui.peek().session else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    request_session(&mut next, session);
+    ui.set(next);
+}
+
 fn request_session(next: &mut VideoUi, session: Window) {
     next.session = Some(session);
     let start = track::format_utc(session.start_us);

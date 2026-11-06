@@ -30,9 +30,9 @@ use speed_control::{
 use timeline::{
     abort_commands, alert_text, bands, begin_command, commit_at, commit_typed_range, display_clock,
     display_instant, displayed_window, ensure_timeline, field_to_utc, follow_newest,
-    playhead_style, remember_window, replay_retained_start, reselect_range, selection_slug,
-    slider_now, slider_text, timeline_click, timeline_down, timeline_key, timeline_move,
-    timeline_up, us_at,
+    playhead_style, remember_window, replay_retained_start, replay_session, reselect_range,
+    selection_slug, slider_now, slider_text, timeline_click, timeline_down, timeline_key,
+    timeline_move, timeline_up, us_at,
 };
 
 #[derive(Clone, PartialEq)]
@@ -497,6 +497,7 @@ fn TimelineScrubber(state: VideoUi) -> Element {
         .unwrap_or_default();
     let playhead = playhead_style(&state);
     let paused = state.reader.playback == Playback::Paused;
+    let show_play = matches!(state.reader.playback, Playback::Paused | Playback::Stopped);
     let show_transport = state.reader.has_media();
     let now = if state.reader.frame_time.is_empty() {
         value_text.clone()
@@ -538,7 +539,7 @@ fn TimelineScrubber(state: VideoUi) -> Element {
                             id: "video-pause",
                             class: "video-pause",
                             r#type: "button",
-                            aria_label: if paused { "Play" } else { "Pause" },
+                            aria_label: if show_play { "Play" } else { "Pause" },
                             aria_pressed: if paused { "true" } else { "false" },
                             onpointerdown: move |event| event.stop_propagation(),
                             onclick: move |event| {
@@ -549,7 +550,7 @@ fn TimelineScrubber(state: VideoUi) -> Element {
                                 class: "video-transport-icon",
                                 view_box: "0 0 16 16",
                                 "aria-hidden": "true",
-                                if paused {
+                                if show_play {
                                     polygon { points: "4.5,2.5 13.5,8 4.5,13.5", fill: "currentColor" }
                                 } else {
                                     rect { x: "3", y: "2.5", width: "3.2", height: "11", rx: "0.6", fill: "currentColor" }
@@ -799,13 +800,17 @@ fn force_pause() {
 }
 
 fn toggle_playback() {
-    let paused = bound().is_some_and(|ui| ui.peek().reader.playback == Playback::Paused);
-    if paused {
-        resume();
-        playback::play_element();
-    } else {
-        pause();
-        playback::pause_element();
+    let playback = bound().map(|ui| ui.peek().reader.playback);
+    match playback {
+        Some(Playback::Paused) => {
+            resume();
+            playback::play_element();
+        }
+        Some(Playback::Stopped) => replay_session(),
+        _ => {
+            pause();
+            playback::pause_element();
+        }
     }
 }
 

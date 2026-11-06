@@ -66,6 +66,36 @@ fn transport_flow(base: &str) {
         "document.getElementById('video-pause')?.getAttribute('aria-label') === 'Pause' && document.querySelector('#video-pause rect') && document.getElementById('video-status')?.dataset.state === 'playing'",
     );
 
+    load_range(&mut page, "2024-01-01T00:00:00Z", "2024-01-01T00:00:04Z");
+    page.wait_until(
+        "document.getElementById('video-status')?.dataset.state === 'stopped' && (document.getElementById('video-status')?.dataset.frameTime ?? '') !== ''",
+    );
+    page.wait_until(
+        "document.getElementById('video-pause')?.getAttribute('aria-label') === 'Play' && document.querySelector('#video-pause polygon') && document.getElementById('video-pause')?.getAttribute('aria-pressed') === 'false'",
+    );
+    let replay_start = page.eval("document.getElementById('video-timeline')?.dataset.start ?? ''");
+    let replay_end = page.eval("document.getElementById('video-timeline')?.dataset.end ?? ''");
+    let stopped_frame =
+        page.eval("document.getElementById('video-status')?.dataset.frameTime ?? ''");
+    page.click("video-pause");
+    page.wait_until(&format!(
+        "(() => {{ const status = document.getElementById('video-status'); const frame = status?.dataset.frameTime ?? ''; return document.getElementById('video-pause')?.getAttribute('aria-label') === 'Pause' && document.querySelector('#video-pause rect') && status?.dataset.state === 'playing' && frame !== '' && frame < {stopped}; }})()",
+        stopped = serde_json::to_string(
+            stopped_frame.as_str().unwrap_or("")
+        )
+        .unwrap_or_else(|_| "\"\"".to_owned()),
+    ));
+    assert_eq!(
+        page.eval("document.getElementById('video-timeline')?.dataset.start ?? ''"),
+        replay_start,
+        "replay should keep the recorded range"
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-timeline')?.dataset.end ?? ''"),
+        replay_end,
+        "replay should keep the recorded range"
+    );
+
     load_range(&mut page, "2024-01-01T00:00:00Z", "2024-01-01T00:00:08Z");
     page.wait_until("document.getElementById('video-status')?.dataset.state === 'playing'");
     set_speed(&mut page, "4x");
