@@ -67,6 +67,7 @@ thread_local! {
     static PAUSE_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
     static WAITING_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
     static RESUMED_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
+    static TIME_UPDATE_LISTENER: RefCell<Option<MediaListener>> = const { RefCell::new(None) };
 }
 
 pub fn bind(
@@ -107,6 +108,15 @@ pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
             notify_buffering(generation, false);
         }
     }) as Box<dyn FnMut(Event)>);
+    let clock_video = video.clone();
+    let time_update = Closure::wrap(Box::new(move |_event: Event| {
+        if hls_playback::is_active()
+            && let Some(generation) = session_generation()
+            && let Some(captured_at) = hls_playback::current_frame_time(&clock_video)
+        {
+            notify_frame(generation, &captured_at);
+        }
+    }) as Box<dyn FnMut(Event)>);
     let target: &EventTarget = video.unchecked_ref();
     if target
         .add_event_listener_with_callback("play", play.as_ref().unchecked_ref())
@@ -119,6 +129,9 @@ pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
             .is_err()
         || target
             .add_event_listener_with_callback("playing", resumed.as_ref().unchecked_ref())
+            .is_err()
+        || target
+            .add_event_listener_with_callback("timeupdate", time_update.as_ref().unchecked_ref())
             .is_err()
     {
         return;
@@ -150,6 +163,7 @@ pub fn bind_media(on_play: fn(), on_pause: fn(), on_force_pause: fn()) {
     PAUSE_LISTENER.with(|slot| *slot.borrow_mut() = Some(pause));
     WAITING_LISTENER.with(|slot| *slot.borrow_mut() = Some(waiting));
     RESUMED_LISTENER.with(|slot| *slot.borrow_mut() = Some(resumed));
+    TIME_UPDATE_LISTENER.with(|slot| *slot.borrow_mut() = Some(time_update));
 }
 
 pub fn attach_player() {

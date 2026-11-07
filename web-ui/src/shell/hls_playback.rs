@@ -22,6 +22,7 @@ thread_local! {
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
     static OBJECT_URL: RefCell<Option<String>> = const { RefCell::new(None) };
     static SESSION_EPOCH: Cell<u32> = const { Cell::new(0) };
+    static CLOCK_ANCHOR: Cell<Option<(f64, i64)>> = const { Cell::new(None) };
 }
 
 fn bump_session_epoch() -> u32 {
@@ -72,6 +73,7 @@ pub fn is_active() -> bool {
 
 pub fn teardown() {
     ACTIVE.with(|slot| slot.set(false));
+    CLOCK_ANCHOR.with(|slot| slot.set(None));
     clear_hls_guard();
     if let Some(url) = OBJECT_URL.with(|slot| slot.borrow_mut().take()) {
         let _ = web_sys::Url::revoke_object_url(&url);
@@ -87,6 +89,15 @@ pub fn teardown() {
         unsupported_codec: false,
         trick_playlist: false,
     });
+}
+
+pub fn current_frame_time(video: &HtmlVideoElement) -> Option<String> {
+    let (media_secs, captured_us) = CLOCK_ANCHOR.with(Cell::get)?;
+    #[allow(clippy::cast_possible_truncation)]
+    let elapsed_us = ((video.current_time() - media_secs) * 1_000_000.0) as i64;
+    Some(crate::videos::track::format_utc(
+        captured_us.saturating_add(elapsed_us),
+    ))
 }
 
 pub fn prepare_player() {
@@ -295,6 +306,7 @@ async fn play_appended_segments(
     if from_start {
         video.set_current_time(0.0);
     } else if live_playlist_session(playlist_path) {
+        seek_to_playlist_start(video, source_buffer, parsed.start_offset_secs);
         skip_forward_if_gapped(generation, video, source_buffer);
     }
     let _ = video.play();
@@ -367,6 +379,7 @@ async fn append_segments(
             continue;
         }
         appended.insert(segment.uri.clone());
+        update_clock_anchor(source_buffer, segment);
         skip_forward_if_gapped(generation, video, source_buffer);
         if live_playlist_session(playlist_path) {
             let _ = video.play();
@@ -384,6 +397,27 @@ async fn append_segments(
         }
     }
     Ok(())
+}
+
+fn update_clock_anchor(source_buffer: &SourceBuffer, segment: &crate::videos::hls::SegmentLine) {
+    let Some(captured_us) = segment
+        .program_date_time
+        .as_deref()
+        .and_then(crate::videos::mjpeg::captured_us)
+    else {
+        return;
+    };
+    let Ok(ranges) = source_buffer.buffered() else {
+        return;
+    };
+    let Some(index) = ranges.length().checked_sub(1) else {
+        return;
+    };
+    let Ok(end) = ranges.end(index) else {
+        return;
+    };
+    let start = end - segment.duration_secs.max(0.0);
+    CLOCK_ANCHOR.with(|slot| slot.set(Some((start, captured_us))));
 }
 
 async fn refresh_live(
@@ -487,6 +521,31 @@ fn skip_missing_segment(
     playback::notify_gap_skipped(generation);
     skip_forward_if_gapped(generation, video, source_buffer);
     let _ = video.play();
+}
+
+fn seek_to_playlist_start(
+    video: &HtmlVideoElement,
+    buffer: &SourceBuffer,
+    start_offset_secs: Option<f64>,
+) {
+    let Some(offset) = start_offset_secs else {
+        return;
+    };
+    let Ok(ranges) = buffer.buffered() else {
+        return;
+    };
+    let Some(index) = ranges.length().checked_sub(1) else {
+        return;
+    };
+    let (Ok(start), Ok(end)) = (ranges.start(index), ranges.end(index)) else {
+        return;
+    };
+    let target = if offset < 0.0 {
+        end + offset
+    } else {
+        start + offset
+    };
+    video.set_current_time(target.clamp(start, end));
 }
 
 fn skip_forward_if_gapped(generation: u32, video: &HtmlVideoElement, buffer: &SourceBuffer) {

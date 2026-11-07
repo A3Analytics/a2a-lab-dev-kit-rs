@@ -15,6 +15,7 @@ pub struct ParsedPlaylist {
     pub map_uri: Option<String>,
     pub segments: Vec<SegmentLine>,
     pub end_list: bool,
+    pub start_offset_secs: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,7 +75,7 @@ pub fn live_pending<'a>(
     live_tail(segments)
 }
 
-/// The newest few seconds of a live playlist. Older segments stay on the server.
+/// The newest few seconds and at least two segments of a live playlist.
 pub fn live_tail(segments: &[SegmentLine]) -> &[SegmentLine] {
     const TAIL_SECS: f64 = 3.0;
     if segments.len() <= 2 {
@@ -85,7 +86,7 @@ pub fn live_tail(segments: &[SegmentLine]) -> &[SegmentLine] {
     for (index, segment) in segments.iter().enumerate().rev() {
         start = index;
         covered += segment.duration_secs.max(0.0);
-        if covered >= TAIL_SECS {
+        if segments.len() - start >= 2 && covered >= TAIL_SECS {
             break;
         }
     }
@@ -96,6 +97,7 @@ pub fn parse_playlist(text: &str) -> Option<ParsedPlaylist> {
     let mut map_uri = None;
     let mut segments = Vec::new();
     let mut end_list = false;
+    let mut start_offset_secs = None;
     let mut pending_pdt = None;
     let mut pending_duration = None;
     let mut next_discontinuity = false;
@@ -106,6 +108,14 @@ pub fn parse_playlist(text: &str) -> Option<ParsedPlaylist> {
         }
         if line == "#EXT-X-DISCONTINUITY" {
             next_discontinuity = true;
+            continue;
+        }
+        if let Some(attributes) = line.strip_prefix("#EXT-X-START:") {
+            start_offset_secs = attributes.split(',').find_map(|attribute| {
+                attribute
+                    .strip_prefix("TIME-OFFSET=")
+                    .and_then(|value| value.parse().ok())
+            });
             continue;
         }
         if let Some(uri) = line
@@ -144,6 +154,7 @@ pub fn parse_playlist(text: &str) -> Option<ParsedPlaylist> {
         map_uri,
         segments,
         end_list,
+        start_offset_secs,
     })
 }
 
@@ -321,6 +332,7 @@ live-1.m4s
     fn parser_reads_map_segments_and_endlist() {
         let text = r#"#EXTM3U
 #EXT-X-VERSION:7
+#EXT-X-START:TIME-OFFSET=-5.000,PRECISE=YES
 #EXT-X-MAP:URI="init.mp4"
 #EXT-X-PROGRAM-DATE-TIME:2024-01-01T00:00:00.000000Z
 #EXTINF:1.000,
@@ -330,6 +342,7 @@ seg-0000.m4s
         let parsed = parse_playlist(text).unwrap();
         assert_eq!(parsed.map_uri.as_deref(), Some("init.mp4"));
         assert!(parsed.end_list);
+        assert_eq!(parsed.start_offset_secs, Some(-5.0));
         assert_eq!(parsed.segments.len(), 1);
         assert_eq!(parsed.segments[0].uri, "seg-0000.m4s");
         assert_eq!(
@@ -402,6 +415,28 @@ seg-0000.m4s
             Some("seg-11.m4s")
         );
         assert_eq!(pending.len(), 9);
+
+        let long_segments = vec![
+            SegmentLine {
+                uri: "first.m4s".to_owned(),
+                duration_secs: 5.0,
+                program_date_time: None,
+                discontinuity_before: false,
+            },
+            SegmentLine {
+                uri: "second.m4s".to_owned(),
+                duration_secs: 5.0,
+                program_date_time: None,
+                discontinuity_before: false,
+            },
+            SegmentLine {
+                uri: "third.m4s".to_owned(),
+                duration_secs: 5.0,
+                program_date_time: None,
+                discontinuity_before: false,
+            },
+        ];
+        assert_eq!(live_tail(&long_segments).len(), 2);
     }
 
     fn full_box(fourcc: &[u8; 4], content: &[u8]) -> Vec<u8> {

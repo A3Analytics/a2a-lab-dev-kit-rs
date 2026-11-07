@@ -267,7 +267,7 @@ impl PackagedHlsSession {
     }
 
     /// Keeps segment timestamps on the timeline established by an earlier refresh.
-    pub(crate) fn pin_timeline_origin(&mut self, origin_us: i64) {
+    pub fn pin_timeline_origin(&mut self, origin_us: i64) {
         self.timeline_origin_us = origin_us;
     }
 
@@ -1058,6 +1058,12 @@ fn render_live_playlist(segments: &[PackagedHlsSegment]) -> Result<String, A2aLa
     }
     let target = target_duration(segments);
     let mut lines = playlist_header(target, PlaylistKind::Live);
+    lines.push(format!(
+        "#EXT-X-START:TIME-OFFSET=-{:.3},PRECISE=YES",
+        segments
+            .last()
+            .map_or(0.0, PackagedHlsSegment::duration_secs)
+    ));
     append_segment_lines(&mut lines, segments);
     Ok(lines.join("\n"))
 }
@@ -1201,6 +1207,7 @@ mod unit_tests {
         );
         let playlist = render_live_playlist(&planned).unwrap();
         assert!(playlist.contains("#EXT-X-PLAYLIST-TYPE:EVENT"));
+        assert!(playlist.contains("#EXT-X-START:TIME-OFFSET=-2.000,PRECISE=YES"));
         assert!(playlist.contains("#EXT-X-PROGRAM-DATE-TIME:"));
         assert!(!playlist.contains("#EXT-X-ENDLIST"));
     }
