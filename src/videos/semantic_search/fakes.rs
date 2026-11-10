@@ -87,9 +87,7 @@ impl SemanticVideoSearchProvider for FakeSemanticVideoSearchProvider {
                 continue;
             }
             let captured = prepared.hit.captured_at();
-            if captured < request.scope().range().start()
-                || captured >= request.scope().range().end()
-            {
+            if !request.scope().contains_capture(captured) {
                 continue;
             }
             if !selector.accepts_attachment(&prepared.attachment) {

@@ -21,15 +21,21 @@ fn source(name: &str) -> VideoSourceId {
 }
 
 fn scope() -> SemanticSearchScope {
-    SemanticSearchScope::new(
-        source("deck-left"),
+    scoped_range(
         TimeRange::new(
             UtcTimestamp::parse("2024-06-01T12:00:00Z").unwrap(),
             UtcTimestamp::parse("2024-06-01T13:00:00Z").unwrap(),
         )
         .unwrap(),
     )
-    .unwrap()
+}
+
+fn scoped_range(range: TimeRange) -> SemanticSearchScope {
+    SemanticSearchScope::new(source("deck-left"), Some(range)).unwrap()
+}
+
+fn unscoped() -> SemanticSearchScope {
+    SemanticSearchScope::new(source("deck-left"), None).unwrap()
 }
 
 fn frame(payload: &[u8], capture: &str) -> SavedFrameRef {
@@ -302,6 +308,64 @@ async fn mixed_space_attachment_is_filtered_out() {
         .await
         .unwrap();
     assert!(result.hits().items().is_empty());
+}
+
+#[test]
+fn scope_accepts_omitted_range() {
+    let scope: SemanticSearchScope =
+        serde_json::from_value(serde_json::json!({ "source_id": "deck-left" })).unwrap();
+    assert!(scope.range().is_none());
+}
+
+#[tokio::test]
+async fn omitted_range_keeps_out_of_window_candidates() {
+    let mut provider = FakeSemanticVideoSearchProvider::available();
+    let early = frame(b"early", "2024-06-01T11:00:05Z");
+    let early_attachment = attachment(1, b"early pipette");
+    let early_neighbors = neighbors(&early);
+    provider.insert_hit(
+        fake_semantic_hit(early, early_attachment, "early pipette", 0.9, early_neighbors).unwrap(),
+    );
+    let late = frame(b"late", "2024-06-01T12:00:05Z");
+    let late_frame_id = late.frame_id().clone();
+    let late_attachment = attachment(1, b"late pipette");
+    let late_neighbors = neighbors(&late);
+    provider.insert_hit(
+        fake_semantic_hit(late, late_attachment, "late pipette", 0.95, late_neighbors).unwrap(),
+    );
+    let bounded = SearchSemanticFramesRequest::new(
+        scoped_range(
+            TimeRange::new(
+                UtcTimestamp::parse("2024-06-01T12:00:00Z").unwrap(),
+                UtcTimestamp::parse("2024-06-01T13:00:00Z").unwrap(),
+            )
+            .unwrap(),
+        ),
+        SemanticSearchQuery::Text {
+            text: "pipette".to_owned(),
+        },
+        selector(1),
+        SemanticSearchLimits::pilot(),
+        PageRequest::new(None, 5).unwrap(),
+        None,
+    )
+    .unwrap();
+    let bounded = provider.search_semantic_frames(bounded).await.unwrap();
+    assert_eq!(bounded.hits().items().len(), 1);
+    assert_eq!(bounded.hits().items()[0].frame().frame_id(), &late_frame_id);
+    let unbounded = SearchSemanticFramesRequest::new(
+        unscoped(),
+        SemanticSearchQuery::Text {
+            text: "pipette".to_owned(),
+        },
+        selector(1),
+        SemanticSearchLimits::pilot(),
+        PageRequest::new(None, 5).unwrap(),
+        None,
+    )
+    .unwrap();
+    let unbounded = provider.search_semantic_frames(unbounded).await.unwrap();
+    assert_eq!(unbounded.hits().items().len(), 2);
 }
 
 #[tokio::test]

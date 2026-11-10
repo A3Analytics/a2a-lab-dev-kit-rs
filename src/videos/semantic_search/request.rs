@@ -59,7 +59,7 @@ impl SearchSemanticFramesRequest {
 
     /// Rejects malformed scope, query, limits, and page combinations.
     pub fn check(&self) -> Result<(), A2aLabError> {
-        self.scope.range().check()?;
+        self.scope.check()?;
         self.query.check()?;
         self.limits.check()?;
         self.page.check()?;
@@ -142,7 +142,7 @@ impl GetSemanticIndexingCoverageRequest {
         scope: SemanticSearchScope,
         provenance: SemanticProvenanceSelector,
     ) -> Result<Self, A2aLabError> {
-        scope.range().check()?;
+        scope.check()?;
         Ok(Self { scope, provenance })
     }
 

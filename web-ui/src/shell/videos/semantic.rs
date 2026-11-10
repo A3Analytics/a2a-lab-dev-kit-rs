@@ -14,6 +14,9 @@ use crate::videos::semantic::{
 
 use super::{VideoUi, bound};
 
+const SEARCH_ALL_START: &str = "1900-01-01T00:00:00Z";
+const SEARCH_ALL_END: &str = "2100-01-01T00:00:00Z";
+
 #[derive(Clone, PartialEq)]
 pub(crate) enum SearchJob {
     Idle,
@@ -163,10 +166,10 @@ pub fn commit_semantic_query() {
     };
     ui.write().semantic.query = text.clone();
     let sources = search_source_ids(&state);
-    let ticket = ui
-        .write()
-        .semantic
-        .begin_search(&sources, &text, &start, &end);
+    let ticket =
+        ui.write()
+            .semantic
+            .begin_search(&sources, &text, start.as_deref(), end.as_deref());
     if let Some(ticket) = ticket {
         launch_search(ticket);
     }
@@ -262,7 +265,11 @@ impl SearchMode {
 
 #[component]
 pub fn SearchPanel(state: VideoUi) -> Element {
-    let bounds = resolved_search_bounds(&state);
+    let bounds = if state.search_range_active {
+        resolved_search_bounds(&state)
+    } else {
+        (String::new(), String::new())
+    };
     rsx! {
         div {
             id: "video-search-browser",
@@ -764,6 +771,9 @@ fn semantic_enter(event: KeyboardEvent) {
 }
 
 fn search_window(state: &VideoUi) -> Option<(String, String)> {
+    if !state.search_range_active {
+        return None;
+    }
     let (start, end) = resolved_search_bounds(state);
     if start.is_empty() || end.is_empty() {
         return None;
@@ -855,8 +865,8 @@ fn search_chips(state: &VideoUi) -> Vec<SearchChipData> {
             removable: true,
         });
     }
-    let (start, end) = resolved_search_bounds(state);
-    if !start.is_empty() && !end.is_empty() {
+    if state.search_range_active {
+        let (start, end) = resolved_search_bounds(state);
         chips.push(SearchChipData {
             label: "Time".to_owned(),
             value: format!(
@@ -917,19 +927,15 @@ fn restore_retained_range() {
         return;
     };
     let mut next = ui.peek().clone();
-    let (start, end) = retained_or_playback(&next);
     next.search_range_start.clear();
     next.search_range_end.clear();
     next.search_draft_start.clear();
     next.search_draft_end.clear();
+    next.search_range_active = false;
     next.search_range_error.clear();
-    let local = next.local_time;
     ui.set(next);
-    session::write_control(
-        "video-search-range-start",
-        &super::display_clock(&start, local),
-    );
-    session::write_control("video-search-range-end", &super::display_clock(&end, local));
+    session::write_control("video-search-range-start", "");
+    session::write_control("video-search-range-end", "");
 }
 
 fn search_range_enter(event: KeyboardEvent) {
@@ -958,11 +964,20 @@ fn edit_search_filter(start: bool) {
     let _ = commit_search_filter();
 }
 
-fn commit_search_filter() -> Option<(String, String)> {
+fn commit_search_filter() -> Option<(Option<String>, Option<String>)> {
     let mut ui = bound()?;
     let state = ui.peek().clone();
     let start_raw = session::control_value("video-search-range-start");
     let end_raw = session::control_value("video-search-range-end");
+    if start_raw.trim().is_empty() && end_raw.trim().is_empty() {
+        let mut next = ui.peek().clone();
+        next.search_range_start.clear();
+        next.search_range_end.clear();
+        next.search_range_active = false;
+        next.search_range_error.clear();
+        ui.set(next);
+        return Some((None, None));
+    }
     let start_raw = if start_raw.trim().is_empty() {
         shown_search_field(&state, true)
     } else {
@@ -986,9 +1001,10 @@ fn commit_search_filter() -> Option<(String, String)> {
             let mut next = ui.peek().clone();
             next.search_range_start = range.start.clone();
             next.search_range_end = range.end.clone();
+            next.search_range_active = true;
             next.search_range_error.clear();
             ui.set(next);
-            Some((range.start, range.end))
+            Some((Some(range.start), Some(range.end)))
         }
         Err(fault) => {
             let mut next = ui.peek().clone();
@@ -1007,6 +1023,9 @@ fn shown_search_field(state: &VideoUi, start: bool) -> String {
     };
     if !draft.is_empty() {
         return draft.to_owned();
+    }
+    if !state.search_range_active {
+        return String::new();
     }
     let stored = if start {
         state.search_range_start.as_str()
@@ -1028,13 +1047,16 @@ fn shown_search_field(state: &VideoUi, start: bool) -> String {
 }
 
 fn resolved_search_bounds(state: &VideoUi) -> (String, String) {
+    if !state.search_range_active {
+        return (String::new(), String::new());
+    }
     if !state.search_range_start.is_empty() && !state.search_range_end.is_empty() {
         return (
             state.search_range_start.clone(),
             state.search_range_end.clone(),
         );
     }
-    retained_or_playback(state)
+    (SEARCH_ALL_START.to_owned(), SEARCH_ALL_END.to_owned())
 }
 
 fn retained_or_playback(state: &VideoUi) -> (String, String) {
@@ -1162,13 +1184,11 @@ async fn run_search(job: SearchJob, secret: Option<String>) -> SearchOutcome {
     let mut incomplete = false;
     let mut failure = None;
     for source_id in &ticket.source_ids {
-        let command = semantic::search_command(
-            source_id,
-            &ticket.start,
-            &ticket.end,
-            &ticket.text,
-            &provenance,
-        );
+        let range = match (&ticket.range_start, &ticket.range_end) {
+            (Some(start), Some(end)) => Some((start.as_str(), end.as_str())),
+            _ => None,
+        };
+        let command = semantic::search_command(source_id, range, &ticket.text, &provenance);
         match post_with_abort(command, secret.clone(), ticket.generation).await {
             Ok(reply) => match semantic::interpret_search(&reply, secret.as_deref()) {
                 Ok((mut found, source_incomplete)) => {
@@ -1246,7 +1266,8 @@ async fn run_capabilities(job: CapabilityJob, secret: Option<String>) -> Capabil
         if let (Some(start), Some(end)) = coverage_bounds(&source_id)
             && let Some(pick) = default_provenance()
         {
-            let command = semantic::coverage_command(&source_id, &start, &end, &pick);
+            let command =
+                semantic::coverage_command(&source_id, Some((start.as_str(), end.as_str())), &pick);
             if let Ok(reply) = post_with_abort(command, secret.clone(), generation).await
                 && let Ok((resolved, banner)) =
                     semantic::interpret_coverage(&reply, secret.as_deref())

@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::error::A2aLabError;
 use crate::id::JevEvaluationId;
 use crate::page::{Page, PageRequest};
+use crate::time::{TimeRange, UtcTimestamp};
 use crate::videos::frame_decision::access::{
     FrameDecisionClientRole, FrameDecisionOperation, FrameDecisionSchemaRefs,
 };
@@ -551,10 +552,15 @@ impl TckMalformedFrameDecisionRequests {
     pub fn history_reversed_range(
         semantic_scope: &SemanticSearchScope,
     ) -> ReadFrameDecisionHistoryRequest {
-        let scope = FrameDecisionReadScope::tck_reversed_range(
-            semantic_scope.source_id().clone(),
-            semantic_scope.range(),
-        );
+        let range = semantic_scope.range().unwrap_or_else(|| {
+            TimeRange::new(
+                UtcTimestamp::parse("2024-06-01T12:00:00Z").unwrap(),
+                UtcTimestamp::parse("2024-06-01T13:00:00Z").unwrap(),
+            )
+            .unwrap()
+        });
+        let scope =
+            FrameDecisionReadScope::tck_reversed_range(semantic_scope.source_id().clone(), range);
         Self::history_zero_page_limit(scope)
     }
 }

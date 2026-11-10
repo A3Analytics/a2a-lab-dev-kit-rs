@@ -138,7 +138,7 @@ fn semantic_flow(base: &str) {
         ),
         serde_json::json!("true"),
     );
-    page.wait_until("document.getElementById('video-search-range-start')?.value.includes('UTC')");
+    page.wait_until("document.getElementById('video-search-range-start')?.value === ''");
     let player_source = page.eval("document.getElementById('video-source')?.value");
     page.click("video-search-source-0");
     page.click("video-search-source-1");
@@ -167,9 +167,7 @@ fn semantic_flow(base: &str) {
         "document.getElementById('video-semantic-capability')?.dataset.state === 'ready'",
     );
     page.click("video-search-clear");
-    page.wait_until(
-        "document.getElementById('video-search-browser')?.dataset.start?.startsWith('2024-01-01T00:00:00')",
-    );
+    page.wait_until("document.getElementById('video-search-browser')?.dataset.start === ''");
     page.click("video-search-local-time");
     page.wait_until(
         "document.getElementById('video-search-local-time')?.getAttribute('aria-pressed') === 'true'",
@@ -180,7 +178,7 @@ fn semantic_flow(base: &str) {
     );
     page.click("video-search-local-time");
     page.wait_until(
-        "document.getElementById('video-search-local-time')?.getAttribute('aria-pressed') === 'false' && document.getElementById('video-search-range-start')?.value.includes('UTC')",
+        "document.getElementById('video-search-local-time')?.getAttribute('aria-pressed') === 'false' && document.getElementById('video-search-range-start')?.value === ''",
     );
     let generation_before = page.eval("document.getElementById('video-view')?.dataset.gen ?? ''");
     assert_eq!(
@@ -205,9 +203,7 @@ fn semantic_flow(base: &str) {
         generation_before.clone(),
     );
     page.click("video-search-clear");
-    page.wait_until(
-        "document.getElementById('video-search-browser')?.dataset.start?.startsWith('2024-01-01T00:00:00')",
-    );
+    page.wait_until("document.getElementById('video-search-browser')?.dataset.start === ''");
     assert_eq!(
         page.eval("document.getElementById('video-semantic-query')?.value"),
         serde_json::json!(""),
@@ -452,11 +448,13 @@ fn frame_for(source: &str, at: &str) -> SavedFrameRef {
 fn scope() -> SemanticSearchScope {
     SemanticSearchScope::new(
         VideoSourceId::new("cam-a").unwrap(),
-        TimeRange::new(
-            UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap(),
-            UtcTimestamp::parse("2024-01-01T00:00:10Z").unwrap(),
-        )
-        .unwrap(),
+        Some(
+            TimeRange::new(
+                UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap(),
+                UtcTimestamp::parse("2024-01-01T00:00:10Z").unwrap(),
+            )
+            .unwrap(),
+        ),
     )
     .unwrap()
 }

@@ -27,11 +27,13 @@ fn source(name: &str) -> VideoSourceId {
 fn scope() -> SemanticSearchScope {
     SemanticSearchScope::new(
         source("deck-left"),
-        TimeRange::new(
-            UtcTimestamp::parse("2024-06-01T12:00:00Z").unwrap(),
-            UtcTimestamp::parse("2024-06-01T13:00:00Z").unwrap(),
-        )
-        .unwrap(),
+        Some(
+            TimeRange::new(
+                UtcTimestamp::parse("2024-06-01T12:00:00Z").unwrap(),
+                UtcTimestamp::parse("2024-06-01T13:00:00Z").unwrap(),
+            )
+            .unwrap(),
+        ),
     )
     .unwrap()
 }

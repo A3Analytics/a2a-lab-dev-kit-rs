@@ -8,18 +8,36 @@ use crate::id::VideoSourceId;
 use crate::time::TimeRange;
 use crate::videos::saved_frame::SavedFrameRef;
 
-/// Finite retained source and half-open UTC scope for one search.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// Finite retained source scope with an optional half-open UTC candidate filter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct SemanticSearchScope {
     source_id: VideoSourceId,
-    range: TimeRange,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    range: Option<TimeRange>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SemanticSearchScopeRaw {
+    source_id: VideoSourceId,
+    #[serde(default)]
+    range: Option<TimeRange>,
 }
 
 impl SemanticSearchScope {
-    /// Creates scope when `range` is valid and non-empty.
-    pub fn new(source_id: VideoSourceId, range: TimeRange) -> Result<Self, A2aLabError> {
-        range.check()?;
-        Ok(Self { source_id, range })
+    /// Creates scope when an optional `range` is valid.
+    pub fn new(source_id: VideoSourceId, range: Option<TimeRange>) -> Result<Self, A2aLabError> {
+        let scope = Self { source_id, range };
+        scope.check()?;
+        Ok(scope)
+    }
+
+    /// Rejects a reversed or empty optional interval.
+    pub fn check(&self) -> Result<(), A2aLabError> {
+        if let Some(range) = self.range {
+            range.check()?;
+        }
+        Ok(())
     }
 
     /// Saved source filter.
@@ -28,10 +46,32 @@ impl SemanticSearchScope {
         &self.source_id
     }
 
-    /// Half-open UTC interval `[start, end)`.
+    /// Optional half-open UTC interval `[start, end)` restricting search candidates.
     #[must_use]
-    pub const fn range(&self) -> TimeRange {
+    pub const fn range(&self) -> Option<TimeRange> {
         self.range
+    }
+
+    /// Whether `timestamp` would be considered inside the optional candidate filter.
+    #[must_use]
+    pub fn contains_capture(&self, timestamp: crate::time::UtcTimestamp) -> bool {
+        self.range.is_none_or(|range| range.contains(timestamp))
+    }
+}
+
+impl<'de> Deserialize<'de> for SemanticSearchScope {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        SemanticSearchScopeRaw::deserialize(deserializer)?
+            .try_into()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl TryFrom<SemanticSearchScopeRaw> for SemanticSearchScope {
+    type Error = A2aLabError;
+
+    fn try_from(raw: SemanticSearchScopeRaw) -> Result<Self, Self::Error> {
+        Self::new(raw.source_id, raw.range)
     }
 }
 

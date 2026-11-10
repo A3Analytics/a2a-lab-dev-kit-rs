@@ -104,8 +104,8 @@ pub struct SearchTicket {
     pub generation: u32,
     pub source_ids: Vec<String>,
     pub text: String,
-    pub start: String,
-    pub end: String,
+    pub range_start: Option<String>,
+    pub range_end: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,8 +185,8 @@ impl Hub {
         &mut self,
         source_ids: &[String],
         text: &str,
-        start: &str,
-        end: &str,
+        range_start: Option<&str>,
+        range_end: Option<&str>,
     ) -> Option<SearchTicket> {
         let text = text.trim();
         if !self.semantic_enabled() || source_ids.is_empty() || text.is_empty() {
@@ -199,8 +199,8 @@ impl Hub {
             generation: self.generation,
             source_ids,
             text: text.to_owned(),
-            start: start.to_owned(),
-            end: end.to_owned(),
+            range_start: range_start.map(str::to_owned),
+            range_end: range_end.map(str::to_owned),
         };
         self.search_loading = true;
         self.search_fault.clear();
@@ -269,17 +269,17 @@ pub fn decision_capabilities_command() -> Value {
 
 pub fn coverage_command(
     source_id: &str,
-    start: &str,
-    end: &str,
+    range: Option<(&str, &str)>,
     provenance: &ProvenancePick,
 ) -> Value {
+    let mut scope = serde_json::json!({ "source_id": source_id });
+    if let Some((start, end)) = range {
+        scope["range"] = serde_json::json!({ "start": start, "end": end });
+    }
     serde_json::json!({
         "operation": "get_semantic_indexing_coverage",
         "params": {
-            "scope": {
-                "source_id": source_id,
-                "range": { "start": start, "end": end }
-            },
+            "scope": scope,
             "provenance": {
                 "model_space": provenance.model_space,
                 "description_generation": provenance.description_generation
@@ -290,18 +290,18 @@ pub fn coverage_command(
 
 pub fn search_command(
     source_id: &str,
-    start: &str,
-    end: &str,
+    range: Option<(&str, &str)>,
     text: &str,
     provenance: &ProvenancePick,
 ) -> Value {
+    let mut scope = serde_json::json!({ "source_id": source_id });
+    if let Some((start, end)) = range {
+        scope["range"] = serde_json::json!({ "start": start, "end": end });
+    }
     serde_json::json!({
         "operation": "search_semantic_frames",
         "params": {
-            "scope": {
-                "source_id": source_id,
-                "range": { "start": start, "end": end }
-            },
+            "scope": scope,
             "query": { "kind": "text", "text": text },
             "provenance": {
                 "model_space": provenance.model_space,
