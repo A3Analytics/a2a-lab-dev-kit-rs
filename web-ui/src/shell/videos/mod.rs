@@ -25,7 +25,7 @@ mod timeline;
 mod timeline_fields;
 use details::VideoDetails;
 use playback_hooks::{apply_stream, on_buffering, on_frame, on_gap_skipped, on_playing};
-use semantic::{SemanticResults, abort_semantic_commands, note_source_change, wire_resources};
+use semantic::{SearchPanel, abort_semantic_commands, note_source_change, wire_resources};
 use speed_control::{
     active_stream_plan, change_speed, lock_live_speed, note_trick_fallback, speed_option_disabled,
 };
@@ -51,8 +51,21 @@ pub struct VideoUi {
     pub range_draft_start: String,
     pub range_draft_end: String,
     pub range_error: String,
+    pub search_range_start: String,
+    pub search_range_end: String,
+    pub search_draft_start: String,
+    pub search_draft_end: String,
+    pub search_range_error: String,
     pub local_time: bool,
+    pub search_sources: Vec<String>,
     pub semantic: videos::semantic::Hub,
+    pub active_tab: VideoTab,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum VideoTab {
+    Browse,
+    Search,
 }
 
 impl VideoUi {
@@ -70,8 +83,15 @@ impl VideoUi {
             range_draft_start: String::new(),
             range_draft_end: String::new(),
             range_error: String::new(),
+            search_range_start: String::new(),
+            search_range_end: String::new(),
+            search_draft_start: String::new(),
+            search_draft_end: String::new(),
+            search_range_error: String::new(),
             local_time: false,
+            search_sources: Vec::new(),
             semantic: videos::semantic::Hub::new(),
+            active_tab: VideoTab::Browse,
         }
     }
 }
@@ -240,11 +260,72 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
             "data-gen": state.reader.generation.to_string(),
             h2 { id: "video-view-heading", class: "visually-hidden", tabindex: "-1", "Videos" }
             div { id: "video-browser", class: "log-browser",
-                FilterRail { state: state.clone() }
-                Results { state: state.clone(), status, alert }
+                VideoTabs { state: state.clone() }
+                div { id: "video-tab-panels", class: "video-tab-panels",
+                    div {
+                        id: "video-browse-panel",
+                        class: "video-tab-panel",
+                        hidden: state.active_tab != VideoTab::Browse,
+                        role: "tabpanel",
+                        aria_labelledby: "video-browse-tab",
+                        FilterRail { state: state.clone() }
+                        Results { state: state.clone(), status: status.clone(), alert: alert.clone() }
+                    }
+                    div {
+                        id: "video-search-panel",
+                        class: "video-tab-panel video-search-panel",
+                        hidden: state.active_tab != VideoTab::Search,
+                        role: "tabpanel",
+                        aria_labelledby: "video-search-tab",
+                        SearchPanel { state: state.clone() }
+                    }
+                }
             }
         }
     }
+}
+
+#[component]
+fn VideoTabs(state: VideoUi) -> Element {
+    rsx! {
+        div {
+            id: "video-tabs",
+            class: "video-tabs",
+            role: "tablist",
+            aria_label: "Video views",
+            button {
+                id: "video-browse-tab",
+                class: "video-tab",
+                r#type: "button",
+                role: "tab",
+                aria_selected: if state.active_tab == VideoTab::Browse { "true" } else { "false" },
+                aria_controls: "video-browse-panel",
+                tabindex: if state.active_tab == VideoTab::Browse { "0" } else { "-1" },
+                onclick: move |_| select_video_tab(VideoTab::Browse),
+                "Browse"
+            }
+            button {
+                id: "video-search-tab",
+                class: "video-tab",
+                r#type: "button",
+                role: "tab",
+                aria_selected: if state.active_tab == VideoTab::Search { "true" } else { "false" },
+                aria_controls: "video-search-panel",
+                tabindex: if state.active_tab == VideoTab::Search { "0" } else { "-1" },
+                onclick: move |_| select_video_tab(VideoTab::Search),
+                "Search"
+            }
+        }
+    }
+}
+
+fn select_video_tab(tab: VideoTab) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    next.active_tab = tab;
+    ui.set(next);
 }
 
 #[component]
@@ -450,7 +531,6 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
                     },
                     "{status}"
                 }
-                SemanticResults { state: state.clone() }
                 div {
                     id: "video-alert",
                     class: "video-alert",
@@ -743,6 +823,8 @@ pub(super) fn toggle_local_time() {
     next.local_time = !from;
     next.range_draft_start = timeline::reshow(&next.range_draft_start, from, next.local_time);
     next.range_draft_end = timeline::reshow(&next.range_draft_end, from, next.local_time);
+    next.search_draft_start = timeline::reshow(&next.search_draft_start, from, next.local_time);
+    next.search_draft_end = timeline::reshow(&next.search_draft_end, from, next.local_time);
     ui.set(next);
 }
 
@@ -773,7 +855,7 @@ fn choose_listed_source() {
     }
 }
 
-fn choose_source(id: &str) {
+pub(super) fn choose_source(id: &str) {
     let Some(mut ui) = bound() else {
         return;
     };
@@ -1232,6 +1314,12 @@ fn apply_meta(outcome: MetaOutcome) {
             auto = videos::begin_auto_playback(&mut next.reader);
             sync_auto_range(&mut next, &auto);
             note_source_change(&next.reader.source_id);
+            let seek = semantic::take_search_seek(&next.reader.source_id);
+            if let Some(us) = seek {
+                ui.set(next);
+                timeline::commit_at(us);
+                return;
+            }
             None
         }
         MetaOutcome::Follow { ticket, follow } => {

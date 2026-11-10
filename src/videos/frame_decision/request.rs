@@ -176,6 +176,35 @@ pub struct FrameDecisionEvaluationRequest {
 }
 
 impl FrameDecisionEvaluationRequest {
+    /// Creates an evaluation request; an omitted model transform means the
+    /// full oriented frame.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_optional_model_input_transform(
+        limits: FrameDecisionEvaluatorLimits,
+        evaluation_id: JevEvaluationId,
+        target: SavedFrameRef,
+        predicate: LabPredicate,
+        subject: DecisionSubject,
+        evidence: Vec<DecisionEvidenceItem>,
+        criteria: OperatorDecisionCriteria,
+        model_input_transform: Option<FrameRoiTransform>,
+        declared_request_bytes: usize,
+        max_edge_pixels: u32,
+    ) -> Result<Self, FrameDecisionEvaluationFailure> {
+        Self::new(
+            limits,
+            evaluation_id,
+            target,
+            predicate,
+            subject,
+            evidence,
+            criteria,
+            model_input_transform.unwrap_or_else(FrameRoiTransform::full_frame),
+            declared_request_bytes,
+            max_edge_pixels,
+        )
+    }
+
     /// Creates a request after limit and Jev-only evidence checks.
     #[allow(clippy::too_many_arguments)]
     pub fn new(

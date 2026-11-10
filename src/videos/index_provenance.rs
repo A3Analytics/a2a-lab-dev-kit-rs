@@ -16,6 +16,14 @@ pub struct FrameRoiTransform {
 }
 
 impl FrameRoiTransform {
+    /// Full oriented frame (`[0, 0, 1, 1]`).
+    #[must_use]
+    pub fn full_frame() -> Self {
+        Self {
+            bounds: [0.0, 0.0, 1.0, 1.0],
+        }
+    }
+
     /// Validates normalized bounds.
     pub fn new(bounds: [f32; 4]) -> Result<Self, A2aLabError> {
         let [x_min, y_min, x_max, y_max] = bounds;

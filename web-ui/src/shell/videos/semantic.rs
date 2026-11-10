@@ -94,6 +94,25 @@ thread_local! {
     static LOADER: RefCell<Option<Loader>> = const { RefCell::new(None) };
     static FLIGHTS: RefCell<Option<SemanticFlight>> = const { RefCell::new(None) };
     static PROBED_SOURCE: RefCell<String> = const { RefCell::new(String::new()) };
+    static SEARCH_SEEK: RefCell<Option<(String, i64)>> = const { RefCell::new(None) };
+}
+
+fn remember_search_seek(source_id: &str, at_us: i64) {
+    SEARCH_SEEK.with(|slot| *slot.borrow_mut() = Some((source_id.to_owned(), at_us)));
+}
+
+pub fn take_search_seek(source_id: &str) -> Option<i64> {
+    SEARCH_SEEK.with(|slot| {
+        let matches = slot
+            .borrow()
+            .as_ref()
+            .is_some_and(|(id, _)| id == source_id);
+        if matches {
+            slot.borrow_mut().take().map(|(_, at_us)| at_us)
+        } else {
+            None
+        }
+    })
 }
 
 pub fn bind_loader(
@@ -118,7 +137,7 @@ pub fn note_source_change(source_id: &str) {
     let Some(mut ui) = bound() else {
         return;
     };
-    let repeat = PROBED_SOURCE.with(|slot| slot.borrow().as_str() == source_id);
+    let repeat = PROBED_SOURCE.with(|slot| !slot.borrow().is_empty());
     if repeat {
         return;
     }
@@ -129,7 +148,6 @@ pub fn note_source_change(source_id: &str) {
         return;
     }
     let cap_generation = ui.write().semantic.note_source();
-    ui.write().semantic.query.clear();
     PROBED_SOURCE.with(|slot| *slot.borrow_mut() = source_id.to_owned());
     launch_capabilities(cap_generation, source_id.to_owned());
 }
@@ -140,21 +158,41 @@ pub fn commit_semantic_query() {
     };
     let text = session::control_value("video-semantic-query");
     let state = ui.peek().clone();
-    let (start, end) = match search_window(&state) {
-        Some(bounds) => bounds,
-        None => {
-            ui.write().semantic.search_fault = "Enter a retained time range first.".to_owned();
-            return;
-        }
+    let Some((start, end)) = commit_search_filter() else {
+        return;
     };
     ui.write().semantic.query = text.clone();
+    let sources = search_source_ids(&state);
     let ticket = ui
         .write()
         .semantic
-        .begin_search(&state.reader.source_id, &text, &start, &end);
+        .begin_search(&sources, &text, &start, &end);
     if let Some(ticket) = ticket {
         launch_search(ticket);
     }
+}
+
+fn search_source_ids(state: &VideoUi) -> Vec<String> {
+    if state.search_sources.is_empty() {
+        state.sources.iter().map(|item| item.id.clone()).collect()
+    } else {
+        state.search_sources.clone()
+    }
+}
+
+pub fn toggle_search_source(source_id: &str) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    if source_id.is_empty() {
+        next.search_sources.clear();
+    } else if let Some(index) = next.search_sources.iter().position(|id| id == source_id) {
+        next.search_sources.remove(index);
+    } else {
+        next.search_sources.push(source_id.to_owned());
+    }
+    ui.set(next);
 }
 
 pub fn choose_semantic_hit(index: usize) {
@@ -169,7 +207,12 @@ pub fn choose_semantic_hit(index: usize) {
         return;
     };
     if let Some(us) = (hit.captured_us > 0).then_some(hit.captured_us) {
-        super::timeline::commit_at(us);
+        if hit.source_id.is_empty() || hit.source_id == state.reader.source_id {
+            super::timeline::commit_at(us);
+        } else {
+            remember_search_seek(&hit.source_id, us);
+            super::choose_source(&hit.source_id);
+        }
     }
     if state.semantic.decisions_enabled() {
         launch_history(state.semantic.generation, index);
@@ -177,9 +220,204 @@ pub fn choose_semantic_hit(index: usize) {
     launch_thumb(index);
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SearchMode {
+    Discovering,
+    Absent,
+    Error,
+    Loading,
+    Prompt,
+    Empty,
+    Fault,
+    Ready,
+}
+
+impl SearchMode {
+    fn slug(self) -> &'static str {
+        match self {
+            Self::Discovering => "discovering",
+            Self::Absent => "absent",
+            Self::Error => "error",
+            Self::Loading => "loading",
+            Self::Prompt => "prompt",
+            Self::Empty => "empty",
+            Self::Fault => "fault",
+            Self::Ready => "ready",
+        }
+    }
+
+    fn text(self) -> &'static str {
+        match self {
+            Self::Discovering => "Discovering search capabilities…",
+            Self::Absent => "Search is not configured.",
+            Self::Error => "Search capabilities could not be read.",
+            Self::Loading => "Searching…",
+            Self::Prompt => "",
+            Self::Empty => "No hits in this scope.",
+            Self::Fault => "Search could not be completed.",
+            Self::Ready => "Select a hit to inspect metadata and decisions.",
+        }
+    }
+}
+
 #[component]
-pub fn SemanticFilters(state: VideoUi) -> Element {
-    let hidden = state.semantic.search_capabilities.phase == ApiPhase::Unknown;
+pub fn SearchPanel(state: VideoUi) -> Element {
+    let bounds = resolved_search_bounds(&state);
+    rsx! {
+        div {
+            id: "video-search-browser",
+            class: "log-browser",
+            "data-source-id": "{state.reader.source_id}",
+            "data-search-sources": "{search_source_attr(&state)}",
+            "data-start": "{bounds.0}",
+            "data-end": "{bounds.1}",
+            SearchRail { state: state.clone() }
+            SearchResults { state: state.clone() }
+        }
+    }
+}
+
+#[component]
+fn SearchRail(state: VideoUi) -> Element {
+    let local = state.local_time;
+    let ready = state.semantic.search_capabilities.phase == ApiPhase::Ready;
+    let start = shown_search_field(&state, true);
+    let end = shown_search_field(&state, false);
+    rsx! {
+        div {
+            id: "video-search-filters",
+            role: "group",
+            aria_label: "Search filters",
+            div { class: "log-filter-group",
+                p { "Actions" }
+                div { class: "log-actions",
+                    button {
+                        id: "video-semantic-submit",
+                        class: "log-primary",
+                        r#type: "button",
+                        disabled: !ready || state.semantic.search_loading,
+                        onclick: move |_| commit_semantic_query(),
+                        "Search"
+                    }
+                    button {
+                        id: "video-search-clear",
+                        class: "log-outline",
+                        r#type: "button",
+                        onclick: move |_| clear_search_filters(),
+                        "Clear filters"
+                    }
+                }
+            }
+            div { id: "video-search-sources", class: "log-filter-group",
+                p { id: "video-search-source-label", "Source" }
+                if state.sources.is_empty() {
+                    button {
+                        id: "video-search-source-empty",
+                        class: "log-facet",
+                        r#type: "button",
+                        disabled: true,
+                        aria_pressed: "true",
+                        span { class: "log-facet-mark", aria_hidden: "true" }
+                        "None loaded"
+                    }
+                } else {
+                    button {
+                        id: "video-search-source-all",
+                        class: "log-facet",
+                        r#type: "button",
+                        "data-source": "",
+                        aria_pressed: if state.search_sources.is_empty() { "true" } else { "false" },
+                        onclick: move |_| toggle_search_source(""),
+                        span { class: "log-facet-mark", aria_hidden: "true" }
+                        "All"
+                    }
+                }
+                for (index, item) in state.sources.iter().enumerate() {
+                    button {
+                        key: "{item.id}",
+                        id: "video-search-source-{index}",
+                        class: "log-facet",
+                        r#type: "button",
+                        "data-source": "{item.id}",
+                        aria_pressed: if state.search_sources.iter().any(|id| id == &item.id) { "true" } else { "false" },
+                        onclick: {
+                            let id = item.id.clone();
+                            move |_| toggle_search_source(&id)
+                        },
+                        span { class: "log-facet-mark", aria_hidden: "true" }
+                        "{super::source_option(item)}"
+                    }
+                }
+            }
+            div {
+                id: "video-semantic-filters",
+                class: "log-filter-group",
+                role: "group",
+                aria_label: "Search",
+                label { id: "video-semantic-label", r#for: "video-semantic-query", "Search" }
+                input {
+                    id: "video-semantic-query",
+                    r#type: "search",
+                    autocomplete: "off",
+                    spellcheck: "false",
+                    placeholder: "Search",
+                    disabled: !ready,
+                    value: "{state.semantic.query}",
+                    oninput: move |_| {
+                        if let Some(mut ui) = bound() {
+                            ui.write().semantic.query = session::control_value("video-semantic-query");
+                        }
+                    },
+                    onkeydown: semantic_enter,
+                }
+            }
+            div {
+                id: "video-search-time",
+                class: "log-filter-group",
+                p { "Time range" }
+                button {
+                    id: "video-search-local-time",
+                    class: "log-facet",
+                    r#type: "button",
+                    aria_pressed: if local { "true" } else { "false" },
+                    aria_label: "Local time",
+                    onclick: move |_| super::toggle_local_time(),
+                    span { class: "log-facet-mark", aria_hidden: "true" }
+                    "Local time"
+                }
+                label { r#for: "video-search-range-start", "Start" }
+                input {
+                    id: "video-search-range-start",
+                    r#type: "text",
+                    spellcheck: false,
+                    autocomplete: "off",
+                    value: "{start}",
+                    placeholder: if local { "2024-01-01 00:00:00" } else { "2024-01-01 00:00:00 UTC" },
+                    oninput: move |_| edit_search_filter(true),
+                    onkeydown: search_range_enter,
+                }
+                label { r#for: "video-search-range-end", "End" }
+                input {
+                    id: "video-search-range-end",
+                    r#type: "text",
+                    spellcheck: false,
+                    autocomplete: "off",
+                    value: "{end}",
+                    placeholder: if local { "2024-01-01 00:00:02" } else { "2024-01-01 00:00:02 UTC" },
+                    oninput: move |_| edit_search_filter(false),
+                    onkeydown: search_range_enter,
+                }
+                p { id: "video-search-range-error", class: "video-range-error", "{state.search_range_error}" }
+            }
+        }
+    }
+}
+
+#[component]
+fn SearchResults(state: VideoUi) -> Element {
+    let mode = search_mode(&state);
+    let selected = state.semantic.selected;
+    let chips = search_chips(&state);
     let incomplete = state.semantic.incomplete_indexing
         || state
             .semantic
@@ -187,112 +425,180 @@ pub fn SemanticFilters(state: VideoUi) -> Element {
             .as_ref()
             .is_some_and(|banner| banner.incomplete);
     rsx! {
-        div {
-            id: "video-semantic-filters",
-            class: "video-filter-group video-semantic-filters",
-            hidden: hidden,
-            role: "group",
-            aria_label: "Search",
-            p { id: "video-semantic-label", "Search" }
-            p {
-                id: "video-semantic-capability",
-                role: "status",
-                aria_live: "polite",
-                "data-state": capability_slug(state.semantic.search_capabilities.phase),
-                match state.semantic.search_capabilities.phase {
-                    ApiPhase::Absent => "Search is not configured.",
-                    ApiPhase::Error => "Search capabilities could not be read.",
-                    ApiPhase::Ready => "Search is available for this source.",
-                    ApiPhase::Unknown => "Discovering search capabilities…",
-                }
-            }
-            if state.semantic.search_capabilities.phase == ApiPhase::Ready {
-            label { r#for: "video-semantic-query", "Describe a frame" }
-            input {
-                id: "video-semantic-query",
-                r#type: "search",
-                autocomplete: "off",
-                spellcheck: "false",
-                "aria-describedby": "video-semantic-hint",
-                value: "{state.semantic.query}",
-                oninput: move |_| {
-                    if let Some(mut ui) = bound() {
-                        ui.write().semantic.query = session::control_value("video-semantic-query");
+        div { id: "video-search-results", class: "log-results",
+            p { id: "video-search-count", class: "log-count", "{search_count(&state)}" }
+            div { class: "log-scroll",
+                div { id: "video-search-chips", class: "log-chips", hidden: chips.is_empty(),
+                    span { class: "log-chips-label", "Filters" }
+                    for chip in chips.iter() {
+                        SearchChip { key: "{chip.clear}", chip: chip.clone() }
                     }
-                },
-                onkeydown: semantic_enter,
-            }
-            p { id: "video-semantic-hint", class: "video-semantic-hint",
-                "Descriptions are Luna search metadata only; they are not lab decisions."
-            }
-            button {
-                id: "video-semantic-submit",
-                class: "video-outline",
-                r#type: "button",
-                disabled: state.semantic.search_loading,
-                onclick: move |_| commit_semantic_query(),
-                "Search"
-            }
-            if let Some(coverage) = state.semantic.coverage.as_ref() {
+                }
                 p {
-                    id: "video-semantic-coverage",
+                    id: "video-semantic-capability",
                     role: "status",
                     aria_live: "polite",
-                    "data-incomplete": if incomplete { "true" } else { "false" },
-                    "Coverage: {coverage.ready} ready, {coverage.pending} pending, {coverage.failed} failed, {coverage.expired} expired."
+                    hidden: state.semantic.search_capabilities.phase == ApiPhase::Ready,
+                    "data-state": capability_slug(state.semantic.search_capabilities.phase),
+                    "{capability_copy(state.semantic.search_capabilities.phase)}"
+                }
+                if let Some(coverage) = state.semantic.coverage.as_ref() {
+                    p {
+                        id: "video-semantic-coverage",
+                        role: "status",
+                        aria_live: "polite",
+                        "data-incomplete": if incomplete { "true" } else { "false" },
+                        "Coverage: {coverage.ready} ready, {coverage.pending} pending, {coverage.failed} failed, {coverage.expired} expired."
+                    }
+                }
+                div { id: "video-semantic-alert", role: "alert", aria_live: "assertive", "{state.semantic.search_fault}" }
+                div {
+                    id: "video-search-result-state",
+                    "data-state": mode.slug(),
+                    hidden: mode == SearchMode::Ready || mode == SearchMode::Prompt,
+                    p {
+                        id: "video-semantic-status",
+                        role: "status",
+                        aria_live: "polite",
+                        "data-loading": if state.semantic.search_loading { "true" } else { "false" },
+                        "data-state": mode.slug(),
+                        if mode == SearchMode::Fault && !state.semantic.search_fault.is_empty() {
+                            "{state.semantic.search_fault}"
+                        } else {
+                            "{mode.text()}"
+                        }
+                    }
+                    if mode == SearchMode::Empty || mode == SearchMode::Fault {
+                        button {
+                            id: "video-search-result-clear",
+                            class: "log-outline",
+                            r#type: "button",
+                            onclick: move |_| clear_search_filters(),
+                            "Clear filters"
+                        }
+                    }
+                }
+                ul {
+                    id: "video-semantic-hits",
+                    class: "log-cards video-semantic-hits",
+                    role: "listbox",
+                    aria_label: "Search hits",
+                    hidden: mode != SearchMode::Ready,
+                    for (index, hit) in state
+                        .semantic
+                        .hits
+                        .iter()
+                        .enumerate()
+                        .skip(state.semantic.result_page * semantic::SEARCH_PAGE_SIZE)
+                        .take(semantic::SEARCH_PAGE_SIZE)
+                    {
+                        li { key: "{hit.frame_id}",
+                            SemanticHitRow {
+                                index,
+                                hit: hit.clone(),
+                                selected: selected == index,
+                            }
+                        }
+                    }
+                }
+                SearchPagination { state: state.clone() }
+                if let Some(hit) = state.semantic.selected_hit() {
+                    SemanticDetail { hit: hit.clone(), state: state.clone() }
                 }
             }
-            div { id: "video-semantic-alert", role: "alert", aria_live: "assertive", "{state.semantic.search_fault}" }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct SearchChipData {
+    label: String,
+    value: String,
+    clear: String,
+    removable: bool,
+}
+
+#[component]
+fn SearchChip(chip: SearchChipData) -> Element {
+    let clear = chip.clear.clone();
+    let removable = chip.removable;
+    rsx! {
+        span { class: "log-meta", "data-chip": "{chip.clear}",
+            span { class: "log-meta-label", "{chip.label}:" }
+            span { "{chip.value}" }
+            if removable {
+                button {
+                    r#type: "button",
+                    "data-clear": "{chip.clear}",
+                    aria_label: "Remove {chip.label} {chip.value}",
+                    onclick: move |_| clear_search_chip(&clear),
+                    "×"
+                }
             }
         }
     }
 }
 
 #[component]
-pub fn SemanticResults(state: VideoUi) -> Element {
-    if state.semantic.search_capabilities.phase != ApiPhase::Ready {
+fn SearchPagination(state: VideoUi) -> Element {
+    let page_count = state
+        .semantic
+        .hits
+        .len()
+        .div_ceil(semantic::SEARCH_PAGE_SIZE);
+    if page_count <= 1 {
         return rsx! {};
     }
-    let selected = state.semantic.selected;
+    let page = state.semantic.result_page;
     rsx! {
-        div { id: "video-semantic-results", class: "video-semantic-results",
+        nav {
+            id: "video-semantic-pagination",
+            class: "video-semantic-pagination",
+            aria_label: "Search result pages",
+            button {
+                id: "video-semantic-previous",
+                class: "video-outline",
+                r#type: "button",
+                disabled: page == 0,
+                onclick: move |_| change_result_page(-1),
+                "Previous"
+            }
             p {
-                id: "video-semantic-status",
+                id: "video-semantic-page-status",
                 role: "status",
                 aria_live: "polite",
-                "data-loading": if state.semantic.search_loading { "true" } else { "false" },
-                if state.semantic.search_loading {
-                    "Searching…"
-                } else if state.semantic.hits.is_empty() && state.semantic.query.is_empty() {
-                    "Enter text to search indexed frames."
-                } else if state.semantic.hits.is_empty() {
-                    "No hits in this scope."
-                } else {
-                    "Select a hit to inspect metadata and decisions."
-                }
+                "Page {page + 1} of {page_count}"
             }
-            div {
-                id: "video-semantic-hits",
-                class: "video-semantic-hits",
-                role: "listbox",
-                aria_label: "Search hits",
-                for (index, hit) in state.semantic.hits.iter().enumerate() {
-                    SemanticHitRow {
-                        key: "{hit.frame_id}",
-                        index,
-                        hit: hit.clone(),
-                        selected: selected == index,
-                    }
-                }
-            }
-            if let Some(hit) = state.semantic.selected_hit() {
-                SemanticDetail {
-                    hit: hit.clone(),
-                    state: state.clone(),
-                }
+            button {
+                id: "video-semantic-next",
+                class: "video-outline",
+                r#type: "button",
+                disabled: page + 1 >= page_count,
+                onclick: move |_| change_result_page(1),
+                "Next"
             }
         }
     }
+}
+
+fn change_result_page(delta: i32) {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    let page_count = next
+        .semantic
+        .hits
+        .len()
+        .div_ceil(semantic::SEARCH_PAGE_SIZE);
+    next.semantic.result_page = if delta.is_negative() {
+        next.semantic
+            .result_page
+            .saturating_sub(delta.unsigned_abs() as usize)
+    } else {
+        (next.semantic.result_page + delta as usize).min(page_count.saturating_sub(1))
+    };
+    ui.set(next);
 }
 
 #[component]
@@ -301,10 +607,11 @@ fn SemanticHitRow(index: usize, hit: SearchHit, selected: bool) -> Element {
     rsx! {
         button {
             id: "video-semantic-hit-{index}",
-            class: "video-semantic-hit",
+            class: "video-semantic-hit log-card",
             r#type: "button",
             role: "option",
             aria_selected: if selected { "true" } else { "false" },
+            "data-source": "{hit.source_id}",
             "data-index-state": "{hit.index_state}",
             "data-media-state": "{hit.media_state}",
             disabled: blocked,
@@ -314,6 +621,7 @@ fn SemanticHitRow(index: usize, hit: SearchHit, selected: bool) -> Element {
             }
             span { class: "video-semantic-hit-copy",
                 time { datetime: "{hit.captured_at}", "{hit.captured_at}" }
+                span { class: "video-semantic-source", "{hit.source_label}" }
                 span { class: "video-semantic-score", "Score {hit.retrieval_score}" }
                 span { class: "video-semantic-description", "{hit.description}" }
             }
@@ -413,7 +721,7 @@ fn DecisionRowView(index: usize, row: DecisionRow) -> Element {
                 dt { "Producer" } dd { "{row.producer} @ {row.model_revision}" }
                 dt { "Probability" } dd { "{row.probability}" }
                 dt { "Confidence" } dd { "{row.confidence}" }
-                dt { "ROI" } dd { "{row.roi}" }
+                dt { "Region of interest" } dd { "{row.roi}" }
                 dt { "Evaluated" } dd { time { datetime: "{row.evaluated_at}", "{row.evaluated_at}" } }
                 dt { "Evidence" } dd { "{row.evidence_state}" }
             }
@@ -456,27 +764,14 @@ fn semantic_enter(event: KeyboardEvent) {
 }
 
 fn search_window(state: &VideoUi) -> Option<(String, String)> {
-    if let Some(bounds) = explicit_semantic_range(state) {
-        return Some(bounds);
-    }
-    state
-        .reader
-        .timeline
-        .as_ref()
-        .and_then(retained_search_window)
-}
-
-fn explicit_semantic_range(state: &VideoUi) -> Option<(String, String)> {
-    let start_raw = session::control_value("video-range-start");
-    let end_raw = session::control_value("video-range-end");
-    if start_raw.trim().is_empty() || end_raw.trim().is_empty() {
+    let (start, end) = resolved_search_bounds(state);
+    if start.is_empty() || end.is_empty() {
         return None;
     }
-    let start = super::field_to_utc(&start_raw, state.local_time);
-    let end = super::field_to_utc(&end_raw, state.local_time);
     videos::check_range(&start, &end)
         .ok()
         .map(|range| (range.start, range.end))
+        .or(Some((start, end)))
 }
 
 fn retained_search_window(timeline: &videos::Timeline) -> Option<(String, String)> {
@@ -487,6 +782,271 @@ fn retained_search_window(timeline: &videos::Timeline) -> Option<(String, String
 
 fn loader() -> Option<Loader> {
     LOADER.with(|slot| *slot.borrow())
+}
+
+fn search_mode(state: &VideoUi) -> SearchMode {
+    match state.semantic.search_capabilities.phase {
+        ApiPhase::Unknown => SearchMode::Discovering,
+        ApiPhase::Absent => SearchMode::Absent,
+        ApiPhase::Error => SearchMode::Error,
+        ApiPhase::Ready if state.semantic.search_loading => SearchMode::Loading,
+        ApiPhase::Ready if !state.semantic.search_fault.is_empty() => SearchMode::Fault,
+        ApiPhase::Ready if state.semantic.query.trim().is_empty() => SearchMode::Prompt,
+        ApiPhase::Ready if state.semantic.hits.is_empty() => SearchMode::Empty,
+        ApiPhase::Ready => SearchMode::Ready,
+    }
+}
+
+fn capability_copy(phase: ApiPhase) -> &'static str {
+    match phase {
+        ApiPhase::Absent => "Search is not configured.",
+        ApiPhase::Error => "Search capabilities could not be read.",
+        ApiPhase::Ready => "",
+        ApiPhase::Unknown => "Discovering search capabilities…",
+    }
+}
+
+fn search_count(state: &VideoUi) -> String {
+    match search_mode(state) {
+        SearchMode::Ready | SearchMode::Loading | SearchMode::Empty | SearchMode::Fault => {
+            let shown = state.semantic.hits.len();
+            if shown == 1 {
+                "1 hit".to_owned()
+            } else {
+                format!("{shown} hits")
+            }
+        }
+        SearchMode::Discovering => "Discovering search".to_owned(),
+        SearchMode::Absent => "Search is not configured".to_owned(),
+        SearchMode::Error => "Search unavailable".to_owned(),
+        SearchMode::Prompt => "No search yet".to_owned(),
+    }
+}
+
+fn search_source_attr(state: &VideoUi) -> String {
+    if state.search_sources.is_empty() {
+        "all".to_owned()
+    } else {
+        state.search_sources.join(",")
+    }
+}
+
+fn search_chips(state: &VideoUi) -> Vec<SearchChipData> {
+    let mut chips = Vec::new();
+    for id in &state.search_sources {
+        let source = state
+            .sources
+            .iter()
+            .find(|item| item.id == *id)
+            .map(super::source_option)
+            .unwrap_or_else(|| id.clone());
+        chips.push(SearchChipData {
+            label: "Source".to_owned(),
+            value: source,
+            clear: format!("source:{id}"),
+            removable: true,
+        });
+    }
+    if !state.semantic.query.trim().is_empty() {
+        chips.push(SearchChipData {
+            label: "Search".to_owned(),
+            value: state.semantic.query.clone(),
+            clear: "search".to_owned(),
+            removable: true,
+        });
+    }
+    let (start, end) = resolved_search_bounds(state);
+    if !start.is_empty() && !end.is_empty() {
+        chips.push(SearchChipData {
+            label: "Time".to_owned(),
+            value: format!(
+                "{} – {}",
+                super::display_clock(&start, state.local_time),
+                super::display_clock(&end, state.local_time)
+            ),
+            clear: "range".to_owned(),
+            removable: true,
+        });
+    }
+    chips
+}
+
+fn clear_search_filters() {
+    clear_search_query();
+    restore_retained_range();
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    next.search_sources.clear();
+    ui.set(next);
+}
+
+fn clear_search_chip(clear: &str) {
+    match clear {
+        "search" => clear_search_query(),
+        "range" => restore_retained_range(),
+        source if source.starts_with("source:") => {
+            toggle_search_source(source.trim_start_matches("source:"));
+        }
+        _ => {}
+    }
+}
+
+fn clear_search_query() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    next.semantic.query.clear();
+    next.semantic.hits.clear();
+    next.semantic.incomplete_indexing = false;
+    next.semantic.selected = usize::MAX;
+    next.semantic.result_page = 0;
+    next.semantic.decisions.clear();
+    next.semantic.decision_alert.clear();
+    next.semantic.search_loading = false;
+    next.semantic.search_fault.clear();
+    next.semantic.expected = None;
+    ui.set(next);
+    session::write_control("video-semantic-query", "");
+}
+
+fn restore_retained_range() {
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    let (start, end) = retained_or_playback(&next);
+    next.search_range_start.clear();
+    next.search_range_end.clear();
+    next.search_draft_start.clear();
+    next.search_draft_end.clear();
+    next.search_range_error.clear();
+    let local = next.local_time;
+    ui.set(next);
+    session::write_control(
+        "video-search-range-start",
+        &super::display_clock(&start, local),
+    );
+    session::write_control("video-search-range-end", &super::display_clock(&end, local));
+}
+
+fn search_range_enter(event: KeyboardEvent) {
+    if event.key() == Key::Enter {
+        event.prevent_default();
+        commit_semantic_query();
+    }
+}
+
+fn edit_search_filter(start: bool) {
+    let value = session::control_value(if start {
+        "video-search-range-start"
+    } else {
+        "video-search-range-end"
+    });
+    let Some(mut ui) = bound() else {
+        return;
+    };
+    let mut next = ui.peek().clone();
+    if start {
+        next.search_draft_start = value;
+    } else {
+        next.search_draft_end = value;
+    }
+    ui.set(next);
+    let _ = commit_search_filter();
+}
+
+fn commit_search_filter() -> Option<(String, String)> {
+    let mut ui = bound()?;
+    let state = ui.peek().clone();
+    let start_raw = session::control_value("video-search-range-start");
+    let end_raw = session::control_value("video-search-range-end");
+    let start_raw = if start_raw.trim().is_empty() {
+        shown_search_field(&state, true)
+    } else {
+        start_raw
+    };
+    let end_raw = if end_raw.trim().is_empty() {
+        shown_search_field(&state, false)
+    } else {
+        end_raw
+    };
+    if start_raw.trim().is_empty() || end_raw.trim().is_empty() {
+        let mut next = ui.peek().clone();
+        next.search_range_error = "Enter a retained time range first.".to_owned();
+        ui.set(next);
+        return None;
+    }
+    let start = super::field_to_utc(&start_raw, state.local_time);
+    let end = super::field_to_utc(&end_raw, state.local_time);
+    match videos::check_range(&start, &end) {
+        Ok(range) => {
+            let mut next = ui.peek().clone();
+            next.search_range_start = range.start.clone();
+            next.search_range_end = range.end.clone();
+            next.search_range_error.clear();
+            ui.set(next);
+            Some((range.start, range.end))
+        }
+        Err(fault) => {
+            let mut next = ui.peek().clone();
+            next.search_range_error = super::timeline::range_fault_message(fault, next.local_time);
+            ui.set(next);
+            None
+        }
+    }
+}
+
+fn shown_search_field(state: &VideoUi, start: bool) -> String {
+    let draft = if start {
+        state.search_draft_start.as_str()
+    } else {
+        state.search_draft_end.as_str()
+    };
+    if !draft.is_empty() {
+        return draft.to_owned();
+    }
+    let stored = if start {
+        state.search_range_start.as_str()
+    } else {
+        state.search_range_end.as_str()
+    };
+    if !stored.is_empty() {
+        return super::display_clock(stored, state.local_time);
+    }
+    let (fallback_start, fallback_end) = retained_or_playback(state);
+    super::display_clock(
+        if start {
+            &fallback_start
+        } else {
+            &fallback_end
+        },
+        state.local_time,
+    )
+}
+
+fn resolved_search_bounds(state: &VideoUi) -> (String, String) {
+    if !state.search_range_start.is_empty() && !state.search_range_end.is_empty() {
+        return (
+            state.search_range_start.clone(),
+            state.search_range_end.clone(),
+        );
+    }
+    retained_or_playback(state)
+}
+
+fn retained_or_playback(state: &VideoUi) -> (String, String) {
+    if let Some(bounds) = state
+        .reader
+        .timeline
+        .as_ref()
+        .and_then(retained_search_window)
+    {
+        return bounds;
+    }
+    (state.range_start.clone(), state.range_end.clone())
 }
 
 fn launch_capabilities(generation: u32, source_id: String) {
@@ -524,7 +1084,11 @@ fn launch_thumb(index: usize) {
     if hit.media_blocked() {
         return;
     }
-    let source_id = state.reader.source_id.clone();
+    let source_id = if hit.source_id.is_empty() {
+        state.reader.source_id.clone()
+    } else {
+        hit.source_id.clone()
+    };
     let captured_at = hit.captured_at.clone();
     let secret = session::native_secret();
     wasm_bindgen_futures::spawn_local(async move {
@@ -594,27 +1158,60 @@ async fn run_search(job: SearchJob, secret: Option<String>) -> SearchOutcome {
             message: "Semantic provenance is not ready.".to_owned(),
         };
     };
-    let command = semantic::search_command(
-        &ticket.source_id,
-        &ticket.start,
-        &ticket.end,
-        &ticket.text,
-        &provenance,
-    );
-    match post_with_abort(command, secret.clone(), ticket.generation).await {
-        Ok(reply) => match semantic::interpret_search(&reply, secret.as_deref()) {
-            Ok((hits, incomplete)) => SearchOutcome::Ready {
-                ticket,
-                hits,
-                incomplete,
+    let mut hits = Vec::new();
+    let mut incomplete = false;
+    let mut failure = None;
+    for source_id in &ticket.source_ids {
+        let command = semantic::search_command(
+            source_id,
+            &ticket.start,
+            &ticket.end,
+            &ticket.text,
+            &provenance,
+        );
+        match post_with_abort(command, secret.clone(), ticket.generation).await {
+            Ok(reply) => match semantic::interpret_search(&reply, secret.as_deref()) {
+                Ok((mut found, source_incomplete)) => {
+                    let label = source_label(source_id);
+                    for hit in &mut found {
+                        hit.source_id = source_id.clone();
+                        hit.source_label = label.clone();
+                    }
+                    hits.append(&mut found);
+                    incomplete |= source_incomplete;
+                }
+                Err(fault) => failure = Some(fault_text(&fault)),
             },
-            Err(fault) => SearchOutcome::Failed {
-                ticket,
-                message: fault_text(&fault),
-            },
-        },
-        Err(message) => SearchOutcome::Failed { ticket, message },
+            Err(message) => failure = Some(message),
+        }
     }
+    if hits.is_empty()
+        && let Some(message) = failure
+    {
+        return SearchOutcome::Failed { ticket, message };
+    }
+    hits.sort_by(|left, right| hit_score(right).total_cmp(&hit_score(left)));
+    SearchOutcome::Ready {
+        ticket,
+        hits,
+        incomplete,
+    }
+}
+
+fn hit_score(hit: &semantic::SearchHit) -> f64 {
+    hit.retrieval_score.trim().parse().unwrap_or(0.0)
+}
+
+fn source_label(source_id: &str) -> String {
+    bound()
+        .and_then(|ui| {
+            ui.peek()
+                .sources
+                .iter()
+                .find(|item| item.id == source_id)
+                .map(super::source_option)
+        })
+        .unwrap_or_else(|| source_id.to_owned())
 }
 
 async fn run_capabilities(job: CapabilityJob, secret: Option<String>) -> CapabilityOutcome {
@@ -705,8 +1302,12 @@ async fn run_history(job: HistoryJob, secret: Option<String>) -> HistoryOutcome 
             };
         }
     };
-    let command =
-        semantic::history_command(&state.reader.source_id, &start, &end, &hit.command_frame);
+    let source_id = if hit.source_id.is_empty() {
+        state.reader.source_id.clone()
+    } else {
+        hit.source_id.clone()
+    };
+    let command = semantic::history_command(&source_id, &start, &end, &hit.command_frame);
     match post_with_abort(command, secret.clone(), generation).await {
         Ok(reply) => match semantic::interpret_history(&reply, secret.as_deref()) {
             Ok(rows) => HistoryOutcome::Ready {

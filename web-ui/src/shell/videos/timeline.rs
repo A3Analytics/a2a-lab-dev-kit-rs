@@ -482,9 +482,13 @@ pub(super) fn timeline_click(event: Event<MouseData>) {
 }
 
 pub(super) fn commit_typed_range() {
+    commit_typed_range_for_ids("video-range-start", "video-range-end");
+}
+
+pub(super) fn commit_typed_range_for_ids(start_id: &str, end_id: &str) {
     let local = bound().is_some_and(|ui| ui.peek().local_time);
-    let start = field_to_utc(&session::control_value("video-range-start"), local);
-    let end = field_to_utc(&session::control_value("video-range-end"), local);
+    let start = field_to_utc(&session::control_value(start_id), local);
+    let end = field_to_utc(&session::control_value(end_id), local);
     commit_typed_bounds(&start, &end);
 }
 

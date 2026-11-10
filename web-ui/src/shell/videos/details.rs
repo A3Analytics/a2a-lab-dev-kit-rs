@@ -1,9 +1,6 @@
 use dioxus::prelude::*;
 
-use super::{
-    VideoUi, apply_typed_range, edit_range, follow_newest, semantic::SemanticFilters,
-    toggle_local_time,
-};
+use super::{VideoUi, apply_typed_range, edit_range, follow_newest, toggle_local_time};
 
 #[component]
 pub(super) fn VideoDetails(
@@ -124,7 +121,6 @@ pub(super) fn VideoDetails(
                     }
                 }
             }
-            SemanticFilters { state: state.clone() }
         }
     }
 }

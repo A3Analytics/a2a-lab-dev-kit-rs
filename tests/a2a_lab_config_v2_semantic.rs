@@ -43,6 +43,7 @@ fn fixture_v2_parses_independent_roles() {
         Some("claude-chat-only")
     );
     let semantic = config.semantic_indexing.as_ref().unwrap();
+    assert_eq!(semantic.limits.roi.max_edge_pixels, 1568);
     assert_eq!(
         semantic.description.backend(),
         DEFAULT_SEMANTIC_DESCRIPTION_BACKEND
@@ -83,15 +84,15 @@ fn fixture_v2_resolves_relative_vector_path_like_doc5() {
 fn rejects_description_fallback_and_judge_settings() {
     let documents = [
         (
-            r#"{"schema_version":2,"semantic_indexing":{"fallback":true,"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}},"limits":LIMITS}}"#,
+            r#"{"schema_version":2,"semantic_indexing":{"fallback":true,"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}},"limits":LIMITS}}"#,
             "semantic_indexing.fallback",
         ),
         (
-            r#"{"schema_version":2,"semantic_indexing":{"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}},"decisions":{"judge":"gpt"},"limits":LIMITS}}"#,
+            r#"{"schema_version":2,"semantic_indexing":{"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}},"decisions":{"judge":"gpt"},"limits":LIMITS}}"#,
             "semantic_indexing.decisions.judge",
         ),
         (
-            r#"{"schema_version":2,"semantic_indexing":{"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}},"decisions":{"use_description":true},"limits":LIMITS}}"#,
+            r#"{"schema_version":2,"semantic_indexing":{"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}},"decisions":{"use_description":true},"limits":LIMITS}}"#,
             "semantic_indexing.decisions.use_description",
         ),
     ];
@@ -109,12 +110,12 @@ fn rejects_description_fallback_and_judge_settings() {
 fn rejects_non_jev_decision_provider_and_wrong_revision() {
     let limits = r#","limits":{"worker":{"max_batch_items":1,"max_concurrency":1,"max_queue_backlog":1,"max_retry_attempts":1,"job_deadline":"30s","retry_backoff":"5s"},"search":{"top_k":1,"candidate_limit":1,"max_neighbor_frames":1,"query_window":"1h"},"roi":{"min_edge_pixels":280,"max_edge_pixels":1568,"max_rois_per_frame":1},"storage":{"vector_index_path":"./x","max_disk_bytes":1024},"decisions":{"max_batch_items":1,"max_concurrency":1,"job_deadline":"45s","coverage_policy":"on_demand"}}"#;
     let openai = format!(
-        r#"{{"schema_version":2,"semantic_indexing":{{"decisions":{{"provider":"openai","model":"{DEFAULT_JEV_MODEL_REVISION}"}},"embeddings":{{"provider":"p","model":"m","space":{{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}}}}{limits}}}}}"#
+        r#"{{"schema_version":2,"semantic_indexing":{{"decisions":{{"provider":"openai","model":"{DEFAULT_JEV_MODEL_REVISION}"}},"embeddings":{{"provider":"p","model":"m","space":{{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}}}}{limits}}}}}"#
     );
     assert!(A2aLabConfig::parse(&openai).is_err());
 
     let bad_revision = format!(
-        r#"{{"schema_version":2,"semantic_indexing":{{"decisions":{{"provider":"jev","model":"jev-9.9.9"}},"embeddings":{{"provider":"p","model":"m","space":{{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}}}}{limits}}}}}"#
+        r#"{{"schema_version":2,"semantic_indexing":{{"decisions":{{"provider":"jev","model":"jev-9.9.9"}},"embeddings":{{"provider":"p","model":"m","space":{{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}}}}{limits}}}}}"#
     );
     let error = A2aLabConfig::parse(&bad_revision).unwrap_err();
     assert!(
@@ -129,7 +130,7 @@ fn rejects_non_jev_decision_provider_and_wrong_revision() {
 fn openai_description_default_does_not_change_v1_schema_constant() {
     let document = r#"{"schema_version":2,"semantic_indexing":{
             "description":{"provider":"openai"},
-            "embeddings":{"provider":"e","model":"m","space":{"dimensions":8,"normalization":"l2_unit","metric":"cosine","generation":1}},
+            "embeddings":{"provider":"e","model":"m","space":{"dimensions":8,"normalization":"l2_unit","metric":"cosine"}},
             "limits":{
                 "worker":{"max_batch_items":1,"max_concurrency":1,"max_queue_backlog":1,"max_retry_attempts":1,"job_deadline":"30s","retry_backoff":"5s"},
                 "search":{"top_k":1,"candidate_limit":1,"max_neighbor_frames":1,"query_window":"1h"},
@@ -150,7 +151,7 @@ fn openai_description_default_does_not_change_v1_schema_constant() {
 fn accepts_digit_containing_credential_env_references() {
     let document = r#"{"schema_version":2,"semantic_indexing":{
         "description":{"credentials":{"env":"A2ALAB_SEMANTIC_DESCRIPTION_AWS_PROFILE"}},
-        "embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1},
+        "embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine"},
             "credentials":{"env":"A2ALAB_EMBEDDING_API_KEY_V2"}},
         "decisions":{"credentials":{"env":"A2ALAB_JEV_API_KEY"}},
         "limits":{"worker":{"max_batch_items":1,"max_concurrency":1,"max_queue_backlog":1,"max_retry_attempts":1,"job_deadline":"30s","retry_backoff":"5s"},"search":{"top_k":1,"candidate_limit":1,"max_neighbor_frames":1,"query_window":"1h"},"roi":{"min_edge_pixels":280,"max_edge_pixels":1568,"max_rois_per_frame":1},"storage":{"vector_index_path":"./x","max_disk_bytes":1024},"decisions":{"max_batch_items":1,"max_concurrency":1,"job_deadline":"45s","coverage_policy":"on_demand"}}
@@ -166,7 +167,7 @@ fn accepts_digit_containing_credential_env_references() {
 #[test]
 fn credential_reference_is_separate_from_chat_and_redacted_on_failure() {
     let document = r#"{"schema_version":2,"chat":{"provider":"openai"},"semantic_indexing":{
-        "description":{"credentials":{"env":"not-valid"}},"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}},
+        "description":{"credentials":{"env":"not-valid"}},"embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}},
         "limits":{"worker":{"max_batch_items":1,"max_concurrency":1,"max_queue_backlog":1,"max_retry_attempts":1,"job_deadline":"30s","retry_backoff":"5s"},"search":{"top_k":1,"candidate_limit":1,"max_neighbor_frames":1,"query_window":"1h"},"roi":{"min_edge_pixels":280,"max_edge_pixels":1568,"max_rois_per_frame":1},"storage":{"vector_index_path":"./x","max_disk_bytes":1024},"decisions":{"max_batch_items":1,"max_concurrency":1,"job_deadline":"45s","coverage_policy":"on_demand"}}
     }}"#;
     let error = A2aLabConfig::parse(document).unwrap_err();
@@ -178,7 +179,7 @@ fn credential_reference_is_separate_from_chat_and_redacted_on_failure() {
 #[test]
 fn rejects_duplicate_semantic_limits_key() {
     let document = r#"{"schema_version":2,"semantic_indexing":{
-        "embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine","generation":1}},
+        "embeddings":{"provider":"p","model":"m","space":{"dimensions":4,"normalization":"l2_unit","metric":"cosine"}},
         "limits":{"worker":{"max_batch_items":1,"max_concurrency":1,"max_queue_backlog":1,"max_retry_attempts":1,"job_deadline":"30s","retry_backoff":"5s"},
         "search":{"top_k":1,"candidate_limit":1,"max_neighbor_frames":1,"query_window":"1h"},
         "roi":{"min_edge_pixels":280,"max_edge_pixels":1568,"max_rois_per_frame":1},

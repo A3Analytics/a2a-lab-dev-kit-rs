@@ -188,7 +188,7 @@ impl SemanticEmbeddingsConfig {
             self.space.dimensions,
             self.space.normalization,
             self.space.metric,
-            ProvenanceGeneration::new(self.space.generation)?,
+            ProvenanceGeneration::new(1)?,
         )
     }
 }
@@ -199,7 +199,6 @@ pub struct EmbeddingSpaceConfig {
     pub dimensions: u32,
     pub normalization: VectorNormalization,
     pub metric: EmbeddingMetric,
-    pub generation: u64,
 }
 
 /// Jev decision evaluator file settings.
@@ -291,6 +290,16 @@ pub struct SemanticRoiLimits {
     pub min_edge_pixels: u32,
     pub max_edge_pixels: u32,
     pub max_rois_per_frame: u32,
+}
+
+impl Default for SemanticRoiLimits {
+    fn default() -> Self {
+        Self {
+            min_edge_pixels: 280,
+            max_edge_pixels: 1568,
+            max_rois_per_frame: 8,
+        }
+    }
 }
 
 /// On-disk vector index budgets.
@@ -655,7 +664,7 @@ fn parse_embedding_space(value: Option<&Value>) -> Result<EmbeddingSpaceConfig, 
     reject_unknown_keys(
         map,
         "semantic_indexing.embeddings.space",
-        &["dimensions", "normalization", "metric", "generation"],
+        &["dimensions", "normalization", "metric"],
     )?;
     let dimensions = match map.get("dimensions") {
         Some(value) => parse_u32("semantic_indexing.embeddings.space.dimensions", value)?,
@@ -668,20 +677,10 @@ fn parse_embedding_space(value: Option<&Value>) -> Result<EmbeddingSpaceConfig, 
     };
     let normalization = parse_normalization(map.get("normalization"))?;
     let metric = parse_metric(map.get("metric"))?;
-    let generation = match map.get("generation") {
-        Some(value) => positive_u64("semantic_indexing.embeddings.space.generation", value)?,
-        None => {
-            return Err(A2aLabError::invalid(
-                "semantic_indexing.embeddings.space.generation",
-                "required field is missing",
-            ));
-        }
-    };
     Ok(EmbeddingSpaceConfig {
         dimensions,
         normalization,
         metric,
-        generation,
     })
 }
 
@@ -866,7 +865,10 @@ fn parse_limits(value: Option<&Value>) -> Result<SemanticIndexingLimits, A2aLabE
     Ok(SemanticIndexingLimits {
         worker: parse_worker_limits(map.get("worker"))?,
         search: parse_search_limits(map.get("search"))?,
-        roi: parse_roi_limits(map.get("roi"))?,
+        roi: map.get("roi").map_or_else(
+            || Ok(SemanticRoiLimits::default()),
+            |value| parse_roi_limits(Some(value)),
+        )?,
         storage: parse_storage_limits(map.get("storage"))?,
         decisions: parse_decision_limits(map.get("decisions"))?,
     })

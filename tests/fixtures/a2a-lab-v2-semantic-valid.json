@@ -44,8 +44,7 @@
       "space": {
         "dimensions": 384,
         "normalization": "l2_unit",
-        "metric": "cosine",
-        "generation": 1
+        "metric": "cosine"
       },
       "credentials": {
         "env": "A2ALAB_SEMANTIC_EMBEDDING_API_KEY"
@@ -72,11 +71,6 @@
         "candidate_limit": 1000,
         "max_neighbor_frames": 5,
         "query_window": "2h"
-      },
-      "roi": {
-        "min_edge_pixels": 280,
-        "max_edge_pixels": 1568,
-        "max_rois_per_frame": 8
       },
       "storage": {
         "vector_index_path": "./state/semantic-index",

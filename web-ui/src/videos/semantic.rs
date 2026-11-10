@@ -10,6 +10,7 @@ use crate::workbench::report;
 
 pub const SEARCH_LIMIT: u32 = 10;
 pub const HISTORY_LIMIT: u32 = 20;
+pub const SEARCH_PAGE_SIZE: usize = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiPhase {
@@ -64,6 +65,8 @@ pub struct SearchHit {
     pub description_provider: String,
     pub description_model: String,
     pub retrieval_score: String,
+    pub source_id: String,
+    pub source_label: String,
     pub index_state: String,
     pub media_state: String,
     pub media_reason: String,
@@ -99,7 +102,7 @@ pub struct DecisionRow {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchTicket {
     pub generation: u32,
-    pub source_id: String,
+    pub source_ids: Vec<String>,
     pub text: String,
     pub start: String,
     pub end: String,
@@ -116,6 +119,7 @@ pub struct Hub {
     pub hits: Vec<SearchHit>,
     pub incomplete_indexing: bool,
     pub selected: usize,
+    pub result_page: usize,
     pub decisions: Vec<DecisionRow>,
     pub decision_phase: ApiPhase,
     pub decision_alert: String,
@@ -136,6 +140,7 @@ impl Hub {
             hits: Vec::new(),
             incomplete_indexing: false,
             selected: usize::MAX,
+            result_page: 0,
             decisions: Vec::new(),
             decision_phase: ApiPhase::Unknown,
             decision_alert: String::new(),
@@ -166,6 +171,7 @@ impl Hub {
         self.hits.clear();
         self.incomplete_indexing = false;
         self.selected = usize::MAX;
+        self.result_page = 0;
         self.decisions.clear();
         self.decision_phase = ApiPhase::Unknown;
         self.decision_alert.clear();
@@ -177,18 +183,21 @@ impl Hub {
 
     pub fn begin_search(
         &mut self,
-        source_id: &str,
+        source_ids: &[String],
         text: &str,
         start: &str,
         end: &str,
     ) -> Option<SearchTicket> {
         let text = text.trim();
-        if !self.semantic_enabled() || source_id.is_empty() || text.is_empty() {
+        if !self.semantic_enabled() || source_ids.is_empty() || text.is_empty() {
             return None;
         }
+        let mut source_ids = source_ids.to_vec();
+        source_ids.sort();
+        source_ids.dedup();
         let ticket = SearchTicket {
             generation: self.generation,
-            source_id: source_id.to_owned(),
+            source_ids,
             text: text.to_owned(),
             start: start.to_owned(),
             end: end.to_owned(),
@@ -223,6 +232,7 @@ impl Hub {
         self.hits = hits;
         self.incomplete_indexing = incomplete;
         self.selected = if self.hits.is_empty() { usize::MAX } else { 0 };
+        self.result_page = 0;
         self.decisions.clear();
         self.decision_phase = ApiPhase::Unknown;
         true
@@ -503,6 +513,8 @@ fn parse_hit(value: &Value, secret: Option<&str>) -> Result<SearchHit, Fault> {
         description_provider: sanitize_operator_text(&required(desc_prov, "provider")?),
         description_model: sanitize_operator_text(&required(desc_prov, "resolved_model")?),
         retrieval_score: codec::redact(&score, secret),
+        source_id: String::new(),
+        source_label: String::new(),
         index_state: sanitize_state(&index_state),
         media_state: sanitize_state(&media_state),
         media_reason,
