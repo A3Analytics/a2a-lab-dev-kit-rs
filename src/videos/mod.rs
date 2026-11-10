@@ -14,13 +14,16 @@ mod codec;
 mod color_convert;
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 mod color_pipeline;
+mod digest;
 mod dvr_store;
 mod epoch_hls;
+mod frame_decision;
 mod frame_select;
 #[cfg(feature = "openh264")]
 mod h264_encode;
 mod h264_sample;
 pub(crate) mod http;
+mod index_provenance;
 #[cfg(feature = "yuv")]
 mod jpeg_derivative;
 mod local_media;
@@ -28,10 +31,14 @@ mod media_asset;
 #[cfg(feature = "yuv")]
 mod mjpeg_decode;
 mod model;
+mod model_space;
 #[cfg(feature = "nokhwa")]
 mod nokhwa_device;
 mod packager;
 mod provider;
+mod saved_frame;
+mod semantic_indexing;
+mod semantic_search;
 mod timeline;
 
 pub use capture::{
@@ -54,6 +61,7 @@ pub use color_convert::{
 };
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 pub use color_pipeline::{ColorEncodeCounters, ColorEncodePipeline, ColorEncodedFrame};
+pub use digest::Sha256Digest;
 pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPictureProperties, DvrRetentionBounds,
@@ -63,6 +71,35 @@ pub use epoch_hls::{
     EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind, FiniteH264Clip,
     export_finite_h264_epochs, package_h264_epochs,
 };
+pub use frame_decision::{
+    AppendFrameDecisionRequest, AppendFrameDecisionResult, DEFAULT_FRAME_DECISION_HISTORY_ROWS,
+    DEFAULT_JEV_MODEL_REVISION, DecisionEvaluationCoverage, DecisionEvidenceAvailability,
+    DecisionEvidenceItem, DecisionEvidenceKind, DecisionOutcome, DecisionSubject,
+    DecisionThresholdPolicy, DecisionUnknownReason, FakeFrameDecisionEvaluator,
+    FakeFrameDecisionLedgerProvider, FakeJevBehavior, ForbiddenDecisionInput, ForeignObjectSubject,
+    FrameDecisionAppendError, FrameDecisionCapabilities, FrameDecisionClientRole,
+    FrameDecisionEvaluationFailure, FrameDecisionEvaluationOwnership,
+    FrameDecisionEvaluationRequest, FrameDecisionEvaluationRouter, FrameDecisionEvaluator,
+    FrameDecisionEvaluatorCapabilities, FrameDecisionEvaluatorLimits,
+    FrameDecisionEvaluatorProviderConfig, FrameDecisionHistoryEntry, FrameDecisionHistoryResult,
+    FrameDecisionLedger, FrameDecisionLedgerProvider, FrameDecisionOperation,
+    FrameDecisionReadLimits, FrameDecisionReadScope, FrameDecisionRecord,
+    FrameDecisionRoutingAudit, FrameDecisionSchemaRefs, GetFrameDecisionCapabilitiesRequest,
+    JEV_EVALUATOR_PROVIDER_ID, JEV_MAX_EDGE_PIXELS, JEV_MAX_IMAGE_BYTES, JEV_MAX_REQUEST_BYTES,
+    JEV_MIN_EDGE_PIXELS, JEV_PRODUCER_ID, JevEvaluationProvenance, JevProducerIdentity,
+    JevStructuredOutput, KeyedFrameDecisionEvaluation, LabPredicate, LabProbabilityVector,
+    MAX_FRAME_DECISION_HISTORY_ROWS, OperatorDecisionCriteria, OperatorReferenceImage,
+    PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED, PREDICATE_PLATE_MISALIGNED,
+    PipetteChannelSubject, PlateAlignmentReference, PlateSlotSubject,
+    ReadFrameDecisionHistoryRequest, RegisteredFrameDecisionEvaluator,
+    RejectedDecisionEvaluatorBackend, RejectedDecisionProvenance,
+    TckMalformedFrameDecisionRequests, decision_history_fingerprint, default_pinned_jev_revision,
+    derive_decision_id, frame_decision_unavailable, group_history_by_predicate,
+    guard_against_description_evidence, interpret_structured_outcome, map_append_error,
+    parse_decision_evaluator_provider, reject_decision_evaluator_backend,
+    reject_decision_provenance, reject_forbidden_decision_input, unsupported_predicate_result,
+    validate_evaluation_batch,
+};
 pub use frame_select::{FrameRejection, FreshFrameGate, OUTPUT_5FPS_PERIOD_NS, RejectedFrame};
 #[cfg(feature = "openh264")]
 pub use h264_encode::{
@@ -70,6 +107,10 @@ pub use h264_encode::{
 };
 pub use h264_sample::{H264PictureSample, frame_h264_picture};
 pub use http::{apply_media_security_headers, is_gated_media_path, router, router_for_lab};
+pub use index_provenance::{
+    FrameDescriptionProvenance, FrameEmbeddingVector, FrameRoiTransform,
+    FrameVectorIndexAttachment, TextEmbeddingProvenance,
+};
 #[cfg(feature = "yuv")]
 pub use jpeg_derivative::{
     JpegDerivative, JpegDerivativeCache, JpegDerivativeLimits, MAX_JPEG_QUALITY, MIN_JPEG_QUALITY,
@@ -93,6 +134,9 @@ pub use model::{
     VideoPlayback8xMetadata, VideoSource, decode_mjpeg_multipart, encode_mjpeg_end,
     encode_mjpeg_multipart, encode_mjpeg_part, mjpeg_content_type, video_clip_path,
 };
+pub use model_space::{
+    EmbeddingMetric, ModelSpaceIdentity, ProvenanceGeneration, VectorNormalization,
+};
 #[cfg(feature = "nokhwa")]
 pub use nokhwa_device::{NokhwaCamera, profiles_from_nokhwa};
 pub use packager::{
@@ -102,6 +146,29 @@ pub use packager::{
     TRICK_8X_UNAVAILABLE_INSUFFICIENT_KEYFRAMES, TRICK_8X_UNAVAILABLE_NO_REDUCTION,
 };
 pub use provider::VideoProvider;
+pub use saved_frame::{SavedFrameRef, derive_frame_id};
+pub use semantic_indexing::{
+    DEFAULT_BEDROCK_DESCRIPTION_MODEL, DEFAULT_OPENAI_DESCRIPTION_MODEL, FakeDescriptionBehavior,
+    FakeEmbeddingBehavior, FakeFrameDescriptionProvider, FakeTextEmbeddingProvider,
+    FrameDescriptionBackend, FrameDescriptionKey, FrameDescriptionLimits, FrameDescriptionProvider,
+    FrameDescriptionProviderConfig, FrameDescriptionRequest, KeyedFrameDescription,
+    KeyedTextEmbedding, SemanticIndexingFailure, TextEmbeddingKey, TextEmbeddingLimits,
+    TextEmbeddingProvider, TextEmbeddingProviderConfig, TextEmbeddingRequest,
+    validate_description_batch, validate_embedding_batch,
+};
+pub use semantic_search::{
+    DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_TOP_K, DecisionHistoryPolicy,
+    DecisionSearchFilter, FakeSemanticHit, FakeSemanticVideoSearchProvider,
+    GetSemanticIndexingCoverageRequest, GetSemanticSearchCapabilitiesRequest,
+    MAX_SEMANTIC_CANDIDATES, MAX_SEMANTIC_NEIGHBOR_FRAMES, MAX_SEMANTIC_TOP_K,
+    SearchSemanticFramesRequest, SemanticFrameHit, SemanticFrameIndexState,
+    SemanticFrameMediaAvailability, SemanticFramePlaybackNeighbors, SemanticFrameSearchResult,
+    SemanticIndexingCoverage, SemanticIndexingFreshness, SemanticIndexingStateCounts,
+    SemanticProvenanceSelector, SemanticRetrievalScore, SemanticSearchCapabilities,
+    SemanticSearchLimits, SemanticSearchOperation, SemanticSearchQuery, SemanticSearchSchemaRefs,
+    SemanticSearchScope, SemanticVideoSearchProvider, TckMalformedSemanticSearchRequests,
+    fake_semantic_hit, semantic_search_unavailable,
+};
 pub use timeline::{
     FollowVideoRequest, GetVideoTimelineRequest, VIDEO_LIVE_PATH_PREFIX, VideoFollow,
     VideoLiveStream, VideoTimeline, video_live_path,

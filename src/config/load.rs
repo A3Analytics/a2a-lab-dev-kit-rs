@@ -6,13 +6,15 @@ use crate::error::A2aLabError;
 
 use super::A2aLabConfig;
 
-/// Validated document plus the file-relative DVR directory, when one was set.
+/// Validated document plus file-relative storage paths, when set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedLabConfig {
-    /// Parsed v1 document. Omitted fields stay omitted.
+    /// Parsed document. Omitted fields stay omitted.
     pub config: A2aLabConfig,
     /// `videos.dvr.storage_path` resolved from the selected file's directory.
     pub dvr_storage_path: Option<PathBuf>,
+    /// `semantic_indexing.limits.storage.vector_index_path` resolved from the file directory.
+    pub semantic_vector_index_path: Option<PathBuf>,
 }
 
 impl LoadedLabConfig {
@@ -32,15 +34,19 @@ impl LoadedLabConfig {
             .as_ref()
             .and_then(|videos| videos.dvr.as_ref())
             .and_then(|dvr| dvr.storage_path.as_deref())
-            .map(|storage| resolve_storage_path(path, storage));
+            .map(|storage| resolve_relative_path(path, storage));
+        let semantic_vector_index_path = config.semantic_indexing.as_ref().map(|semantic| {
+            resolve_relative_path(path, &semantic.limits.storage.vector_index_path)
+        });
         Ok(Self {
             config,
             dvr_storage_path,
+            semantic_vector_index_path,
         })
     }
 }
 
-fn resolve_storage_path(config_file: &Path, storage: &str) -> PathBuf {
+fn resolve_relative_path(config_file: &Path, storage: &str) -> PathBuf {
     let storage = Path::new(storage);
     if storage.is_absolute() {
         return storage.to_path_buf();

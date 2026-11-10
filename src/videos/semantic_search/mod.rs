@@ -1,0 +1,35 @@
+//! Bounded semantic frame search and indexing coverage contracts.
+
+mod api;
+mod decision_filter;
+mod fakes;
+mod limits;
+mod provenance;
+mod provider;
+mod query;
+mod request;
+mod result;
+
+pub use api::{
+    GetSemanticSearchCapabilitiesRequest, SemanticSearchCapabilities, SemanticSearchOperation,
+    SemanticSearchSchemaRefs,
+};
+
+pub use decision_filter::{DecisionHistoryPolicy, DecisionSearchFilter};
+pub use fakes::{FakeSemanticHit, FakeSemanticVideoSearchProvider, fake_semantic_hit};
+pub use limits::{
+    DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_TOP_K, MAX_SEMANTIC_CANDIDATES,
+    MAX_SEMANTIC_NEIGHBOR_FRAMES, MAX_SEMANTIC_TOP_K, SemanticSearchLimits,
+};
+pub use provenance::SemanticProvenanceSelector;
+pub use provider::{SemanticVideoSearchProvider, semantic_search_unavailable};
+pub use query::{SemanticSearchQuery, SemanticSearchScope};
+pub use request::{
+    GetSemanticIndexingCoverageRequest, SearchSemanticFramesRequest,
+    TckMalformedSemanticSearchRequests,
+};
+pub use result::{
+    SemanticFrameHit, SemanticFrameIndexState, SemanticFrameMediaAvailability,
+    SemanticFramePlaybackNeighbors, SemanticFrameSearchResult, SemanticIndexingCoverage,
+    SemanticIndexingFreshness, SemanticIndexingStateCounts, SemanticRetrievalScore,
+};

@@ -184,6 +184,7 @@ impl McpLab {
         Ok(result)
     }
 
+    #[allow(clippy::cognitive_complexity)]
     async fn execute_command(&self, command: A2aLabCommand) -> Result<A2aLabOutcome, A2aLabError> {
         let result = match command {
             A2aLabCommand::ListLogSources(request) => {
@@ -227,8 +228,64 @@ impl McpLab {
             | A2aLabCommand::GetVideoClip(_)
             | A2aLabCommand::GetVideoTimeline(_)
             | A2aLabCommand::FollowVideo(_) => self.execute_video(command).await?,
+            A2aLabCommand::GetFrameDecisionCapabilities(_)
+            | A2aLabCommand::AppendFrameDecision(_)
+            | A2aLabCommand::ReadFrameDecisionHistory(_) => {
+                self.execute_frame_decisions(command).await?
+            }
+            A2aLabCommand::GetSemanticSearchCapabilities(_)
+            | A2aLabCommand::SearchSemanticFrames(_)
+            | A2aLabCommand::GetSemanticIndexingCoverage(_) => {
+                self.execute_semantic_search(command).await?
+            }
         };
         Ok(outcome(result))
+    }
+
+    async fn execute_frame_decisions(
+        &self,
+        command: A2aLabCommand,
+    ) -> Result<A2aLabResult, A2aLabError> {
+        match command {
+            A2aLabCommand::GetFrameDecisionCapabilities(request) => {
+                Ok(A2aLabResult::GetFrameDecisionCapabilities(
+                    self.call("get_frame_decision_capabilities", request)
+                        .await?,
+                ))
+            }
+            A2aLabCommand::AppendFrameDecision(request) => Ok(A2aLabResult::AppendFrameDecision(
+                self.call("append_frame_decision", request).await?,
+            )),
+            A2aLabCommand::ReadFrameDecisionHistory(request) => {
+                Ok(A2aLabResult::ReadFrameDecisionHistory(
+                    self.call("read_frame_decision_history", request).await?,
+                ))
+            }
+            _ => Err(A2aLabError::protocol("unexpected frame decision command")),
+        }
+    }
+
+    async fn execute_semantic_search(
+        &self,
+        command: A2aLabCommand,
+    ) -> Result<A2aLabResult, A2aLabError> {
+        match command {
+            A2aLabCommand::GetSemanticSearchCapabilities(request) => {
+                Ok(A2aLabResult::GetSemanticSearchCapabilities(
+                    self.call("get_semantic_search_capabilities", request)
+                        .await?,
+                ))
+            }
+            A2aLabCommand::SearchSemanticFrames(request) => Ok(A2aLabResult::SearchSemanticFrames(
+                self.call("search_semantic_frames", request).await?,
+            )),
+            A2aLabCommand::GetSemanticIndexingCoverage(request) => {
+                Ok(A2aLabResult::GetSemanticIndexingCoverage(
+                    self.call("get_semantic_indexing_coverage", request).await?,
+                ))
+            }
+            _ => Err(A2aLabError::protocol("unexpected semantic search command")),
+        }
     }
 
     async fn execute_video(&self, command: A2aLabCommand) -> Result<A2aLabResult, A2aLabError> {

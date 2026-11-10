@@ -1,9 +1,13 @@
 use dioxus::prelude::*;
 
-use super::{apply_typed_range, edit_range, follow_newest, toggle_local_time};
+use super::{
+    VideoUi, apply_typed_range, edit_range, follow_newest, semantic::SemanticFilters,
+    toggle_local_time,
+};
 
 #[component]
 pub(super) fn VideoDetails(
+    state: VideoUi,
     range_start: String,
     range_end: String,
     local_time: bool,
@@ -34,6 +38,7 @@ pub(super) fn VideoDetails(
             class: "video-filter-group",
             role: "group",
             aria_label: "Time range",
+            "data-source-id": "{state.reader.source_id}",
             "data-time-zone": if local_time { "local" } else { "utc" },
             button {
                 id: "video-follow-newest",
@@ -119,6 +124,7 @@ pub(super) fn VideoDetails(
                     }
                 }
             }
+            SemanticFilters { state: state.clone() }
         }
     }
 }

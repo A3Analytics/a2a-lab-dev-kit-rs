@@ -496,7 +496,16 @@ fn op_name(op: &Op) -> &'static str {
     }
 }
 
-fn result_name(result: &A2aLabResult) -> &'static str {
+fn semantic_result_name(result: &A2aLabResult) -> Option<&'static str> {
+    match result {
+        A2aLabResult::GetSemanticSearchCapabilities(_) => Some("get_semantic_search_capabilities"),
+        A2aLabResult::SearchSemanticFrames(_) => Some("search_semantic_frames"),
+        A2aLabResult::GetSemanticIndexingCoverage(_) => Some("get_semantic_indexing_coverage"),
+        _ => None,
+    }
+}
+
+fn lab_result_name(result: &A2aLabResult) -> &'static str {
     match result {
         A2aLabResult::ListImageSources(_) => "list_image_sources",
         A2aLabResult::ListImages(_) => "list_images",
@@ -515,7 +524,15 @@ fn result_name(result: &A2aLabResult) -> &'static str {
         A2aLabResult::ListTasks(_) => "list_tasks",
         A2aLabResult::StartTask(_) => "start_task",
         A2aLabResult::GetTaskStatus(_) => "get_task_status",
+        A2aLabResult::GetFrameDecisionCapabilities(_) => "get_frame_decision_capabilities",
+        A2aLabResult::AppendFrameDecision(_) => "append_frame_decision",
+        A2aLabResult::ReadFrameDecisionHistory(_) => "read_frame_decision_history",
+        _ => "unknown",
     }
+}
+
+fn result_name(result: &A2aLabResult) -> &'static str {
+    semantic_result_name(result).unwrap_or_else(|| lab_result_name(result))
 }
 
 fn same(left: &Outcome, right: &Outcome) -> bool {

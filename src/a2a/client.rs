@@ -26,9 +26,14 @@ use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
 };
 use crate::videos::{
-    DEFAULT_MJPEG_BOUNDARY, FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest, VideoClip,
-    VideoClipStream, VideoFollow, VideoSource, VideoTimeline, decode_mjpeg_multipart,
+    AppendFrameDecisionRequest, AppendFrameDecisionResult, DEFAULT_MJPEG_BOUNDARY,
+    FollowVideoRequest, FrameDecisionCapabilities, FrameDecisionHistoryResult,
+    GetFrameDecisionCapabilitiesRequest, GetSemanticIndexingCoverageRequest,
+    GetSemanticSearchCapabilitiesRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest,
+    ReadFrameDecisionHistoryRequest, SearchSemanticFramesRequest, SemanticFrameSearchResult,
+    SemanticIndexingCoverage, SemanticSearchCapabilities, VideoClip, VideoClipStream, VideoFollow,
+    VideoSource, VideoTimeline, decode_mjpeg_multipart,
 };
 
 use super::wire::{self, LAB_MEDIA_TYPE};
@@ -312,6 +317,96 @@ impl A2aClient {
             A2aLabResult::FollowVideo(follow) => Some(follow),
             _ => None,
         })
+        .await
+    }
+
+    /// Discovers authorized Jev append/read capabilities.
+    pub async fn get_frame_decision_capabilities(
+        &self,
+        request: GetFrameDecisionCapabilitiesRequest,
+    ) -> Result<FrameDecisionCapabilities, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetFrameDecisionCapabilities(request),
+            |result| match result {
+                A2aLabResult::GetFrameDecisionCapabilities(capabilities) => Some(capabilities),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Appends one authorized Jev production decision record.
+    pub async fn append_frame_decision(
+        &self,
+        request: AppendFrameDecisionRequest,
+    ) -> Result<AppendFrameDecisionResult, A2aLabError> {
+        self.result(
+            A2aLabCommand::AppendFrameDecision(request),
+            |result| match result {
+                A2aLabResult::AppendFrameDecision(append) => Some(append),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Reads bounded Jev decision history.
+    pub async fn read_frame_decision_history(
+        &self,
+        request: ReadFrameDecisionHistoryRequest,
+    ) -> Result<FrameDecisionHistoryResult, A2aLabError> {
+        self.result(
+            A2aLabCommand::ReadFrameDecisionHistory(request),
+            |result| match result {
+                A2aLabResult::ReadFrameDecisionHistory(history) => Some(history),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Discovers optional semantic search schemas and operations.
+    pub async fn get_semantic_search_capabilities(
+        &self,
+        request: GetSemanticSearchCapabilitiesRequest,
+    ) -> Result<SemanticSearchCapabilities, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetSemanticSearchCapabilities(request),
+            |result| match result {
+                A2aLabResult::GetSemanticSearchCapabilities(capabilities) => Some(capabilities),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Searches saved frames by text or reference frame. JSON never includes media bytes.
+    pub async fn search_semantic_frames(
+        &self,
+        request: SearchSemanticFramesRequest,
+    ) -> Result<SemanticFrameSearchResult, A2aLabError> {
+        self.result(
+            A2aLabCommand::SearchSemanticFrames(request),
+            |result| match result {
+                A2aLabResult::SearchSemanticFrames(search) => Some(search),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    /// Reads semantic indexing coverage for one scope and generation.
+    pub async fn get_semantic_indexing_coverage(
+        &self,
+        request: GetSemanticIndexingCoverageRequest,
+    ) -> Result<SemanticIndexingCoverage, A2aLabError> {
+        self.result(
+            A2aLabCommand::GetSemanticIndexingCoverage(request),
+            |result| match result {
+                A2aLabResult::GetSemanticIndexingCoverage(coverage) => Some(coverage),
+                _ => None,
+            },
+        )
         .await
     }
 

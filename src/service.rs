@@ -1,4 +1,8 @@
 //! Shared execution of lab operations.
+//!
+//! Semantic frame search is an optional [`crate::videos::SemanticVideoSearchProvider`]
+//! capability. [`A2aLabCommand`] and this service wire it in TASK-34; existing video
+//! operations stay available when semantic search is absent.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -28,15 +32,23 @@ use crate::tasks::{
 };
 use crate::time::UtcTimestamp;
 use crate::videos::{
-    FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, ResolvedMediaAsset, VideoClip,
-    VideoClipStream, VideoFollow, VideoLiveStream, VideoProvider, VideoSource, VideoTimeline,
+    AppendFrameDecisionRequest, AppendFrameDecisionResult, FollowVideoRequest,
+    FrameDecisionCapabilities, FrameDecisionHistoryResult, FrameDecisionLedgerProvider,
+    GetFrameDecisionCapabilitiesRequest, GetSemanticIndexingCoverageRequest,
+    GetSemanticSearchCapabilitiesRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest,
+    ReadFrameDecisionHistoryRequest, ResolvedMediaAsset, SearchSemanticFramesRequest,
+    SemanticFrameSearchResult, SemanticIndexingCoverage, SemanticSearchCapabilities,
+    SemanticVideoSearchProvider, VideoClip, VideoClipStream, VideoFollow, VideoLiveStream,
+    VideoProvider, VideoSource, VideoTimeline, frame_decision_unavailable,
+    semantic_search_unavailable,
 };
 
 /// Future returned by [`A2aLabApi`].
 pub type A2aLabFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Tagged request envelope shared by A2A and MCP.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "operation", content = "params", rename_all = "snake_case")]
 pub enum A2aLabCommand {
@@ -76,9 +88,22 @@ pub enum A2aLabCommand {
     GetVideoTimeline(GetVideoTimelineRequest),
     /// Prepare a live-follow handle. JSON never includes frame bytes.
     FollowVideo(FollowVideoRequest),
+    /// Discover authorized Jev append/read capabilities.
+    GetFrameDecisionCapabilities(GetFrameDecisionCapabilitiesRequest),
+    /// Append one authorized Jev production decision record.
+    AppendFrameDecision(AppendFrameDecisionRequest),
+    /// Read bounded Jev decision history.
+    ReadFrameDecisionHistory(ReadFrameDecisionHistoryRequest),
+    /// Discover optional semantic search schemas and operations.
+    GetSemanticSearchCapabilities(GetSemanticSearchCapabilitiesRequest),
+    /// Search saved frames by text or reference frame inside a bounded scope.
+    SearchSemanticFrames(SearchSemanticFramesRequest),
+    /// Read semantic indexing coverage for one scope and generation.
+    GetSemanticIndexingCoverage(GetSemanticIndexingCoverageRequest),
 }
 
 /// Tagged result envelope shared by A2A and MCP.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "operation", content = "result", rename_all = "snake_case")]
 pub enum A2aLabResult {
@@ -118,6 +143,18 @@ pub enum A2aLabResult {
     GetVideoTimeline(VideoTimeline),
     /// A live-follow handle. JSON never includes frame bytes.
     FollowVideo(VideoFollow),
+    /// Advertised append/read capabilities for the active caller role.
+    GetFrameDecisionCapabilities(FrameDecisionCapabilities),
+    /// Stored or replayed Jev decision record.
+    AppendFrameDecision(AppendFrameDecisionResult),
+    /// One page of decision history.
+    ReadFrameDecisionHistory(FrameDecisionHistoryResult),
+    /// Advertised semantic search operations and schemas.
+    GetSemanticSearchCapabilities(SemanticSearchCapabilities),
+    /// Ranked semantic frame hits with metadata only.
+    SearchSemanticFrames(SemanticFrameSearchResult),
+    /// Indexing state counts for the scoped generation.
+    GetSemanticIndexingCoverage(SemanticIndexingCoverage),
 }
 
 /// Stored view of an A2A task.
@@ -350,6 +387,8 @@ pub struct A2aLabService<L, M, W, I = EmptyImages, V = EmptyVideos> {
     tasks: W,
     images: I,
     videos: V,
+    frame_decisions: Option<Arc<dyn FrameDecisionLedgerProvider>>,
+    semantic_search: Option<Arc<dyn SemanticVideoSearchProvider>>,
     image_transport: ImageTransportConfig,
     task_store: Mutex<BTreeMap<String, StoredTask>>,
     ids: AtomicU64,
@@ -373,6 +412,8 @@ where
             tasks,
             images: EmptyImages,
             videos: EmptyVideos,
+            frame_decisions: None,
+            semantic_search: None,
             image_transport: ImageTransportConfig::from_default(),
             task_store: Mutex::const_new(BTreeMap::new()),
             ids: AtomicU64::new(0),
@@ -400,6 +441,8 @@ where
             tasks: self.tasks,
             images,
             videos: self.videos,
+            frame_decisions: self.frame_decisions,
+            semantic_search: self.semantic_search,
             image_transport: self.image_transport,
             task_store: self.task_store,
             ids: self.ids,
@@ -418,10 +461,26 @@ where
             tasks: self.tasks,
             images: self.images,
             videos,
+            frame_decisions: self.frame_decisions,
+            semantic_search: self.semantic_search,
             image_transport: self.image_transport,
             task_store: self.task_store,
             ids: self.ids,
         }
+    }
+
+    /// Attaches a Jev decision ledger provider for append/read APIs.
+    #[must_use]
+    pub fn with_frame_decisions(mut self, provider: Arc<dyn FrameDecisionLedgerProvider>) -> Self {
+        self.frame_decisions = Some(provider);
+        self
+    }
+
+    /// Attaches an optional semantic frame search provider.
+    #[must_use]
+    pub fn with_semantic_search(mut self, provider: Arc<dyn SemanticVideoSearchProvider>) -> Self {
+        self.semantic_search = Some(provider);
+        self
     }
 
     /// Sets the decoded-byte maximum applied before image payloads are returned.
@@ -458,6 +517,20 @@ where
             A2aLabCommand::GetVideoClip(request) => self.get_video_clip(request).await,
             A2aLabCommand::GetVideoTimeline(request) => self.get_video_timeline(request).await,
             A2aLabCommand::FollowVideo(request) => self.follow_video(request).await,
+            A2aLabCommand::GetFrameDecisionCapabilities(request) => {
+                self.get_frame_decision_capabilities(request).await
+            }
+            A2aLabCommand::AppendFrameDecision(request) => {
+                self.append_frame_decision(request).await
+            }
+            A2aLabCommand::ReadFrameDecisionHistory(request) => {
+                self.read_frame_decision_history(request).await
+            }
+            A2aLabCommand::GetSemanticSearchCapabilities(_)
+            | A2aLabCommand::SearchSemanticFrames(_)
+            | A2aLabCommand::GetSemanticIndexingCoverage(_) => {
+                self.run_semantic_search(command).await
+            }
             other => self.run_lab(other).await,
         }
     }
@@ -480,7 +553,15 @@ where
             | A2aLabCommand::GetVideoFrameAt(_)
             | A2aLabCommand::GetVideoClip(_)
             | A2aLabCommand::GetVideoTimeline(_)
-            | A2aLabCommand::FollowVideo(_) => unreachable!("video commands run separately"),
+            | A2aLabCommand::FollowVideo(_)
+            | A2aLabCommand::GetFrameDecisionCapabilities(_)
+            | A2aLabCommand::AppendFrameDecision(_)
+            | A2aLabCommand::ReadFrameDecisionHistory(_)
+            | A2aLabCommand::GetSemanticSearchCapabilities(_)
+            | A2aLabCommand::SearchSemanticFrames(_)
+            | A2aLabCommand::GetSemanticIndexingCoverage(_) => {
+                unreachable!("handled in run")
+            }
         }
     }
 
@@ -658,6 +739,88 @@ where
     async fn follow_video(&self, request: FollowVideoRequest) -> Result<TaskSnapshot, A2aLabError> {
         let follow = self.videos.follow_video(request).await?;
         self.store_snapshot(A2aLabResult::FollowVideo(follow)).await
+    }
+
+    fn frame_decisions(&self) -> Result<&Arc<dyn FrameDecisionLedgerProvider>, A2aLabError> {
+        self.frame_decisions
+            .as_ref()
+            .ok_or_else(frame_decision_unavailable)
+    }
+
+    async fn get_frame_decision_capabilities(
+        &self,
+        request: GetFrameDecisionCapabilitiesRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        let capabilities = self
+            .frame_decisions()?
+            .get_frame_decision_capabilities(request)
+            .await?;
+        self.store_snapshot(A2aLabResult::GetFrameDecisionCapabilities(capabilities))
+            .await
+    }
+
+    async fn append_frame_decision(
+        &self,
+        request: AppendFrameDecisionRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        request.check()?;
+        let result = self
+            .frame_decisions()?
+            .append_frame_decision(request)
+            .await?;
+        self.store_snapshot(A2aLabResult::AppendFrameDecision(result))
+            .await
+    }
+
+    async fn read_frame_decision_history(
+        &self,
+        request: ReadFrameDecisionHistoryRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        request.check()?;
+        let result = self
+            .frame_decisions()?
+            .read_frame_decision_history(request)
+            .await?;
+        self.store_snapshot(A2aLabResult::ReadFrameDecisionHistory(result))
+            .await
+    }
+
+    async fn run_semantic_search(
+        &self,
+        command: A2aLabCommand,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        match command {
+            A2aLabCommand::GetSemanticSearchCapabilities(_) => {
+                let capabilities = match self.semantic_search.as_ref() {
+                    Some(_) => SemanticSearchCapabilities::registered(),
+                    None => SemanticSearchCapabilities::unregistered(),
+                };
+                self.store_snapshot(A2aLabResult::GetSemanticSearchCapabilities(capabilities))
+                    .await
+            }
+            A2aLabCommand::SearchSemanticFrames(request) => {
+                request.check()?;
+                let result = self
+                    .semantic_search
+                    .as_ref()
+                    .ok_or_else(semantic_search_unavailable)?
+                    .search_semantic_frames(request)
+                    .await?;
+                self.store_snapshot(A2aLabResult::SearchSemanticFrames(result))
+                    .await
+            }
+            A2aLabCommand::GetSemanticIndexingCoverage(request) => {
+                let result = self
+                    .semantic_search
+                    .as_ref()
+                    .ok_or_else(semantic_search_unavailable)?
+                    .get_semantic_indexing_coverage(request)
+                    .await?;
+                self.store_snapshot(A2aLabResult::GetSemanticIndexingCoverage(result))
+                    .await
+            }
+            _ => Err(A2aLabError::protocol("unexpected semantic search command")),
+        }
     }
 
     /// Opens the JPEG frame stream for a previously prepared live-follow handle.

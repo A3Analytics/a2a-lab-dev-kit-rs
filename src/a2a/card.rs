@@ -146,6 +146,36 @@ const LAB_SKILLS: &[(&str, &str, &str)] = &[
         "Follow video",
         "Prepare a live MJPEG follow handle. Bytes are not embedded.",
     ),
+    (
+        "get-frame-decision-capabilities",
+        "Get frame decision capabilities",
+        "Discover authorized Jev append and read schemas for the active caller role",
+    ),
+    (
+        "append-frame-decision",
+        "Append frame decision",
+        "Append one authorized Jev production decision for an exact saved frame revision",
+    ),
+    (
+        "read-frame-decision-history",
+        "Read frame decision history",
+        "Read bounded Jev decision history with explicit latest-per-producer or full history",
+    ),
+    (
+        "get-semantic-search-capabilities",
+        "Get semantic search capabilities",
+        "Discover optional semantic frame search and coverage schemas",
+    ),
+    (
+        "search-semantic-frames",
+        "Search semantic frames",
+        "Retrieve ranked saved frames by text or reference frame. Metadata only.",
+    ),
+    (
+        "get-semantic-indexing-coverage",
+        "Get semantic indexing coverage",
+        "Read per-state semantic indexing counts for one scoped generation",
+    ),
 ];
 
 fn skills(agent_message: bool) -> Vec<AgentSkill> {

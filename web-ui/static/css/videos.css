@@ -63,6 +63,126 @@
   text-transform: none;
 }
 
+.video-semantic-hint,
+.video-semantic-note,
+.video-decision-note {
+  margin: 0.25rem 0 0;
+  padding: 0 0.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+#video-semantic-alert:empty,
+#video-decision-alert:empty {
+  display: none;
+}
+
+#video-semantic-query {
+  margin-top: 0.25rem;
+  width: 100%;
+}
+
+.video-semantic-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.video-semantic-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  text-align: left;
+}
+
+.video-semantic-hit[aria-selected="true"] {
+  border-color: var(--primary);
+}
+
+.video-semantic-hit-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.video-semantic-description {
+  font-size: 0.8rem;
+  color: var(--foreground);
+}
+
+.video-semantic-score {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+
+.video-semantic-thumb,
+.video-semantic-thumb-placeholder {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--muted);
+  font-size: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.video-semantic-detail {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.video-metadata-panel h3,
+.video-decision-panel h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.video-metadata-panel dl,
+.video-decision-row dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.video-decision-row {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.video-decision-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+#video-semantic-filters[hidden] {
+  display: none !important;
+}
+
+#video-details > #video-semantic-filters {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+}
+
 #video-filters .video-actions,
 #video-alert {
   display: flex;

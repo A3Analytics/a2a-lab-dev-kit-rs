@@ -19,11 +19,13 @@ use web_sys::AbortController;
 
 mod details;
 mod playback_hooks;
+mod semantic;
 mod speed_control;
 mod timeline;
 mod timeline_fields;
 use details::VideoDetails;
 use playback_hooks::{apply_stream, on_buffering, on_frame, on_gap_skipped, on_playing};
+use semantic::{SemanticResults, abort_semantic_commands, note_source_change, wire_resources};
 use speed_control::{
     active_stream_plan, change_speed, lock_live_speed, note_trick_fallback, speed_option_disabled,
 };
@@ -50,6 +52,7 @@ pub struct VideoUi {
     pub range_draft_end: String,
     pub range_error: String,
     pub local_time: bool,
+    pub semantic: videos::semantic::Hub,
 }
 
 impl VideoUi {
@@ -68,6 +71,7 @@ impl VideoUi {
             range_draft_end: String::new(),
             range_error: String::new(),
             local_time: false,
+            semantic: videos::semantic::Hub::new(),
         }
     }
 }
@@ -160,8 +164,12 @@ pub fn catalog_changed() {
         playback::abort();
         abort_commands();
     }
+    let source = next.reader.source_id.clone();
     ui.set(next);
     ensure_timeline();
+    if phase == SourcePhase::Ready && !source.is_empty() {
+        note_source_change(&source);
+    }
 }
 
 pub(super) fn bound() -> Option<Signal<VideoUi>> {
@@ -175,11 +183,15 @@ fn loader() -> Option<Loader> {
 #[component]
 pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
     let clip = use_signal(|| ClipJob::Idle);
-    use_hook(|| {
+    let semantic_search = use_signal(|| semantic::SearchJob::Idle);
+    let semantic_caps = use_signal(|| semantic::CapabilityJob::Idle);
+    let semantic_history = use_signal(|| semantic::HistoryJob::Idle);
+    use_hook(move || {
         RUNTIME.with(|slot| *slot.borrow_mut() = Some(Runtime::current()));
         SCOPE.with(|slot| *slot.borrow_mut() = Some(current_scope_id()));
         playback::bind(on_playing, on_frame, on_gap_skipped, on_buffering);
         LOADER.with(|slot| *slot.borrow_mut() = Some(Loader { clip }));
+        semantic::bind_loader(semantic_search, semantic_caps, semantic_history);
     });
     use_drop(stop_playback);
     let mut shown = use_signal(|| false);
@@ -204,6 +216,13 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
     if let Some(outcome) = clip_reply() {
         apply_clip(ui, outcome);
     }
+    wire_resources(semantic_search, semantic_caps, semantic_history, ui);
+    use_effect(move || {
+        let source = ui.peek().reader.source_id.clone();
+        if !source.is_empty() {
+            note_source_change(&source);
+        }
+    });
     let state = ui();
     let busy = state.phase == SourcePhase::Loading
         || state.reader.loading
@@ -278,6 +297,7 @@ fn FilterRail(state: VideoUi) -> Element {
             }
             if !state.reader.source_id.is_empty() {
                 VideoDetails {
+                    state: state.clone(),
                     range_start: if state.range_draft_start.is_empty() {
                         display_clock(&state.range_start, local)
                     } else {
@@ -430,6 +450,7 @@ fn Results(state: VideoUi, status: String, alert: String) -> Element {
                     },
                     "{status}"
                 }
+                SemanticResults { state: state.clone() }
                 div {
                     id: "video-alert",
                     class: "video-alert",
@@ -764,9 +785,11 @@ fn choose_source(id: &str) {
     next.session = None;
     playback::abort();
     abort_commands();
+    abort_semantic_commands();
     ui.set(next);
     playback::pause_element();
     ensure_timeline();
+    note_source_change(id);
 }
 
 fn native_play() {
@@ -1208,6 +1231,7 @@ fn apply_meta(outcome: MetaOutcome) {
             }
             auto = videos::begin_auto_playback(&mut next.reader);
             sync_auto_range(&mut next, &auto);
+            note_source_change(&next.reader.source_id);
             None
         }
         MetaOutcome::Follow { ticket, follow } => {

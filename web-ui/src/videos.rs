@@ -10,6 +10,7 @@ pub(crate) mod mjpeg;
 pub(crate) mod track;
 
 mod domain;
+pub(crate) mod semantic;
 pub(crate) mod speed;
 
 #[allow(unused_imports)]

@@ -31,9 +31,13 @@ use crate::tasks::{
     GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
 };
 use crate::videos::{
-    FollowVideoRequest, GetVideoClipRequest, GetVideoFrameAtRequest, GetVideoFrameAtResult,
-    GetVideoTimelineRequest, ListVideoSourcesRequest, SharedMediaAssetProvider, VideoClip,
-    VideoFollow, VideoSource, VideoTimeline,
+    AppendFrameDecisionRequest, AppendFrameDecisionResult, FollowVideoRequest,
+    FrameDecisionCapabilities, FrameDecisionHistoryResult, GetFrameDecisionCapabilitiesRequest,
+    GetSemanticIndexingCoverageRequest, GetSemanticSearchCapabilitiesRequest, GetVideoClipRequest,
+    GetVideoFrameAtRequest, GetVideoFrameAtResult, GetVideoTimelineRequest,
+    ListVideoSourcesRequest, ReadFrameDecisionHistoryRequest, SearchSemanticFramesRequest,
+    SemanticFrameSearchResult, SemanticIndexingCoverage, SemanticSearchCapabilities,
+    SharedMediaAssetProvider, VideoClip, VideoFollow, VideoSource, VideoTimeline,
 };
 
 /// MCP server exposing the lab operations as tools.
@@ -493,6 +497,114 @@ impl McpServer {
             A2aLabCommand::FollowVideo(params.0),
             |result| match result {
                 A2aLabResult::FollowVideo(follow) => Some(follow),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_frame_decision_capabilities",
+        description = "Discover authorized Jev decision append and read schemas"
+    )]
+    async fn get_frame_decision_capabilities(
+        &self,
+        params: Parameters<GetFrameDecisionCapabilitiesRequest>,
+    ) -> Result<Json<FrameDecisionCapabilities>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetFrameDecisionCapabilities(params.0),
+            |result| match result {
+                A2aLabResult::GetFrameDecisionCapabilities(capabilities) => Some(capabilities),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "append_frame_decision",
+        description = "Append one authorized Jev production frame decision"
+    )]
+    async fn append_frame_decision(
+        &self,
+        params: Parameters<AppendFrameDecisionRequest>,
+    ) -> Result<Json<AppendFrameDecisionResult>, ErrorData> {
+        self.take(
+            A2aLabCommand::AppendFrameDecision(params.0),
+            |result| match result {
+                A2aLabResult::AppendFrameDecision(append) => Some(append),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "read_frame_decision_history",
+        description = "Read bounded Jev decision history for one scope"
+    )]
+    async fn read_frame_decision_history(
+        &self,
+        params: Parameters<ReadFrameDecisionHistoryRequest>,
+    ) -> Result<Json<FrameDecisionHistoryResult>, ErrorData> {
+        self.take(
+            A2aLabCommand::ReadFrameDecisionHistory(params.0),
+            |result| match result {
+                A2aLabResult::ReadFrameDecisionHistory(history) => Some(history),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_semantic_search_capabilities",
+        description = "Discover optional semantic frame search and coverage schemas"
+    )]
+    async fn get_semantic_search_capabilities(
+        &self,
+        params: Parameters<GetSemanticSearchCapabilitiesRequest>,
+    ) -> Result<Json<SemanticSearchCapabilities>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetSemanticSearchCapabilities(params.0),
+            |result| match result {
+                A2aLabResult::GetSemanticSearchCapabilities(capabilities) => Some(capabilities),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "search_semantic_frames",
+        description = "Search saved frames by text or reference frame. Bytes are not embedded."
+    )]
+    async fn search_semantic_frames(
+        &self,
+        params: Parameters<SearchSemanticFramesRequest>,
+    ) -> Result<Json<SemanticFrameSearchResult>, ErrorData> {
+        self.take(
+            A2aLabCommand::SearchSemanticFrames(params.0),
+            |result| match result {
+                A2aLabResult::SearchSemanticFrames(search) => Some(search),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
+        name = "get_semantic_indexing_coverage",
+        description = "Read per-state semantic indexing counts for one scoped generation"
+    )]
+    async fn get_semantic_indexing_coverage(
+        &self,
+        params: Parameters<GetSemanticIndexingCoverageRequest>,
+    ) -> Result<Json<SemanticIndexingCoverage>, ErrorData> {
+        self.take(
+            A2aLabCommand::GetSemanticIndexingCoverage(params.0),
+            |result| match result {
+                A2aLabResult::GetSemanticIndexingCoverage(coverage) => Some(coverage),
                 _ => None,
             },
         )

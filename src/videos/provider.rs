@@ -1,4 +1,7 @@
 //! Video provider interface.
+//!
+//! Optional semantic retrieval lives on [`crate::videos::SemanticVideoSearchProvider`].
+//! [`VideoProvider`] stays the catalog control plane when search is not implemented.
 
 use futures_util::StreamExt;
 

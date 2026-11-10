@@ -9,6 +9,7 @@ use crate::id::VideoSourceId;
 use crate::videos::{CaptureFormat, CaptureFormatPreference};
 
 use super::duration::ConfigDuration;
+use super::semantic_indexing::{SemanticStreamSchedule, parse_schedule};
 
 /// Camera input requested from the capture library.
 ///
@@ -67,6 +68,8 @@ pub struct VideoSourceConfig {
     pub format: VideoInputFormat,
     /// Local capture-library index, including zero.
     pub device_index: u32,
+    /// Optional per-source semantic indexing stage schedules.
+    pub semantic_indexing: Option<SemanticStreamSchedule>,
 }
 
 impl VideoSourceConfig {
@@ -94,7 +97,10 @@ pub struct VideoDvrConfig {
     pub storage_path: Option<String>,
 }
 
-pub(crate) fn parse_videos(value: Option<&Value>) -> Result<Option<VideoConfig>, A2aLabError> {
+pub(crate) fn parse_videos(
+    value: Option<&Value>,
+    allow_semantic_indexing: bool,
+) -> Result<Option<VideoConfig>, A2aLabError> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -106,7 +112,7 @@ pub(crate) fn parse_videos(value: Option<&Value>) -> Result<Option<VideoConfig>,
             "required field is missing",
         ));
     }
-    let sources = parse_sources(map.get("sources"))?;
+    let sources = parse_sources(map.get("sources"), allow_semantic_indexing)?;
     let fps = parse_fps(map.get("fps"))?;
     let live_retention = parse_duration("videos.live_retention", map.get("live_retention"))?;
     let dvr = parse_dvr(map.get("dvr"))?;
@@ -119,10 +125,21 @@ pub(crate) fn parse_videos(value: Option<&Value>) -> Result<Option<VideoConfig>,
 }
 
 const VIDEO_KEYS: &[&str] = &["sources", "fps", "live_retention", "dvr"];
-const SOURCE_KEYS: &[&str] = &["id", "name", "description", "format", "device_index"];
+const SOURCE_KEYS_V1: &[&str] = &["id", "name", "description", "format", "device_index"];
+const SOURCE_KEYS_V2: &[&str] = &[
+    "id",
+    "name",
+    "description",
+    "format",
+    "device_index",
+    "semantic_indexing",
+];
 const DVR_KEYS: &[&str] = &["retention", "storage_path"];
 
-fn parse_sources(value: Option<&Value>) -> Result<Vec<VideoSourceConfig>, A2aLabError> {
+fn parse_sources(
+    value: Option<&Value>,
+    allow_semantic_indexing: bool,
+) -> Result<Vec<VideoSourceConfig>, A2aLabError> {
     let Some(value) = value else {
         return Err(A2aLabError::invalid(
             "videos.sources",
@@ -139,7 +156,7 @@ fn parse_sources(value: Option<&Value>) -> Result<Vec<VideoSourceConfig>, A2aLab
     let mut ids = HashSet::new();
     let mut devices = HashSet::new();
     for item in items {
-        let source = parse_source(item)?;
+        let source = parse_source(item, allow_semantic_indexing)?;
         if !ids.insert(source.id.clone()) {
             return Err(A2aLabError::invalid(
                 "videos.sources.id",
@@ -157,9 +174,20 @@ fn parse_sources(value: Option<&Value>) -> Result<Vec<VideoSourceConfig>, A2aLab
     Ok(sources)
 }
 
-fn parse_source(value: &Value) -> Result<VideoSourceConfig, A2aLabError> {
+fn parse_source(
+    value: &Value,
+    allow_semantic_indexing: bool,
+) -> Result<VideoSourceConfig, A2aLabError> {
     let map = super::object_at("videos.sources", value)?;
-    super::reject_unknown_keys(map, "videos.sources", SOURCE_KEYS)?;
+    super::reject_unknown_keys(
+        map,
+        "videos.sources",
+        if allow_semantic_indexing {
+            SOURCE_KEYS_V2
+        } else {
+            SOURCE_KEYS_V1
+        },
+    )?;
     let id = required_text(map.get("id"), "videos.sources.id")?;
     let id = VideoSourceId::new(id).map_err(|_| {
         A2aLabError::invalid("videos.sources.id", "must be a valid video source id")
@@ -176,13 +204,77 @@ fn parse_source(value: &Value) -> Result<VideoSourceConfig, A2aLabError> {
             ));
         }
     };
+    let semantic_indexing = if allow_semantic_indexing {
+        parse_source_semantic_indexing(map.get("semantic_indexing"), id.as_str())?
+    } else {
+        None
+    };
     Ok(VideoSourceConfig {
         id,
         name,
         description,
         format,
         device_index,
+        semantic_indexing,
     })
+}
+
+fn parse_source_semantic_indexing(
+    value: Option<&Value>,
+    stream: &str,
+) -> Result<Option<SemanticStreamSchedule>, A2aLabError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let map = super::object_at("videos.sources.semantic_indexing", value)?;
+    super::reject_unknown_keys(
+        map,
+        "videos.sources.semantic_indexing",
+        &[
+            "description",
+            "description_model",
+            "embeddings",
+            "embedding_model",
+        ],
+    )?;
+    let description_model = optional_model(
+        map.get("description_model"),
+        "videos.sources.semantic_indexing.description_model",
+    )?;
+    let embedding_model = optional_model(
+        map.get("embedding_model"),
+        "videos.sources.semantic_indexing.embedding_model",
+    )?;
+    Ok(Some(SemanticStreamSchedule {
+        stream: stream.to_owned(),
+        description: parse_schedule(
+            map.get("description"),
+            "videos.sources.semantic_indexing.description",
+        )?,
+        embeddings: parse_schedule(
+            map.get("embeddings"),
+            "videos.sources.semantic_indexing.embeddings",
+        )?,
+        description_model,
+        embedding_model,
+        embedding_configured: map.contains_key("embeddings") || map.contains_key("embedding_model"),
+    }))
+}
+
+fn optional_model(
+    value: Option<&Value>,
+    field: &'static str,
+) -> Result<Option<String>, A2aLabError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let Value::String(model) = value else {
+        return Err(A2aLabError::invalid(field, "must be a non-empty string"));
+    };
+    if model.trim().is_empty() {
+        return Err(A2aLabError::invalid(field, "must be a non-empty string"));
+    }
+    Ok(Some(model.clone()))
 }
 
 fn parse_format(value: Option<&Value>) -> Result<VideoInputFormat, A2aLabError> {

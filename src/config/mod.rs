@@ -5,31 +5,44 @@
 
 mod duration;
 mod load;
+mod semantic_indexing;
 mod strict_json;
 mod video;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::A2aLabError;
+use semantic_indexing::{
+    A2A_LAB_CONFIG_SCHEMA_VERSION_V2 as SCHEMA_V2, parse_semantic_indexing_required,
+};
 use strict_json::parse_strict_json;
 use video::parse_videos;
 
 pub use duration::ConfigDuration;
 pub use load::LoadedLabConfig;
+pub use semantic_indexing::{
+    A2A_LAB_CONFIG_SCHEMA_VERSION_V2, CredentialReference, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
+    DecisionCoveragePolicy, EmbeddingSpaceConfig, SemanticDecisionLimits, SemanticDecisionsConfig,
+    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
+    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
+    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits,
+};
 pub use video::{VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig};
 
 /// Supported v1 configuration schema version.
 pub const A2A_LAB_CONFIG_SCHEMA_VERSION: u32 = 1;
 
-/// Parsed v1 configuration envelope.
+/// Parsed configuration envelope (`schema_version` 1 or 2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct A2aLabConfig {
-    /// Configuration schema version. Always [`A2A_LAB_CONFIG_SCHEMA_VERSION`] after a successful parse.
+    /// Parsed `schema_version` field (`1` or `2` only).
     pub schema_version: u32,
     /// Optional chat provider/model overrides.
     pub chat: Option<ChatConfig>,
     /// Optional video settings. Absent when the file omits `videos`.
     pub videos: Option<VideoConfig>,
+    /// Optional additive semantic indexing settings.
+    pub semantic_indexing: Option<SemanticIndexingConfig>,
 }
 
 /// Optional chat provider and model overrides.
@@ -77,13 +90,52 @@ impl A2aLabConfig {
     fn from_value(value: &serde_json::Value) -> Result<Self, A2aLabError> {
         let map = object_at("", value)?;
         let schema_version = parse_schema_version(map.get("schema_version"))?;
+        let allowed_envelope = match schema_version {
+            A2A_LAB_CONFIG_SCHEMA_VERSION => {
+                &["schema_version", "chat", "videos", "semantic_indexing"][..]
+            }
+            SCHEMA_V2 => &["schema_version", "chat", "videos", "semantic_indexing"][..],
+            _ => {
+                return Err(A2aLabError::invalid(
+                    "schema_version",
+                    "unsupported schema version",
+                ));
+            }
+        };
+        reject_unknown_keys(map, "", allowed_envelope)?;
         let chat = parse_chat(map.get("chat"))?;
-        let videos = parse_videos(map.get("videos"))?;
-        reject_unknown_keys(map, "", &["schema_version", "chat", "videos"])?;
+        let has_semantic_indexing = map.contains_key("semantic_indexing");
+        let videos = parse_videos(
+            map.get("videos"),
+            schema_version == SCHEMA_V2 || has_semantic_indexing,
+        )?;
+        let semantic_indexing = match schema_version {
+            A2A_LAB_CONFIG_SCHEMA_VERSION | SCHEMA_V2 if has_semantic_indexing => Some(
+                parse_semantic_indexing_required(map.get("semantic_indexing"))?,
+            ),
+            _ => None,
+        };
+        if semantic_indexing
+            .as_ref()
+            .is_some_and(|semantic| semantic.embeddings.is_none())
+            && let Some(videos) = &videos
+            && videos.sources.iter().any(|source| {
+                source
+                    .semantic_indexing
+                    .as_ref()
+                    .is_some_and(semantic_indexing::SemanticStreamSchedule::embedding_configured)
+            })
+        {
+            return Err(A2aLabError::invalid(
+                "videos.sources.semantic_indexing.embeddings",
+                "embedding settings are not supported in description_only mode",
+            ));
+        }
         Ok(Self {
             schema_version,
             chat,
             videos,
+            semantic_indexing,
         })
     }
 }
@@ -165,7 +217,7 @@ fn parse_schema_version(value: Option<&serde_json::Value>) -> Result<u32, A2aLab
         ));
     };
     let version = positive_integer("schema_version", value)?;
-    if version == A2A_LAB_CONFIG_SCHEMA_VERSION {
+    if version == A2A_LAB_CONFIG_SCHEMA_VERSION || version == SCHEMA_V2 {
         Ok(version)
     } else {
         Err(A2aLabError::invalid(
@@ -259,6 +311,7 @@ mod tests {
         assert_eq!(config.schema_version, 1);
         assert!(config.chat.is_none());
         assert!(config.videos.is_none());
+        assert!(config.semantic_indexing.is_none());
     }
 
     #[test]
