@@ -21,6 +21,7 @@ pub mod logs;
 pub mod mcp;
 pub mod memory;
 pub mod metrics;
+pub mod observability;
 #[cfg(feature = "opcua")]
 pub mod opcua;
 pub mod page;
@@ -46,12 +47,14 @@ pub use catalog::{
 };
 pub use config::{
     A2A_LAB_CONFIG_SCHEMA_VERSION, A2A_LAB_CONFIG_SCHEMA_VERSION_V2, A2aLabConfig, ChatConfig,
-    ChatProvider, ConfigDuration, CredentialReference, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
-    DecisionCoveragePolicy, EmbeddingSpaceConfig, LoadedLabConfig, SemanticDecisionLimits,
-    SemanticDecisionsConfig, SemanticDescriptionConfig, SemanticEmbeddingsConfig,
-    SemanticIndexingConfig, SemanticIndexingLimits, SemanticIndexingSearchLimits,
-    SemanticRoiLimits, SemanticSchedule, SemanticStorageLimits, SemanticStreamSchedule,
-    SemanticWorkerLimits, VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
+    ChatProvider, ConfigDuration, CredentialReference, DEFAULT_LOG_OUTPUT_FORMAT,
+    DEFAULT_LOGGING_LEVEL, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND, DecisionCoveragePolicy,
+    EmbeddingSpaceConfig, LoadedLabConfig, LogOutputFormat, LoggingConfig,
+    OpenTelemetryLoggingConfig, SemanticDecisionLimits, SemanticDecisionsConfig,
+    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
+    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
+    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits, VideoConfig,
+    VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
 };
 pub use error::{A2aLabError, VideoAvailability};
 pub use id::{
@@ -77,6 +80,13 @@ pub use memory::{
 };
 pub use metrics::{
     ListMetricsRequest, MetricDescriptor, MetricPoint, MetricProvider, QueryMetricRequest,
+};
+#[doc(hidden)]
+pub use observability::reset_logging_installed_for_tests;
+pub use observability::{
+    LoggingGuard, init as init_logging, init_from_loaded as init_logging_from_loaded,
+    is_sensitive_field, log_effective_config, log_server_ready, logging_installed, operation_name,
+    redact_field, redact_free_text, trace_operation,
 };
 pub use page::{MAX_PAGE_LIMIT, Page, PageRequest};
 pub use ros2::{MemoryRos2, Ros2Action, Ros2Goal, Ros2GoalStatus, Ros2Graph, Ros2Tasks};

@@ -505,9 +505,9 @@ where
 
     /// Executes a command and stores the resulting task.
     pub async fn execute(&self, command: A2aLabCommand) -> Result<A2aLabOutcome, A2aLabError> {
-        Ok(A2aLabOutcome {
-            task: self.run(command).await?,
-        })
+        let operation = crate::observability::operation_name(&command);
+        let task = crate::observability::trace_operation(operation, self.run(command)).await?;
+        Ok(A2aLabOutcome { task })
     }
 
     async fn run(&self, command: A2aLabCommand) -> Result<TaskSnapshot, A2aLabError> {

@@ -324,7 +324,14 @@ async fn omitted_range_keeps_out_of_window_candidates() {
     let early_attachment = attachment(1, b"early pipette");
     let early_neighbors = neighbors(&early);
     provider.insert_hit(
-        fake_semantic_hit(early, early_attachment, "early pipette", 0.9, early_neighbors).unwrap(),
+        fake_semantic_hit(
+            early,
+            early_attachment,
+            "early pipette",
+            0.9,
+            early_neighbors,
+        )
+        .unwrap(),
     );
     let late = frame(b"late", "2024-06-01T12:00:05Z");
     let late_frame_id = late.frame_id().clone();

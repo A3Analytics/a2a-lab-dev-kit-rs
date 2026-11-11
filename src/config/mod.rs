@@ -5,6 +5,7 @@
 
 mod duration;
 mod load;
+mod logging;
 mod semantic_indexing;
 mod strict_json;
 mod video;
@@ -20,6 +21,10 @@ use video::parse_videos;
 
 pub use duration::ConfigDuration;
 pub use load::LoadedLabConfig;
+pub use logging::{
+    DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, LogOutputFormat, LoggingConfig,
+    OpenTelemetryLoggingConfig,
+};
 pub use semantic_indexing::{
     A2A_LAB_CONFIG_SCHEMA_VERSION_V2, CredentialReference, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
     DecisionCoveragePolicy, EmbeddingSpaceConfig, SemanticDecisionLimits, SemanticDecisionsConfig,
@@ -43,6 +48,8 @@ pub struct A2aLabConfig {
     pub videos: Option<VideoConfig>,
     /// Optional additive semantic indexing settings.
     pub semantic_indexing: Option<SemanticIndexingConfig>,
+    /// Optional application logging settings. Absent means logging stays off.
+    pub logging: Option<LoggingConfig>,
 }
 
 /// Optional chat provider and model overrides.
@@ -91,10 +98,13 @@ impl A2aLabConfig {
         let map = object_at("", value)?;
         let schema_version = parse_schema_version(map.get("schema_version"))?;
         let allowed_envelope = match schema_version {
-            A2A_LAB_CONFIG_SCHEMA_VERSION => {
-                &["schema_version", "chat", "videos", "semantic_indexing"][..]
-            }
-            SCHEMA_V2 => &["schema_version", "chat", "videos", "semantic_indexing"][..],
+            A2A_LAB_CONFIG_SCHEMA_VERSION | SCHEMA_V2 => &[
+                "schema_version",
+                "chat",
+                "videos",
+                "semantic_indexing",
+                "logging",
+            ][..],
             _ => {
                 return Err(A2aLabError::invalid(
                     "schema_version",
@@ -131,11 +141,13 @@ impl A2aLabConfig {
                 "embedding settings are not supported in description_only mode",
             ));
         }
+        let logging = logging::parse_logging(map.get("logging"))?;
         Ok(Self {
             schema_version,
             chat,
             videos,
             semantic_indexing,
+            logging,
         })
     }
 }
@@ -312,6 +324,7 @@ mod tests {
         assert!(config.chat.is_none());
         assert!(config.videos.is_none());
         assert!(config.semantic_indexing.is_none());
+        assert!(config.logging.is_none());
     }
 
     #[test]

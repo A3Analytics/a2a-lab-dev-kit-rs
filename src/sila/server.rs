@@ -137,6 +137,7 @@ impl SilaServer {
             ));
         }
         let (listener, local_addr) = bind(address).await?;
+        crate::observability::log_server_ready("sila", &local_addr.to_string());
         let executions = Executions::new();
         let announcer = self.start_discovery(local_addr)?;
         let certificate = (!self.plaintext)

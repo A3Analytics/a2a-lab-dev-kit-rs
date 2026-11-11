@@ -91,6 +91,10 @@ Use the standalone [A2A-LAB TCK documentation](https://github.com/A3Analytics/a2
 
 Read the [A2A-LAB devkit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home).
 
+## Configure application logging
+
+Application logging is optional. Add a `logging` section to `a2a-lab.json`, call `init_logging_from_loaded` before starting A2A, MCP, SiLA, or a direct `A2aLabService` host, and keep the returned guard for the process lifetime. Omitted `logging.format` uses human-readable stderr text; set `"format": "json"` or the `otel` feature for explicit structured export. See [Configure application logging](backlog/docs/guide/observability/doc-26%20-%20Configure-application-logging.md) for filters, redaction rules, and OTLP setup.
+
 ## Open the crate documentation
 
 Generate the application programming interface (API) documentation with this command:

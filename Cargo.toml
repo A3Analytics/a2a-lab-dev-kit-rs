@@ -41,6 +41,12 @@ sila2 = [
 nokhwa = ["dep:nokhwa"]
 openh264 = ["dep:openh264"]
 yuv = ["dep:yuv", "dep:image"]
+otel = [
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+]
 
 [[example]]
 name = "web_ui"
@@ -111,6 +117,15 @@ tokio = { version = "1.53.1", features = [
     "io-util",
     "io-std",
 ] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json", "fmt"] }
+tracing-opentelemetry = { version = "0.32.1", optional = true }
+opentelemetry = { version = "0.31.0", optional = true }
+opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.31.0", default-features = false, features = [
+    "grpc-tonic",
+    "trace",
+], optional = true }
 tonic = { version = "0.14.6", features = ["tls-ring"] }
 tonic-prost = { version = "0.14.6", optional = true }
 image = { version = "0.25.10", default-features = false, features = [

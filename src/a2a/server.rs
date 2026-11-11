@@ -194,6 +194,7 @@ impl A2aServer {
         let address = listener
             .local_addr()
             .map_err(|error| A2aLabError::transport(error.to_string()))?;
+        crate::observability::log_server_ready("a2a", &address.to_string());
         let public_url = self
             .public_url
             .clone()

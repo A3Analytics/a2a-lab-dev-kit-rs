@@ -132,6 +132,9 @@ impl McpServer {
                 .await
                 .map_err(|error| A2aLabError::transport(error.to_string()))?,
         };
+        if let Ok(address) = listener.local_addr() {
+            crate::observability::log_server_ready("mcp", &address.to_string());
+        }
         let mut config = StreamableHttpServerConfig::default().with_allowed_hosts([
             "localhost",
             "127.0.0.1",
