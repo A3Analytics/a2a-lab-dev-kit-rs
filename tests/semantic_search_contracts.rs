@@ -1,20 +1,26 @@
 //! Contract tests for bounded semantic frame search and coverage.
 
 use a2a_lab_dev_kit::{
+    A2aLabCommand, A2aLabResult, A2aLabService, MemoryLogs, MemoryMetrics, MemoryTasks,
+    MemoryVideos,
+};
+use a2a_lab_dev_kit::{
     DEFAULT_SEMANTIC_TOP_K, DecisionHistoryPolicy, DecisionOutcome, DecisionSearchFilter,
     DecisionSubject, DvrStoreNamespace, DvrTrackId, EmbeddingMetric,
     FakeSemanticVideoSearchProvider, FrameDescriptionProvenance, FrameRoiTransform,
-    FrameVectorIndexAttachment, JevProducerIdentity, LabPredicate, ModelSpaceIdentity, PageRequest,
-    ProvenanceGeneration, SavedFrameRef, SearchSemanticFramesRequest,
-    SemanticFramePlaybackNeighbors, SemanticIndexingCoverage, SemanticIndexingFreshness,
-    SemanticIndexingStateCounts, SemanticProvenanceSelector, SemanticSearchLimits,
-    SemanticSearchQuery, SemanticSearchScope, SemanticVideoSearchProvider, Sha256Digest,
-    TckMalformedSemanticSearchRequests, TextEmbeddingProvenance, TimeRange, UtcTimestamp,
-    VideoSourceId, fake_semantic_hit, semantic_search_unavailable,
+    FrameVectorIndexAttachment, GetSemanticSearchCapabilitiesRequest, JevProducerIdentity,
+    LabPredicate, ModelSpaceIdentity, PageRequest, ProvenanceGeneration, SavedFrameRef,
+    SearchSemanticFramesRequest, SemanticFramePlaybackNeighbors, SemanticIndexingCoverage,
+    SemanticIndexingFreshness, SemanticIndexingStateCounts, SemanticProvenanceSelector,
+    SemanticSearchCapabilities, SemanticSearchLimits, SemanticSearchQuery, SemanticSearchScope,
+    SemanticVideoSearchProvider, Sha256Digest, TckMalformedSemanticSearchRequests,
+    TextEmbeddingProvenance, TimeRange, UtcTimestamp, VideoSourceId, fake_semantic_hit,
+    semantic_search_unavailable,
 };
 use a2a_lab_dev_kit::{FrameEmbeddingVector, VectorNormalization};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
+use std::sync::Arc;
 
 fn source(name: &str) -> VideoSourceId {
     VideoSourceId::new(name).unwrap()
@@ -159,6 +165,56 @@ fn decision_filter_requires_authorized_jev_producer() {
     )
     .unwrap();
     assert_eq!(filter.producer().producer_id(), "typesafe-jev");
+}
+
+#[test]
+fn capabilities_json_includes_active_provenance() {
+    let schema = serde_json::to_value(schemars::schema_for!(SemanticSearchCapabilities)).unwrap();
+    let properties = schema
+        .pointer("/properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("properties");
+    assert!(properties.contains_key("active_provenance"));
+    let caps = SemanticSearchCapabilities::registered(Some(selector(1)));
+    let json = serde_json::to_value(&caps).unwrap();
+    assert_eq!(
+        json.pointer("/active_provenance/model_space/provider")
+            .and_then(serde_json::Value::as_str),
+        Some("bedrock")
+    );
+}
+
+#[tokio::test]
+async fn active_search_provenance_follows_embedding_config() {
+    let mut provider = FakeSemanticVideoSearchProvider::available();
+    let space = ModelSpaceIdentity::new(
+        "local_bge",
+        "BAAI/bge-small-en-v1.5",
+        384,
+        VectorNormalization::L2Unit,
+        EmbeddingMetric::Cosine,
+        ProvenanceGeneration::new(1).unwrap(),
+    )
+    .unwrap();
+    provider.set_active_provenance(
+        SemanticProvenanceSelector::new(space.clone(), ProvenanceGeneration::new(1).unwrap())
+            .unwrap(),
+    );
+    let lab = A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+        .with_videos(MemoryVideos::default())
+        .with_semantic_search(Arc::new(provider))
+        .share();
+    let caps = lab
+        .execute(A2aLabCommand::GetSemanticSearchCapabilities(
+            GetSemanticSearchCapabilitiesRequest::new(),
+        ))
+        .await
+        .unwrap();
+    let A2aLabResult::GetSemanticSearchCapabilities(caps) = caps.task.result else {
+        panic!("capabilities");
+    };
+    let active = caps.active_provenance().expect("active provenance");
+    assert_eq!(active.model_space(), &space);
 }
 
 #[test]
@@ -398,6 +454,20 @@ async fn incomplete_coverage_surfaces_on_empty_page() {
 }
 
 #[test]
+fn hit_json_schema_carries_nested_assessments_only() {
+    fn property_names<T: JsonSchema + DeserializeOwned>() -> Vec<String> {
+        let value = serde_json::to_value(schemars::schema_for!(T)).unwrap();
+        value
+            .pointer("/properties")
+            .and_then(|properties| properties.as_object())
+            .map(|properties| properties.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+    let names = property_names::<a2a_lab_dev_kit::SemanticFrameHit>();
+    assert!(names.iter().any(|name| name == "authorized_assessments"));
+}
+
+#[test]
 fn hit_json_schema_excludes_decision_fields() {
     fn property_names<T: JsonSchema + DeserializeOwned>() -> Vec<String> {
         let value = serde_json::to_value(schemars::schema_for!(T)).unwrap();
@@ -421,6 +491,305 @@ fn hit_json_schema_excludes_decision_fields() {
             "SemanticFrameHit must not expose decision-like field {forbidden}"
         );
     }
+}
+
+fn assessment_tip_record(
+    saved: &SavedFrameRef,
+    outcome: DecisionOutcome,
+    key: &str,
+    supersedes: Option<a2a_lab_dev_kit::FrameDecisionId>,
+    evaluation_id: &str,
+    evaluated_at: &str,
+) -> a2a_lab_dev_kit::FrameDecisionRecord {
+    use a2a_lab_dev_kit::{
+        DecisionEvaluationCoverage, DecisionEvidenceItem, DecisionIdempotencyKey,
+        FrameDecisionRecord, JevEvaluationId, JevEvaluationProvenance, JevStructuredOutput,
+        PipetteChannelSubject,
+    };
+    FrameDecisionRecord::new(
+        DecisionIdempotencyKey::new(key).unwrap(),
+        saved.clone(),
+        LabPredicate::pipette_tip_attached_v1(),
+        DecisionSubject::PipetteChannel(PipetteChannelSubject::new("left", "ch1", None).unwrap()),
+        vec![
+            DecisionEvidenceItem::saved_frame_revision(
+                saved.frame_id().clone(),
+                FrameRoiTransform::new([0.0, 0.0, 1.0, 1.0]).unwrap(),
+            )
+            .unwrap(),
+        ],
+        outcome,
+        JevStructuredOutput::new(Some(0.9), None, None, None, None, None, None).unwrap(),
+        JevEvaluationProvenance::new(
+            saved.captured_at(),
+            UtcTimestamp::parse(evaluated_at).unwrap(),
+            JevProducerIdentity::default_production(),
+            JevEvaluationId::new(evaluation_id).unwrap(),
+            Sha256Digest::hash_bytes(b"config-v1"),
+            Sha256Digest::hash_bytes(b"prompt-v1"),
+            Sha256Digest::hash_bytes(b"criteria-v1"),
+            Sha256Digest::hash_bytes(b"threshold-v1"),
+            FrameRoiTransform::new([0.0, 0.0, 1.0, 1.0]).unwrap(),
+            Sha256Digest::hash_bytes(b"jev-response"),
+            DecisionEvaluationCoverage::Evaluated,
+            Option::<&str>::None,
+        )
+        .unwrap(),
+        supersedes,
+    )
+    .unwrap()
+}
+
+fn assessment_fixture_record(saved: &SavedFrameRef) -> a2a_lab_dev_kit::FrameDecisionRecord {
+    use a2a_lab_dev_kit::{
+        DecisionEvaluationCoverage, DecisionEvidenceItem, DecisionIdempotencyKey,
+        FrameDecisionRecord, JevEvaluationId, JevEvaluationProvenance, JevStructuredOutput,
+        PipetteChannelSubject,
+    };
+    let key =
+        DecisionIdempotencyKey::new("jev-contract-001:lab.pipette_tip_attached:left-1").unwrap();
+    FrameDecisionRecord::new(
+        key,
+        saved.clone(),
+        LabPredicate::pipette_tip_attached_v1(),
+        DecisionSubject::PipetteChannel(PipetteChannelSubject::new("left", "ch1", None).unwrap()),
+        vec![
+            DecisionEvidenceItem::saved_frame_revision(
+                saved.frame_id().clone(),
+                FrameRoiTransform::new([0.0, 0.0, 1.0, 1.0]).unwrap(),
+            )
+            .unwrap(),
+        ],
+        DecisionOutcome::Present,
+        JevStructuredOutput::new(Some(0.9), None, None, None, None, None, None).unwrap(),
+        JevEvaluationProvenance::new(
+            saved.captured_at(),
+            saved.captured_at(),
+            JevProducerIdentity::default_production(),
+            JevEvaluationId::new("jev-contract-001").unwrap(),
+            Sha256Digest::hash_bytes(b"config-v1"),
+            Sha256Digest::hash_bytes(b"prompt-v1"),
+            Sha256Digest::hash_bytes(b"criteria-v1"),
+            Sha256Digest::hash_bytes(b"threshold-v1"),
+            FrameRoiTransform::new([0.0, 0.0, 1.0, 1.0]).unwrap(),
+            Sha256Digest::hash_bytes(b"jev-response"),
+            DecisionEvaluationCoverage::Evaluated,
+            Option::<&str>::None,
+        )
+        .unwrap(),
+        None,
+    )
+    .unwrap()
+}
+
+fn assessment_search_lab_with_records(
+    saved: &SavedFrameRef,
+    records: &[a2a_lab_dev_kit::FrameDecisionRecord],
+) -> Arc<dyn a2a_lab_dev_kit::A2aLabApi + Send + Sync> {
+    use a2a_lab_dev_kit::{
+        FakeFrameDecisionLedgerProvider, FrameDecisionEvaluatorLimits,
+        FrameDecisionEvaluatorProviderConfig,
+    };
+    let mut semantic = FakeSemanticVideoSearchProvider::available();
+    let neighbors = SemanticFramePlaybackNeighbors::new(
+        TimeRange::new(
+            saved.captured_at(),
+            saved.captured_at().saturating_add_micros(5_000_000),
+        )
+        .unwrap(),
+        vec![saved.clone()],
+        5,
+    )
+    .unwrap();
+    semantic.insert_hit(
+        fake_semantic_hit(
+            saved.clone(),
+            attachment(1, b"pipette"),
+            "pipette visible",
+            0.9,
+            neighbors,
+        )
+        .unwrap(),
+    );
+    let config = FrameDecisionEvaluatorProviderConfig::pilot(
+        Sha256Digest::hash_bytes(b"eval-config"),
+        Sha256Digest::hash_bytes(b"threshold"),
+    )
+    .unwrap();
+    let decisions = Arc::new(
+        FakeFrameDecisionLedgerProvider::read_only_consumer(
+            &config,
+            FrameDecisionEvaluatorLimits::pilot(),
+        )
+        .unwrap(),
+    );
+    for record in records {
+        decisions.seed(record.clone()).unwrap();
+    }
+    A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+        .with_videos(MemoryVideos::default())
+        .with_semantic_search(Arc::new(semantic))
+        .with_frame_decisions(decisions)
+        .share()
+}
+
+fn assessment_search_lab(
+    saved: &SavedFrameRef,
+) -> Arc<dyn a2a_lab_dev_kit::A2aLabApi + Send + Sync> {
+    assessment_search_lab_with_records(saved, &[assessment_fixture_record(saved)])
+}
+
+fn search_on_saved(_saved: &SavedFrameRef) -> SearchSemanticFramesRequest {
+    SearchSemanticFramesRequest::new(
+        scope(),
+        SemanticSearchQuery::Text {
+            text: "pipette".to_owned(),
+        },
+        selector(1),
+        SemanticSearchLimits::pilot(),
+        PageRequest::new(None, SemanticSearchLimits::pilot().top_k()).unwrap(),
+        None,
+    )
+    .unwrap()
+}
+
+fn forged_jev_producer() -> JevProducerIdentity {
+    serde_json::from_value(serde_json::json!({
+        "producer_id": "forged-vendor",
+        "model_revision": "model-x"
+    }))
+    .unwrap()
+}
+
+#[test]
+fn unauthorized_decision_filter_rejected_on_request() {
+    let err = DecisionSearchFilter::new(
+        LabPredicate::pipette_tip_attached_v1(),
+        None,
+        Some(DecisionOutcome::Present),
+        forged_jev_producer(),
+        DecisionHistoryPolicy::LatestAuthorizedProduction,
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("typesafe-jev"));
+}
+
+#[tokio::test]
+async fn unauthorized_decision_filter_does_not_block_unfiltered_assessment_attachment() {
+    let saved = frame(b"semantic-assessments", "2024-06-01T12:00:05Z");
+    let lab = assessment_search_lab(&saved);
+    assert!(
+        DecisionSearchFilter::new(
+            LabPredicate::pipette_tip_attached_v1(),
+            None,
+            Some(DecisionOutcome::Present),
+            forged_jev_producer(),
+            DecisionHistoryPolicy::LatestAuthorizedProduction,
+        )
+        .is_err()
+    );
+    let outcome = lab
+        .execute(A2aLabCommand::SearchSemanticFrames(search_on_saved(&saved)))
+        .await
+        .unwrap();
+    let A2aLabResult::SearchSemanticFrames(result) = outcome.task.result else {
+        panic!("search");
+    };
+    let hit = result.hits().items().first().expect("hit");
+    assert!(hit.authorized_assessments().is_some());
+    assert_eq!(hit.authorized_assessments().unwrap().entries().len(), 1);
+}
+
+#[tokio::test]
+async fn service_attaches_empty_assessments_when_no_decisions() {
+    let saved = frame(b"semantic-no-decisions", "2024-06-01T12:00:07Z");
+    let lab = assessment_search_lab_with_records(&saved, &[]);
+    let outcome = lab
+        .execute(A2aLabCommand::SearchSemanticFrames(search_on_saved(&saved)))
+        .await
+        .unwrap();
+    let A2aLabResult::SearchSemanticFrames(result) = outcome.task.result else {
+        panic!("search");
+    };
+    let hit = result.hits().items().first().expect("hit");
+    let assessments = hit.authorized_assessments().expect("assessments");
+    assert!(assessments.entries().is_empty());
+    assert!(assessments.fingerprints().is_empty());
+}
+
+#[tokio::test]
+async fn service_attaches_supersession_history_to_hit() {
+    let saved = frame(b"semantic-supersession", "2024-06-01T12:00:08Z");
+    let first = assessment_tip_record(
+        &saved,
+        DecisionOutcome::Unknown,
+        "jev-contract-001:lab.pipette_tip_attached:left-1:v1",
+        None,
+        "jev-contract-001",
+        "2024-06-01T12:00:09Z",
+    );
+    let second = assessment_tip_record(
+        &saved,
+        DecisionOutcome::Present,
+        "jev-contract-002:lab.pipette_tip_attached:left-1:v2",
+        Some(first.decision_id().clone()),
+        "jev-contract-002",
+        "2024-06-01T12:00:10Z",
+    );
+    let lab = assessment_search_lab_with_records(&saved, &[first.clone(), second.clone()]);
+    let outcome = lab
+        .execute(A2aLabCommand::SearchSemanticFrames(search_on_saved(&saved)))
+        .await
+        .unwrap();
+    let A2aLabResult::SearchSemanticFrames(result) = outcome.task.result else {
+        panic!("search");
+    };
+    let assessments = result
+        .hits()
+        .items()
+        .first()
+        .and_then(|hit| hit.authorized_assessments())
+        .expect("assessments");
+    assert_eq!(assessments.entries().len(), 2);
+    assert_eq!(assessments.fingerprints().len(), 2);
+    assert!(
+        assessments
+            .entries()
+            .iter()
+            .any(|entry| entry.record().supersedes() == Some(first.decision_id()))
+    );
+}
+
+#[tokio::test]
+async fn service_attaches_assessments_without_second_history_read() {
+    let saved = frame(b"semantic-assessments", "2024-06-01T12:00:05Z");
+    let lab = assessment_search_lab(&saved);
+    let request = SearchSemanticFramesRequest::new(
+        scope(),
+        SemanticSearchQuery::Text {
+            text: "pipette".to_owned(),
+        },
+        selector(1),
+        SemanticSearchLimits::pilot(),
+        PageRequest::new(None, SemanticSearchLimits::pilot().top_k()).unwrap(),
+        None,
+    )
+    .unwrap();
+    let outcome = lab
+        .execute(A2aLabCommand::SearchSemanticFrames(request))
+        .await
+        .unwrap();
+    let A2aLabResult::SearchSemanticFrames(result) = outcome.task.result else {
+        panic!("search");
+    };
+    let hit = result.hits().items().first().expect("hit");
+    let assessments = hit.authorized_assessments().expect("assessments");
+    assert_eq!(assessments.frame(), hit.frame());
+    assert_eq!(assessments.entries().len(), 1);
+    assert_eq!(
+        assessments.entries()[0].record().outcome(),
+        DecisionOutcome::Present
+    );
 }
 
 #[tokio::test]

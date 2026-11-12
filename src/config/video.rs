@@ -68,6 +68,10 @@ pub struct VideoSourceConfig {
     pub format: VideoInputFormat,
     /// Local capture-library index, including zero.
     pub device_index: u32,
+    /// Explicit frame width. Required for non-legacy source ids.
+    pub width: Option<u32>,
+    /// Explicit frame height. Required for non-legacy source ids.
+    pub height: Option<u32>,
     /// Optional per-source semantic indexing stage schedules.
     pub semantic_indexing: Option<SemanticStreamSchedule>,
 }
@@ -125,13 +129,23 @@ pub(crate) fn parse_videos(
 }
 
 const VIDEO_KEYS: &[&str] = &["sources", "fps", "live_retention", "dvr"];
-const SOURCE_KEYS_V1: &[&str] = &["id", "name", "description", "format", "device_index"];
+const SOURCE_KEYS_V1: &[&str] = &[
+    "id",
+    "name",
+    "description",
+    "format",
+    "device_index",
+    "width",
+    "height",
+];
 const SOURCE_KEYS_V2: &[&str] = &[
     "id",
     "name",
     "description",
     "format",
     "device_index",
+    "width",
+    "height",
     "semantic_indexing",
 ];
 const DVR_KEYS: &[&str] = &["retention", "storage_path"];
@@ -204,6 +218,8 @@ fn parse_source(
             ));
         }
     };
+    let width = parse_optional_positive_u32(map.get("width"), "videos.sources.width")?;
+    let height = parse_optional_positive_u32(map.get("height"), "videos.sources.height")?;
     let semantic_indexing = if allow_semantic_indexing {
         parse_source_semantic_indexing(map.get("semantic_indexing"), id.as_str())?
     } else {
@@ -215,8 +231,24 @@ fn parse_source(
         description,
         format,
         device_index,
+        width,
+        height,
         semantic_indexing,
     })
+}
+
+fn parse_optional_positive_u32(
+    value: Option<&Value>,
+    field: &'static str,
+) -> Result<Option<u32>, A2aLabError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let parsed = super::parse_u32(field, value)?;
+    if parsed == 0 {
+        return Err(A2aLabError::invalid(field, "must be greater than zero"));
+    }
+    Ok(Some(parsed))
 }
 
 fn parse_source_semantic_indexing(

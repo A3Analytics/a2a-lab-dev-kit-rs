@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use crate::images::{self, SourcePhase};
 use crate::inventory::{Fault, Item, Primitive};
 use crate::shell::loading::{StrandSize, StrandsLoader};
+use crate::shell::nav::{self, VIDEOS_BROWSE_PATH, VIDEOS_SEARCH_PATH, VideoPanel};
 use crate::shell::playback::{self, StreamTicket};
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 use crate::videos::track::{self, Track, Window};
@@ -146,6 +147,7 @@ thread_local! {
     static SUPPRESS_CLICK: Cell<bool> = const { Cell::new(false) };
     static REPLAY: Cell<bool> = const { Cell::new(false) };
     static REFRESH: Cell<Option<i32>> = const { Cell::new(None) };
+    static STREAM_ARMED: Cell<bool> = const { Cell::new(true) };
 }
 
 pub fn bind(ui: Signal<VideoUi>) {
@@ -203,7 +205,7 @@ fn loader() -> Option<Loader> {
 }
 
 #[component]
-pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
+pub fn VideoView(ui: Signal<VideoUi>, visible: bool, panel: VideoPanel) -> Element {
     let clip = use_signal(|| ClipJob::Idle);
     let semantic_search = use_signal(|| semantic::SearchJob::Idle);
     let semantic_caps = use_signal(|| semantic::CapabilityJob::Idle);
@@ -215,18 +217,27 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool) -> Element {
         LOADER.with(|slot| *slot.borrow_mut() = Some(Loader { clip }));
         semantic::bind_loader(semantic_search, semantic_caps, semantic_history);
     });
-    use_drop(stop_playback);
-    let mut shown = use_signal(|| false);
-    if shown() != visible {
-        shown.set(visible);
+    use_drop(leave_videos);
+    let mut was_visible = use_signal(|| false);
+    if visible {
+        sync_video_panel(panel);
     }
     use_effect(move || {
-        if shown() {
+        if !visible {
+            if was_visible() {
+                leave_videos();
+            }
+            was_visible.set(false);
+            return;
+        }
+        was_visible.set(true);
+        sync_video_panel(panel);
+        if panel == VideoPanel::Browse {
             playback::bind_media(native_play, native_pause, force_pause);
             ensure_timeline();
             start_coverage_refresh();
         } else {
-            stop_playback();
+            suspend_browse_media();
         }
     });
     let clip_reply = use_resource(move || {
@@ -322,12 +333,71 @@ fn VideoTabs(state: VideoUi) -> Element {
 }
 
 fn select_video_tab(tab: VideoTab) {
+    let path = match tab {
+        VideoTab::Browse => VIDEOS_BROWSE_PATH,
+        VideoTab::Search => VIDEOS_SEARCH_PATH,
+    };
+    if nav::current_route() == path && bound().is_some_and(|ui| ui.peek().active_tab == tab) {
+        return;
+    }
+    if tab == VideoTab::Search {
+        suspend_browse_media();
+    }
+    sync_video_panel(match tab {
+        VideoTab::Browse => VideoPanel::Browse,
+        VideoTab::Search => VideoPanel::Search,
+    });
+    nav::open(path);
+}
+
+fn sync_video_panel(panel: VideoPanel) {
+    let tab = match panel {
+        VideoPanel::Browse => VideoTab::Browse,
+        VideoPanel::Search => VideoTab::Search,
+    };
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
+    if next.active_tab == tab {
+        return;
+    }
     next.active_tab = tab;
     ui.set(next);
+}
+
+fn browse_panel_active() -> bool {
+    videos_visible()
+        && matches!(
+            nav::video_panel_for(&nav::current_route()),
+            VideoPanel::Browse
+        )
+}
+
+pub(crate) fn browse_streaming_allowed() -> bool {
+    browse_panel_active() && STREAM_ARMED.with(Cell::get)
+}
+
+pub(crate) fn browse_commands_allowed() -> bool {
+    browse_panel_active()
+}
+
+fn arm_browse_stream() {
+    STREAM_ARMED.with(|slot| slot.set(true));
+}
+
+pub(super) fn arm_browse_stream_for_timeline() {
+    arm_browse_stream();
+}
+
+fn disarm_browse_stream() {
+    STREAM_ARMED.with(|slot| slot.set(false));
+}
+
+pub(crate) fn open_browse_panel() {
+    if nav::video_panel_for(&nav::current_route()) != VideoPanel::Browse {
+        nav::open(VIDEOS_BROWSE_PATH);
+    }
 }
 
 #[component]
@@ -825,8 +895,9 @@ pub(super) fn toggle_local_time() {
     next.local_time = !from;
     next.range_draft_start = timeline::reshow(&next.range_draft_start, from, next.local_time);
     next.range_draft_end = timeline::reshow(&next.range_draft_end, from, next.local_time);
-    next.search_draft_start = timeline::reshow(&next.search_draft_start, from, next.local_time);
-    next.search_draft_end = timeline::reshow(&next.search_draft_end, from, next.local_time);
+    next.search_draft_start =
+        timeline::reshow_picker(&next.search_draft_start, from, next.local_time);
+    next.search_draft_end = timeline::reshow_picker(&next.search_draft_end, from, next.local_time);
     ui.set(next);
 }
 
@@ -910,10 +981,14 @@ fn toggle_playback() {
     let playback = bound().map(|ui| ui.peek().reader.playback);
     match playback {
         Some(Playback::Paused) => {
+            arm_browse_stream();
             resume();
             playback::play_element();
         }
-        Some(Playback::Stopped) => replay_session(),
+        Some(Playback::Stopped) => {
+            arm_browse_stream();
+            replay_session();
+        }
         _ => {
             pause();
             playback::pause_element();
@@ -934,6 +1009,7 @@ fn pause() {
 }
 
 fn resume() {
+    arm_browse_stream();
     let Some(mut ui) = bound() else {
         return;
     };
@@ -945,10 +1021,12 @@ fn resume() {
     }
 }
 
-fn stop_playback() {
+fn suspend_browse_media() {
+    disarm_browse_stream();
     playback::abort();
     abort_commands();
     let Some(mut ui) = bound() else {
+        playback::pause_element();
         return;
     };
     let mut next = ui.peek().clone();
@@ -958,13 +1036,38 @@ fn stop_playback() {
             next.reader.playback,
             Playback::Connecting | Playback::Playing | Playback::Paused
         );
-    if !active {
-        return;
+    if active {
+        next.reader.stop();
+        playback::set_paused(true);
+        ui.set(next.clone());
+        mirror_status(&next.reader);
     }
-    next.reader.stop();
-    playback::set_paused(true);
-    ui.set(next.clone());
-    mirror_status(&next.reader);
+    playback::pause_element();
+}
+
+fn leave_videos() {
+    disarm_browse_stream();
+    playback::abort();
+    abort_commands();
+    abort_semantic_commands();
+    stop_coverage_refresh();
+    let Some(mut ui) = bound() else {
+        playback::pause_element();
+        return;
+    };
+    let mut next = ui.peek().clone();
+    let active = next.reader.loading
+        || next.reader.has_media()
+        || matches!(
+            next.reader.playback,
+            Playback::Connecting | Playback::Playing | Playback::Paused
+        );
+    if active {
+        next.reader.stop();
+        playback::set_paused(true);
+        ui.set(next.clone());
+        mirror_status(&next.reader);
+    }
     playback::pause_element();
 }
 
@@ -980,6 +1083,7 @@ fn mirror_status(reader: &videos::Reader) {
 }
 
 fn retry() {
+    arm_browse_stream();
     let Some(mut ui) = bound() else {
         return;
     };
@@ -997,6 +1101,9 @@ fn retry() {
 }
 
 fn launch_clip(ticket: Ticket) {
+    if !browse_streaming_allowed() {
+        return;
+    }
     let Some(mut loader) = loader() else {
         return;
     };
@@ -1023,6 +1130,9 @@ fn launch_clip(ticket: Ticket) {
 }
 
 pub(super) fn launch_stream(generation: u32, plan: StreamPlan) {
+    if !browse_streaming_allowed() {
+        return;
+    }
     let secret = session::native_secret();
     if take_secret(&[plan.fetch_path.as_str()]).is_err() {
         return;
@@ -1112,7 +1222,7 @@ fn start_coverage_refresh() {
             return;
         }
         let closure = wasm_bindgen::closure::Closure::wrap(Box::new(|| {
-            if videos_visible() {
+            if browse_streaming_allowed() {
                 fetch_timeline(|_| {});
             }
         }) as Box<dyn FnMut()>);
@@ -1126,6 +1236,18 @@ fn start_coverage_refresh() {
         });
         closure.forget();
         slot.set(id);
+    });
+}
+
+fn stop_coverage_refresh() {
+    REFRESH.with(|slot| {
+        let Some(id) = slot.get() else {
+            return;
+        };
+        if let Some(window) = web_sys::window() {
+            window.clear_interval_with_handle(id);
+        }
+        slot.set(None);
     });
 }
 
@@ -1174,6 +1296,9 @@ pub(super) async fn post(
 }
 
 fn apply_clip(mut ui: Signal<VideoUi>, outcome: ClipOutcome) {
+    if !browse_streaming_allowed() {
+        return;
+    }
     let mut next = ui.peek().clone();
     let path = match outcome {
         ClipOutcome::Idle => return,
@@ -1226,6 +1351,9 @@ fn apply_clip(mut ui: Signal<VideoUi>, outcome: ClipOutcome) {
 }
 
 fn launch_meta(ticket: Ticket) {
+    if !browse_commands_allowed() {
+        return;
+    }
     let source_id = match &ticket.kind {
         Kind::Timeline { source_id } | Kind::Follow { source_id } => source_id.clone(),
         Kind::Clip { .. } | Kind::FrameAtTime { .. } => return,
@@ -1313,8 +1441,10 @@ fn apply_meta(outcome: MetaOutcome) {
             if !next.reader.accept_timeline(&ticket, timeline) {
                 return;
             }
-            auto = videos::begin_auto_playback(&mut next.reader);
-            sync_auto_range(&mut next, &auto);
+            if browse_streaming_allowed() {
+                auto = videos::begin_auto_playback(&mut next.reader);
+                sync_auto_range(&mut next, &auto);
+            }
             note_source_change(&next.reader.source_id);
             let seek = semantic::take_search_seek(&next.reader.source_id);
             if let Some(us) = seek {

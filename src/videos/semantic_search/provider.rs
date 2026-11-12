@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 
 use crate::error::A2aLabError;
+use crate::videos::semantic_search::provenance::SemanticProvenanceSelector;
 use crate::videos::semantic_search::request::{
     GetSemanticIndexingCoverageRequest, SearchSemanticFramesRequest,
 };
@@ -25,6 +26,9 @@ pub trait SemanticVideoSearchProvider: Send + Sync {
         &self,
         request: GetSemanticIndexingCoverageRequest,
     ) -> Result<SemanticIndexingCoverage, A2aLabError>;
+
+    /// Active model space and description generation advertised to clients.
+    fn active_provenance(&self) -> Result<SemanticProvenanceSelector, A2aLabError>;
 }
 
 /// Stable unavailable error for absent semantic capabilities.

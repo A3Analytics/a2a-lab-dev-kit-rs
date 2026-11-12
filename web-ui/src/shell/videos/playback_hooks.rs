@@ -8,6 +8,9 @@ use crate::shell::playback::StreamOutcome;
 
 pub(super) fn apply_stream(outcome: StreamOutcome) {
     run(move || {
+        if !super::browse_streaming_allowed() {
+            return;
+        }
         let Some(mut ui) = bound() else {
             return;
         };

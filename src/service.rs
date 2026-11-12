@@ -40,8 +40,8 @@ use crate::videos::{
     ReadFrameDecisionHistoryRequest, ResolvedMediaAsset, SearchSemanticFramesRequest,
     SemanticFrameSearchResult, SemanticIndexingCoverage, SemanticSearchCapabilities,
     SemanticVideoSearchProvider, VideoClip, VideoClipStream, VideoFollow, VideoLiveStream,
-    VideoProvider, VideoSource, VideoTimeline, frame_decision_unavailable,
-    semantic_search_unavailable,
+    VideoProvider, VideoSource, VideoTimeline, authorized_assessments_for_frame,
+    frame_decision_unavailable, semantic_search_unavailable,
 };
 
 /// Future returned by [`A2aLabApi`].
@@ -785,6 +785,31 @@ where
             .await
     }
 
+    async fn attach_search_assessments(
+        &self,
+        request: &SearchSemanticFramesRequest,
+        result: SemanticFrameSearchResult,
+    ) -> Result<SemanticFrameSearchResult, A2aLabError> {
+        let Some(ledger) = self.frame_decisions.as_ref() else {
+            return Ok(result);
+        };
+        let max_rows = request.limits().max_assessment_rows_per_hit();
+        let mut items = result.hits().items().to_vec();
+        for hit in &mut items {
+            if hit.authorized_assessments().is_some() {
+                continue;
+            }
+            let assessments =
+                authorized_assessments_for_frame(ledger.as_ref(), hit.frame(), max_rows).await?;
+            *hit = hit.clone().with_authorized_assessments(Some(assessments))?;
+        }
+        Ok(SemanticFrameSearchResult::new(
+            Page::new(items, result.hits().next_cursor().map(str::to_owned)),
+            result.incomplete_indexing(),
+            result.candidate_budget_exhausted(),
+        ))
+    }
+
     async fn run_semantic_search(
         &self,
         command: A2aLabCommand,
@@ -792,7 +817,9 @@ where
         match command {
             A2aLabCommand::GetSemanticSearchCapabilities(_) => {
                 let capabilities = match self.semantic_search.as_ref() {
-                    Some(_) => SemanticSearchCapabilities::registered(),
+                    Some(provider) => {
+                        SemanticSearchCapabilities::registered(provider.active_provenance().ok())
+                    }
                     None => SemanticSearchCapabilities::unregistered(),
                 };
                 self.store_snapshot(A2aLabResult::GetSemanticSearchCapabilities(capabilities))
@@ -804,8 +831,9 @@ where
                     .semantic_search
                     .as_ref()
                     .ok_or_else(semantic_search_unavailable)?
-                    .search_semantic_frames(request)
+                    .search_semantic_frames(request.clone())
                     .await?;
+                let result = self.attach_search_assessments(&request, result).await?;
                 self.store_snapshot(A2aLabResult::SearchSemanticFrames(result))
                     .await
             }

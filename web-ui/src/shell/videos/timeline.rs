@@ -15,7 +15,8 @@ use crate::videos::track::{self, SpanKind, Track, Window};
 use crate::videos::{self, Selection};
 
 pub(super) use super::timeline_fields::{
-    display_clock, display_instant, field_to_utc, format_shown, reshow,
+    display_clock, display_instant, display_picker, field_to_utc, format_shown, reshow,
+    reshow_picker,
 };
 
 pub(super) fn ensure_timeline() {
@@ -38,6 +39,7 @@ pub(super) fn ensure_timeline() {
 }
 
 pub(super) fn follow_newest() {
+    super::arm_browse_stream_for_timeline();
     let Some(mut ui) = bound() else {
         return;
     };
@@ -77,6 +79,7 @@ pub(super) fn reselect_range() {
 }
 
 pub(super) fn commit_at(at_us: i64) {
+    super::arm_browse_stream_for_timeline();
     super::fetch_timeline(move |_| play_at(at_us));
 }
 
@@ -152,6 +155,7 @@ fn commit_selection(selection: Window, anchor: Option<i64>) {
 }
 
 pub(super) fn replay_session() {
+    super::arm_browse_stream_for_timeline();
     let Some(mut ui) = bound() else {
         return;
     };

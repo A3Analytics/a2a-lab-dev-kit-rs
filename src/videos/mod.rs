@@ -49,7 +49,8 @@ pub use capture::{
 pub use capture_profile::{
     AdvertisedCaptureProfile, CaptureFormatPreference, CaptureProfileError, CaptureProfileRequest,
     CaptureRate, DEFAULT_CAPTURE_OUTPUT_FPS, SelectedCaptureProfile, confirm_selected_profile,
-    select_capture_profile,
+    describe_capture_profile_error, format_advertised_capture_profiles,
+    format_capture_profile_request, select_capture_profile, select_capture_profile_flexible,
 };
 pub use capture_session::{CaptureSession, ColorCamera, RawCameraSample, captured_frame};
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
@@ -157,17 +158,18 @@ pub use semantic_indexing::{
     validate_description_batch, validate_embedding_batch,
 };
 pub use semantic_search::{
-    DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_TOP_K, DecisionHistoryPolicy,
-    DecisionSearchFilter, FakeSemanticHit, FakeSemanticVideoSearchProvider,
+    DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS, DEFAULT_SEMANTIC_TOP_K,
+    DecisionHistoryPolicy, DecisionSearchFilter, FakeSemanticHit, FakeSemanticVideoSearchProvider,
     GetSemanticIndexingCoverageRequest, GetSemanticSearchCapabilitiesRequest,
-    MAX_SEMANTIC_CANDIDATES, MAX_SEMANTIC_NEIGHBOR_FRAMES, MAX_SEMANTIC_TOP_K,
-    SearchSemanticFramesRequest, SemanticFrameHit, SemanticFrameIndexState,
-    SemanticFrameMediaAvailability, SemanticFramePlaybackNeighbors, SemanticFrameSearchResult,
-    SemanticIndexingCoverage, SemanticIndexingFreshness, SemanticIndexingStateCounts,
-    SemanticProvenanceSelector, SemanticRetrievalScore, SemanticSearchCapabilities,
-    SemanticSearchLimits, SemanticSearchOperation, SemanticSearchQuery, SemanticSearchSchemaRefs,
-    SemanticSearchScope, SemanticVideoSearchProvider, TckMalformedSemanticSearchRequests,
-    fake_semantic_hit, semantic_search_unavailable,
+    MAX_SEMANTIC_CANDIDATES, MAX_SEMANTIC_HIT_ASSESSMENT_ROWS, MAX_SEMANTIC_NEIGHBOR_FRAMES,
+    MAX_SEMANTIC_TOP_K, SearchSemanticFramesRequest, SemanticFrameHit, SemanticFrameHitAssessments,
+    SemanticFrameIndexState, SemanticFrameMediaAvailability, SemanticFramePlaybackNeighbors,
+    SemanticFrameSearchResult, SemanticIndexingCoverage, SemanticIndexingFreshness,
+    SemanticIndexingStateCounts, SemanticProvenanceSelector, SemanticRetrievalScore,
+    SemanticSearchCapabilities, SemanticSearchLimits, SemanticSearchOperation, SemanticSearchQuery,
+    SemanticSearchSchemaRefs, SemanticSearchScope, SemanticVideoSearchProvider,
+    TckMalformedSemanticSearchRequests, authorized_assessments_for_frame, fake_semantic_hit,
+    semantic_search_unavailable,
 };
 pub use timeline::{
     FollowVideoRequest, GetVideoTimelineRequest, VIDEO_LIVE_PATH_PREFIX, VideoFollow,

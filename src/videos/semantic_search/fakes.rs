@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use crate::error::A2aLabError;
 use crate::page::slice_page;
 use crate::videos::index_provenance::FrameVectorIndexAttachment;
+use crate::videos::semantic_search::provenance::SemanticProvenanceSelector;
 use crate::videos::semantic_search::provider::SemanticVideoSearchProvider;
 use crate::videos::semantic_search::query::SemanticSearchQuery;
 use crate::videos::semantic_search::request::{
@@ -35,6 +36,7 @@ pub struct FakeSemanticVideoSearchProvider {
     available: bool,
     hits: HashMap<String, FakeSemanticHit>,
     coverage: Option<SemanticIndexingCoverage>,
+    active_provenance: Option<SemanticProvenanceSelector>,
 }
 
 impl FakeSemanticVideoSearchProvider {
@@ -45,6 +47,7 @@ impl FakeSemanticVideoSearchProvider {
             available: false,
             hits: HashMap::new(),
             coverage: None,
+            active_provenance: None,
         }
     }
 
@@ -55,6 +58,7 @@ impl FakeSemanticVideoSearchProvider {
             available: true,
             hits: HashMap::new(),
             coverage: None,
+            active_provenance: None,
         }
     }
 
@@ -67,6 +71,11 @@ impl FakeSemanticVideoSearchProvider {
     /// Sets the coverage snapshot returned by [`Self::get_semantic_indexing_coverage`].
     pub fn set_coverage(&mut self, coverage: SemanticIndexingCoverage) {
         self.coverage = Some(coverage);
+    }
+
+    /// Sets the active provenance returned by [`SemanticVideoSearchProvider::active_provenance`].
+    pub fn set_active_provenance(&mut self, provenance: SemanticProvenanceSelector) {
+        self.active_provenance = Some(provenance);
     }
 }
 
@@ -142,6 +151,18 @@ impl SemanticVideoSearchProvider for FakeSemanticVideoSearchProvider {
             true,
         ))
     }
+
+    fn active_provenance(&self) -> Result<SemanticProvenanceSelector, A2aLabError> {
+        if !self.available {
+            return Err(super::provider::semantic_search_unavailable());
+        }
+        self.active_provenance.clone().ok_or_else(|| {
+            A2aLabError::invalid(
+                "active_provenance",
+                "semantic search provider did not publish active provenance",
+            )
+        })
+    }
 }
 
 /// Builds a deterministic hit for fake providers.
@@ -161,6 +182,7 @@ pub fn fake_semantic_hit(
         SemanticFrameIndexState::Ready,
         SemanticFrameMediaAvailability::Ready,
         neighbors,
+        None,
     )?;
     Ok(FakeSemanticHit {
         hit: hit.clone(),

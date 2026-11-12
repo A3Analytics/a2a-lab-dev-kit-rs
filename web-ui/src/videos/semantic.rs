@@ -75,6 +75,8 @@ pub struct SearchHit {
     /// Full frame revision for same-origin decision history requests.
     pub command_frame: Value,
     pub thumb: Option<HitThumb>,
+    pub decisions: Vec<DecisionRow>,
+    pub authorized_assessments: bool,
 }
 
 impl SearchHit {
@@ -233,8 +235,12 @@ impl Hub {
         self.incomplete_indexing = incomplete;
         self.selected = if self.hits.is_empty() { usize::MAX } else { 0 };
         self.result_page = 0;
-        self.decisions.clear();
-        self.decision_phase = ApiPhase::Unknown;
+        if self.selected < self.hits.len() {
+            self.apply_decisions_from_hit(self.selected);
+        } else {
+            self.decisions.clear();
+            self.decision_phase = ApiPhase::Unknown;
+        }
         true
     }
 
@@ -246,10 +252,26 @@ impl Hub {
             return false;
         }
         self.selected = index;
-        self.decisions.clear();
-        self.decision_phase = ApiPhase::Unknown;
-        self.decision_alert.clear();
+        self.apply_decisions_from_hit(index);
         true
+    }
+
+    pub fn apply_decisions_from_hit(&mut self, index: usize) {
+        let Some(hit) = self.hits.get(index) else {
+            self.decisions.clear();
+            self.decision_phase = ApiPhase::Unknown;
+            self.decision_alert.clear();
+            return;
+        };
+        self.decisions = hit.decisions.clone();
+        self.decision_alert.clear();
+        self.decision_phase = if !self.decisions_enabled() {
+            ApiPhase::Absent
+        } else if !hit.authorized_assessments {
+            ApiPhase::Unknown
+        } else {
+            ApiPhase::Ready
+        };
     }
 }
 
@@ -334,13 +356,86 @@ pub fn history_command(source_id: &str, start: &str, end: &str, frame: &Value) -
 }
 
 pub fn interpret_semantic_registered(reply: &Reply, secret: Option<&str>) -> Result<bool, Fault> {
+    let (_, registered) = interpret_semantic_capabilities(reply, secret)?;
+    Ok(registered)
+}
+
+/// Parses semantic search registration and server-selected provenance.
+pub fn interpret_semantic_capabilities(
+    reply: &Reply,
+    secret: Option<&str>,
+) -> Result<(Option<ProvenancePick>, bool), Fault> {
     let payload = one_payload(&decode(reply, secret)?)?;
     let value: Value = serde_json::from_str(&payload).map_err(|_| Fault::Malformed)?;
     let result = owned_result(&value, "get_semantic_search_capabilities")?;
-    Ok(result
+    let registered = result
         .get("registered")
         .and_then(Value::as_bool)
-        .unwrap_or(false))
+        .unwrap_or(false);
+    if !registered {
+        return Ok((None, false));
+    }
+    let active = result.get("active_provenance").ok_or(Fault::Malformed)?;
+    Ok((Some(parse_provenance_pick(active)?), true))
+}
+
+fn parse_provenance_pick(value: &Value) -> Result<ProvenancePick, Fault> {
+    let object = value.as_object().ok_or(Fault::Malformed)?;
+    let model_space = object
+        .get("model_space")
+        .map(normalize_wire_numbers)
+        .ok_or(Fault::Malformed)?;
+    let description_generation =
+        wire_u64(object.get("description_generation")).ok_or(Fault::Malformed)?;
+    Ok(ProvenancePick {
+        model_space,
+        description_generation,
+    })
+}
+
+/// A2A wire normalization may emit whole-number fields as floats (for example `1.0`).
+fn wire_u64(value: Option<&Value>) -> Option<u64> {
+    let value = value?;
+    if let Some(number) = value.as_u64() {
+        return (number > 0).then_some(number);
+    }
+    if let Some(number) = value.as_i64().and_then(|v| u64::try_from(v).ok()) {
+        return (number > 0).then_some(number);
+    }
+    let number = value.as_f64()?;
+    if !(0.0..=f64::from(u32::MAX)).contains(&number) || number.fract() != 0.0 {
+        return None;
+    }
+    let rounded = number.round() as u64;
+    (rounded > 0).then_some(rounded)
+}
+
+fn normalize_wire_numbers(value: &Value) -> Value {
+    match value {
+        Value::Number(number) => whole_number_value(number),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(normalize_wire_numbers).collect::<Vec<_>>())
+        }
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, item)| (key.clone(), normalize_wire_numbers(item)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn whole_number_value(number: &serde_json::Number) -> Value {
+    if number.as_u64().is_some() || number.as_i64().is_some() {
+        return Value::Number(number.clone());
+    }
+    let Some(float) = number.as_f64() else {
+        return Value::Number(number.clone());
+    };
+    if !(0.0..=f64::from(u32::MAX)).contains(&float) || float.fract() != 0.0 {
+        return Value::Number(number.clone());
+    }
+    Value::Number(serde_json::Number::from(float.round() as u64))
 }
 
 pub fn interpret_decision_registered(reply: &Reply, secret: Option<&str>) -> Result<bool, Fault> {
@@ -361,11 +456,7 @@ pub fn interpret_coverage(
     let value: Value = serde_json::from_str(&payload).map_err(|_| Fault::Malformed)?;
     let result = owned_result(&value, "get_semantic_indexing_coverage")?;
     let model_space = result.get("model_space").cloned().ok_or(Fault::Malformed)?;
-    let generation = model_space
-        .get("generation")
-        .and_then(Value::as_u64)
-        .filter(|value| *value > 0)
-        .unwrap_or(1);
+    let generation = wire_u64(model_space.get("generation")).unwrap_or(1);
     let counts = result.get("counts").and_then(Value::as_object);
     let banner = CoverageBanner {
         pending: counts
@@ -505,6 +596,8 @@ fn parse_hit(value: &Value, secret: Option<&str>) -> Result<SearchHit, Fault> {
         }
         _ => ("pending".to_owned(), String::new()),
     };
+    let (decisions, authorized_assessments) =
+        parse_hit_assessments(object.get("authorized_assessments"), secret);
     Ok(SearchHit {
         frame_id: required(frame_object, "frame_id")?,
         captured_at: codec::redact(&captured_at, secret),
@@ -521,7 +614,25 @@ fn parse_hit(value: &Value, secret: Option<&str>) -> Result<SearchHit, Fault> {
         command_frame: frame.clone(),
         frame_ref: redact_value(frame, secret),
         thumb: None,
+        decisions,
+        authorized_assessments,
     })
+}
+
+fn parse_hit_assessments(value: Option<&Value>, secret: Option<&str>) -> (Vec<DecisionRow>, bool) {
+    let Some(value) = value else {
+        return (Vec::new(), false);
+    };
+    let entries = value
+        .get("entries")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let rows = entries
+        .iter()
+        .filter_map(|entry| parse_decision(entry, secret).ok())
+        .collect();
+    (rows, true)
 }
 
 fn parse_decision(value: &Value, secret: Option<&str>) -> Result<DecisionRow, Fault> {
@@ -754,15 +865,118 @@ mod tests {
 
     #[test]
     fn capabilities_and_search_roundtrip_without_store_paths() {
-        let caps = interpret_semantic_registered(
+        let (provenance, registered) = interpret_semantic_capabilities(
             &reply(json!({
                 "operation": "get_semantic_search_capabilities",
-                "result": { "registered": true }
+                "result": {
+                    "registered": true,
+                    "active_provenance": {
+                        "model_space": {
+                            "provider": "local_bge",
+                            "model": "BAAI/bge-small-en-v1.5",
+                            "dimensions": 384,
+                            "normalization": "l2_unit",
+                            "metric": "cosine",
+                            "generation": 1
+                        },
+                        "description_generation": 1
+                    }
+                }
             })),
             None,
         )
         .unwrap();
-        assert!(caps);
+        assert!(registered);
+        let pick = provenance.expect("provenance");
+        assert_eq!(
+            pick.model_space.get("provider").and_then(Value::as_str),
+            Some("local_bge")
+        );
+        assert_eq!(pick.description_generation, 1);
+        assert!(
+            interpret_semantic_capabilities(
+                &reply(json!({
+                    "operation": "get_semantic_search_capabilities",
+                    "result": { "registered": true }
+                })),
+                None,
+            )
+            .is_err()
+        );
+        let (float_pick, float_registered) = interpret_semantic_capabilities(
+            &reply(json!({
+                "operation": "get_semantic_search_capabilities",
+                "result": {
+                    "registered": true,
+                    "active_provenance": {
+                        "model_space": {
+                            "provider": "bedrock",
+                            "model": "text-embed-v1",
+                            "dimensions": 4.0,
+                            "normalization": "l2_unit",
+                            "metric": "cosine",
+                            "generation": 1.0
+                        },
+                        "description_generation": 1.0
+                    }
+                }
+            })),
+            None,
+        )
+        .unwrap();
+        assert!(float_registered);
+        let float_pick = float_pick.expect("float provenance");
+        assert_eq!(float_pick.description_generation, 1);
+        assert_eq!(
+            float_pick
+                .model_space
+                .get("dimensions")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        let (task_pick, task_registered) = interpret_semantic_capabilities(
+            &Reply {
+                status: 200,
+                body: json!({
+                    "task": {
+                        "id": "task-semantic-cap",
+                        "contextId": "ctx-semantic-cap",
+                        "status": { "state": "TASK_STATE_COMPLETED" },
+                        "artifacts": [{
+                            "artifactId": "artifact-0",
+                            "parts": [{
+                                "data": {
+                                    "operation": "get_semantic_search_capabilities",
+                                    "result": {
+                                        "registered": true,
+                                        "active_provenance": {
+                                            "description_generation": 1.0,
+                                            "model_space": {
+                                                "dimensions": 4.0,
+                                                "generation": 1.0,
+                                                "metric": "cosine",
+                                                "model": "text-embed-v1",
+                                                "normalization": "l2_unit",
+                                                "provider": "bedrock"
+                                            }
+                                        }
+                                    }
+                                },
+                                "mediaType": "application/json"
+                            }]
+                        }]
+                    }
+                })
+                .to_string(),
+            },
+            None,
+        )
+        .expect("task reply");
+        assert!(task_registered);
+        assert_eq!(
+            task_pick.expect("task provenance").description_generation,
+            1
+        );
         let (hits, incomplete) = interpret_search(
             &reply(json!({
                 "operation": "search_semantic_frames",
@@ -779,6 +993,65 @@ mod tests {
         assert!(!hits[0].description.contains('/'));
         assert!(hits[0].frame_ref.get("store").is_none());
         assert_eq!(hits[0].description_model, "global.openai.gpt-5.6-luna");
+    }
+
+    #[test]
+    fn search_hit_assessments_parse_without_history_request() {
+        let mut hit = fixture_hit();
+        let frame = hit.get("frame").cloned().unwrap();
+        hit.as_object_mut().unwrap().insert(
+            "authorized_assessments".to_owned(),
+            json!({
+                "frame": frame,
+                "history_policy": "full_history",
+                "entries": [fixture_decision()],
+                "fingerprints": { "dec-1": "sha256:0102030405060708090a0b0c0d0e0f0102030405060708090a0b0c0d0e0f0" },
+                "truncated": false
+            }),
+        );
+        let (hits, _) = interpret_search(
+            &reply(json!({
+                "operation": "search_semantic_frames",
+                "result": {
+                    "incomplete_indexing": false,
+                    "hits": { "items": [hit] }
+                }
+            })),
+            None,
+        )
+        .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].authorized_assessments);
+        assert_eq!(hits[0].decisions.len(), 1);
+    }
+
+    #[test]
+    fn search_hit_empty_assessments_parse() {
+        let mut hit = fixture_hit();
+        let frame = hit.get("frame").cloned().unwrap();
+        hit.as_object_mut().unwrap().insert(
+            "authorized_assessments".to_owned(),
+            json!({
+                "frame": frame,
+                "history_policy": "full_history",
+                "entries": [],
+                "fingerprints": {},
+                "truncated": false
+            }),
+        );
+        let (hits, _) = interpret_search(
+            &reply(json!({
+                "operation": "search_semantic_frames",
+                "result": {
+                    "incomplete_indexing": false,
+                    "hits": { "items": [hit] }
+                }
+            })),
+            None,
+        )
+        .unwrap();
+        assert!(hits[0].authorized_assessments);
+        assert!(hits[0].decisions.is_empty());
     }
 
     #[test]

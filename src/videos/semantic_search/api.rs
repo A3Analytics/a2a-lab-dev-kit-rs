@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::videos::semantic_search::provenance::SemanticProvenanceSelector;
+
 /// Uses an empty object on the wire so MCP `inputSchema` roots as `object`, not `null`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +81,8 @@ pub struct SemanticSearchCapabilities {
     operations: Vec<SemanticSearchOperation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     schemas: Option<SemanticSearchSchemaRefs>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_provenance: Option<SemanticProvenanceSelector>,
 }
 
 impl SemanticSearchCapabilities {
@@ -89,12 +93,13 @@ impl SemanticSearchCapabilities {
             registered: false,
             operations: Vec::new(),
             schemas: None,
+            active_provenance: None,
         }
     }
 
     /// Registered provider exposing search and coverage schemas.
     #[must_use]
-    pub fn registered() -> Self {
+    pub fn registered(active_provenance: Option<SemanticProvenanceSelector>) -> Self {
         Self {
             registered: true,
             operations: vec![
@@ -102,6 +107,7 @@ impl SemanticSearchCapabilities {
                 SemanticSearchOperation::GetSemanticIndexingCoverage,
             ],
             schemas: Some(SemanticSearchSchemaRefs::registered()),
+            active_provenance,
         }
     }
 
@@ -121,5 +127,11 @@ impl SemanticSearchCapabilities {
     #[must_use]
     pub const fn schemas(&self) -> Option<&SemanticSearchSchemaRefs> {
         self.schemas.as_ref()
+    }
+
+    /// Server-selected model space and description generation when registered.
+    #[must_use]
+    pub const fn active_provenance(&self) -> Option<&SemanticProvenanceSelector> {
+        self.active_provenance.as_ref()
     }
 }

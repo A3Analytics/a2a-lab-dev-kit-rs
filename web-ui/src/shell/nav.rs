@@ -64,6 +64,15 @@ pub struct Route {
     pub primitive: Option<Primitive>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum VideoPanel {
+    Browse,
+    Search,
+}
+
+pub const VIDEOS_BROWSE_PATH: &str = "videos";
+pub const VIDEOS_SEARCH_PATH: &str = "videos/search";
+
 thread_local! {
     static RUNTIME: RefCell<Option<Rc<Runtime>>> = const { RefCell::new(None) };
     static SCOPE: RefCell<Option<ScopeId>> = const { RefCell::new(None) };
@@ -128,6 +137,13 @@ pub fn current_route() -> String {
         .unwrap_or_default()
 }
 
+pub fn video_panel_for(path: &str) -> VideoPanel {
+    match normalize(path) {
+        "videos/search" | "inventory/videos/search" => VideoPanel::Search,
+        _ => VideoPanel::Browse,
+    }
+}
+
 pub fn route_for(path: &str) -> Route {
     match normalize(path) {
         "logs" | "inventory" | "inventory/logs" | "workbench" => {
@@ -142,7 +158,12 @@ pub fn route_for(path: &str) -> Route {
         "images" | "inventory/images" => {
             primitive(Primitive::Images, "view-images", "nav-images", "Images")
         }
-        "videos" | "inventory/videos" => {
+        "videos"
+        | "videos/browse"
+        | "videos/search"
+        | "inventory/videos"
+        | "inventory/videos/browse"
+        | "inventory/videos/search" => {
             primitive(Primitive::Videos, "view-videos", "nav-videos", "Videos")
         }
         "chat" => Route {

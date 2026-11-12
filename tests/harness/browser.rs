@@ -255,7 +255,12 @@ impl Browser {
             "metrics" | "inventory/metrics" => "view-metrics",
             "tasks" | "inventory/tasks" => "view-tasks",
             "images" | "inventory/images" => "view-images",
-            "videos" | "inventory/videos" => "view-videos",
+            "videos"
+            | "videos/browse"
+            | "videos/search"
+            | "inventory/videos"
+            | "inventory/videos/browse"
+            | "inventory/videos/search" => "view-videos",
             _ => "view-logs",
         };
         self.wait_until(&format!(

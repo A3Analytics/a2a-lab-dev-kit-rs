@@ -9,6 +9,7 @@ use crate::time::{TimeRange, UtcTimestamp};
 use crate::videos::index_provenance::{FrameDescriptionProvenance, FrameVectorIndexAttachment};
 use crate::videos::model_space::{EmbeddingMetric, ModelSpaceIdentity};
 use crate::videos::saved_frame::SavedFrameRef;
+use crate::videos::semantic_search::assessments::SemanticFrameHitAssessments;
 use crate::videos::semantic_search::query::SemanticSearchScope;
 
 /// Persisted indexing state for one saved revision inside the scope.
@@ -111,8 +112,9 @@ impl SemanticFramePlaybackNeighbors {
 
 /// One ranked semantic retrieval hit.
 ///
-/// Generated description text is Luna retrieval metadata only. This type never
-/// carries Jev decision outcomes or probabilities.
+/// Generated description text is Luna retrieval metadata only. Authoritative Jev
+/// assessments, when present, are carried in `authorized_assessments` and are
+/// never mixed into retrieval scores or generated text.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SemanticFrameHit {
     frame: SavedFrameRef,
@@ -125,6 +127,8 @@ pub struct SemanticFrameHit {
     index: SemanticFrameIndexState,
     media_availability: SemanticFrameMediaAvailability,
     neighbors: SemanticFramePlaybackNeighbors,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    authorized_assessments: Option<SemanticFrameHitAssessments>,
 }
 
 impl SemanticFrameHit {
@@ -137,6 +141,7 @@ impl SemanticFrameHit {
         index: SemanticFrameIndexState,
         media_availability: SemanticFrameMediaAvailability,
         neighbors: SemanticFramePlaybackNeighbors,
+        authorized_assessments: Option<SemanticFrameHitAssessments>,
     ) -> Result<Self, A2aLabError> {
         let generated_description = generated_description.into();
         if generated_description.trim().is_empty() {
@@ -153,6 +158,14 @@ impl SemanticFrameHit {
             ));
         }
         let captured_at = frame.captured_at();
+        if let Some(assessments) = &authorized_assessments
+            && assessments.frame() != &frame
+        {
+            return Err(A2aLabError::invalid(
+                "authorized_assessments.frame",
+                "must match the hit frame revision",
+            ));
+        }
         Ok(Self {
             frame,
             captured_at,
@@ -163,6 +176,7 @@ impl SemanticFrameHit {
             index,
             media_availability,
             neighbors,
+            authorized_assessments,
         })
     }
 
@@ -218,6 +232,31 @@ impl SemanticFrameHit {
     #[must_use]
     pub const fn neighbors(&self) -> &SemanticFramePlaybackNeighbors {
         &self.neighbors
+    }
+
+    /// Optional bounded Jev assessments associated with this frame revision.
+    #[must_use]
+    pub const fn authorized_assessments(&self) -> Option<&SemanticFrameHitAssessments> {
+        self.authorized_assessments.as_ref()
+    }
+
+    /// Returns a copy with attached assessments validated against this hit.
+    pub fn with_authorized_assessments(
+        self,
+        authorized_assessments: Option<SemanticFrameHitAssessments>,
+    ) -> Result<Self, A2aLabError> {
+        if let Some(assessments) = &authorized_assessments
+            && assessments.frame() != &self.frame
+        {
+            return Err(A2aLabError::invalid(
+                "authorized_assessments.frame",
+                "must match the hit frame revision",
+            ));
+        }
+        Ok(Self {
+            authorized_assessments,
+            ..self
+        })
     }
 }
 

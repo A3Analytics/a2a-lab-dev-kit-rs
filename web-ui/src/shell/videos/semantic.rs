@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use web_sys::AbortController;
 
 use crate::inventory::Fault;
+use crate::shell::loading::{LoadProgress, LoadingSurface};
 use crate::shell::session::{self, calls_allowed, message_id, take_secret};
 use crate::videos;
 use crate::videos::semantic::{
@@ -203,22 +204,24 @@ pub fn choose_semantic_hit(index: usize) {
         return;
     };
     if !ui.write().semantic.select(index) {
-        return;
+        let state = ui.peek().clone();
+        if state.semantic.selected != index || index >= state.semantic.hits.len() {
+            return;
+        }
+        ui.write().semantic.apply_decisions_from_hit(index);
     }
     let state = ui.peek().clone();
     let Some(hit) = state.semantic.selected_hit() else {
         return;
     };
     if let Some(us) = (hit.captured_us > 0).then_some(hit.captured_us) {
+        super::open_browse_panel();
         if hit.source_id.is_empty() || hit.source_id == state.reader.source_id {
             super::timeline::commit_at(us);
         } else {
             remember_search_seek(&hit.source_id, us);
             super::choose_source(&hit.source_id);
         }
-    }
-    if state.semantic.decisions_enabled() {
-        launch_history(state.semantic.generation, index);
     }
     launch_thumb(index);
 }
@@ -395,23 +398,23 @@ fn SearchRail(state: VideoUi) -> Element {
                 label { r#for: "video-search-range-start", "Start" }
                 input {
                     id: "video-search-range-start",
-                    r#type: "text",
-                    spellcheck: false,
+                    r#type: "datetime-local",
+                    step: "1",
                     autocomplete: "off",
                     value: "{start}",
-                    placeholder: if local { "2024-01-01 00:00:00" } else { "2024-01-01 00:00:00 UTC" },
                     oninput: move |_| edit_search_filter(true),
+                    onchange: move |_| edit_search_filter(true),
                     onkeydown: search_range_enter,
                 }
                 label { r#for: "video-search-range-end", "End" }
                 input {
                     id: "video-search-range-end",
-                    r#type: "text",
-                    spellcheck: false,
+                    r#type: "datetime-local",
+                    step: "1",
                     autocomplete: "off",
                     value: "{end}",
-                    placeholder: if local { "2024-01-01 00:00:02" } else { "2024-01-01 00:00:02 UTC" },
                     oninput: move |_| edit_search_filter(false),
+                    onchange: move |_| edit_search_filter(false),
                     onkeydown: search_range_enter,
                 }
                 p { id: "video-search-range-error", class: "video-range-error", "{state.search_range_error}" }
@@ -458,15 +461,31 @@ fn SearchResults(state: VideoUi) -> Element {
                         "Coverage: {coverage.ready} ready, {coverage.pending} pending, {coverage.failed} failed, {coverage.expired} expired."
                     }
                 }
-                div { id: "video-semantic-alert", role: "alert", aria_live: "assertive", "{state.semantic.search_fault}" }
+                div {
+                    id: "video-semantic-alert",
+                    role: "alert",
+                    aria_live: "assertive",
+                    hidden: state.semantic.search_loading,
+                    "{state.semantic.search_fault}"
+                }
                 div {
                     id: "video-search-result-state",
                     "data-state": mode.slug(),
                     hidden: mode == SearchMode::Ready || mode == SearchMode::Prompt,
+                    if mode == SearchMode::Loading {
+                        LoadingSurface {
+                            id: "video-semantic-search-loading".to_owned(),
+                            title: Some(mode.text().to_owned()),
+                            description: None,
+                            progress: LoadProgress::Unknown,
+                            concealed: false,
+                        }
+                    }
                     p {
                         id: "video-semantic-status",
                         role: "status",
                         aria_live: "polite",
+                        class: if mode == SearchMode::Loading { "visually-hidden" } else { "" },
                         "data-loading": if state.semantic.search_loading { "true" } else { "false" },
                         "data-state": mode.slug(),
                         if mode == SearchMode::Fault && !state.semantic.search_fault.is_empty() {
@@ -508,9 +527,11 @@ fn SearchResults(state: VideoUi) -> Element {
                         }
                     }
                 }
-                SearchPagination { state: state.clone() }
-                if let Some(hit) = state.semantic.selected_hit() {
-                    SemanticDetail { hit: hit.clone(), state: state.clone() }
+                if mode == SearchMode::Ready {
+                    SearchPagination { state: state.clone() }
+                    if let Some(hit) = state.semantic.selected_hit() {
+                        SemanticDetail { hit: hit.clone(), state: state.clone() }
+                    }
                 }
             }
         }
@@ -818,7 +839,8 @@ fn capability_copy(phase: ApiPhase) -> &'static str {
 
 fn search_count(state: &VideoUi) -> String {
     match search_mode(state) {
-        SearchMode::Ready | SearchMode::Loading | SearchMode::Empty | SearchMode::Fault => {
+        SearchMode::Loading => "Searching…".to_owned(),
+        SearchMode::Ready | SearchMode::Empty | SearchMode::Fault => {
             let shown = state.semantic.hits.len();
             if shown == 1 {
                 "1 hit".to_owned()
@@ -1033,10 +1055,10 @@ fn shown_search_field(state: &VideoUi, start: bool) -> String {
         state.search_range_end.as_str()
     };
     if !stored.is_empty() {
-        return super::display_clock(stored, state.local_time);
+        return super::timeline::display_picker(stored, state.local_time);
     }
     let (fallback_start, fallback_end) = retained_or_playback(state);
-    super::display_clock(
+    super::timeline::display_picker(
         if start {
             &fallback_start
         } else {
@@ -1167,13 +1189,7 @@ async fn run_search(job: SearchJob, secret: Option<String>) -> SearchOutcome {
     let SearchJob::Run(ticket) = job else {
         return SearchOutcome::Idle;
     };
-    let provenance = bound().and_then(|ui| {
-        ui.peek()
-            .semantic
-            .provenance
-            .clone()
-            .or_else(default_provenance)
-    });
+    let provenance = bound().and_then(|ui| ui.peek().semantic.provenance.clone());
     let Some(provenance) = provenance else {
         return SearchOutcome::Failed {
             ticket,
@@ -1254,36 +1270,48 @@ async fn run_capabilities(job: CapabilityJob, secret: Option<String>) -> Capabil
         generation,
     )
     .await;
-    let semantic = semantic_reply
-        .ok()
-        .and_then(|reply| semantic::interpret_semantic_registered(&reply, secret.as_deref()).ok())
-        .unwrap_or(false);
+    let (semantic, provenance) = match semantic_reply {
+        Ok(reply) => match semantic::interpret_semantic_capabilities(&reply, secret.as_deref()) {
+            Ok((pick, registered)) => (registered, pick),
+            Err(fault) => {
+                return CapabilityOutcome::Failed {
+                    generation,
+                    message: fault_text(&fault),
+                };
+            }
+        },
+        Err(message) => {
+            return CapabilityOutcome::Failed {
+                generation,
+                message,
+            };
+        }
+    };
     let decisions = decision_reply
         .ok()
         .and_then(|reply| semantic::interpret_decision_registered(&reply, secret.as_deref()).ok())
         .unwrap_or(false);
-    let (provenance, coverage) = if semantic {
-        if let (Some(start), Some(end)) = coverage_bounds(&source_id)
-            && let Some(pick) = default_provenance()
-        {
+    let coverage = if semantic {
+        let Some(pick) = provenance.as_ref() else {
+            return CapabilityOutcome::Failed {
+                generation,
+                message: "Semantic search is registered but active provenance is missing."
+                    .to_owned(),
+            };
+        };
+        if let (Some(start), Some(end)) = coverage_bounds(&source_id) {
             let command =
-                semantic::coverage_command(&source_id, Some((start.as_str(), end.as_str())), &pick);
-            if let Ok(reply) = post_with_abort(command, secret.clone(), generation).await
-                && let Ok((resolved, banner)) =
-                    semantic::interpret_coverage(&reply, secret.as_deref())
-            {
-                return CapabilityOutcome::Ready {
-                    generation,
-                    semantic,
-                    decisions,
-                    provenance: Some(resolved),
-                    coverage: Some(banner),
-                };
-            }
+                semantic::coverage_command(&source_id, Some((start.as_str(), end.as_str())), pick);
+            post_with_abort(command, secret.clone(), generation)
+                .await
+                .ok()
+                .and_then(|reply| semantic::interpret_coverage(&reply, secret.as_deref()).ok())
+                .map(|(_, banner)| banner)
+        } else {
+            None
         }
-        (default_provenance(), None)
     } else {
-        (None, None)
+        None
     };
     CapabilityOutcome::Ready {
         generation,
@@ -1366,14 +1394,9 @@ fn apply_search(mut ui: Signal<VideoUi>, outcome: SearchOutcome) {
                 return;
             }
             let selected = next.semantic.selected;
-            let generation = next.semantic.generation;
-            let decisions_enabled = next.semantic.decisions_enabled();
             ui.set(next);
             if selected < ui.peek().semantic.hits.len() {
                 launch_thumb(selected);
-                if decisions_enabled {
-                    launch_history(generation, selected);
-                }
             }
         }
         SearchOutcome::Failed { ticket, message } => {
@@ -1519,20 +1542,6 @@ pub fn abort_semantic_commands() {
             flight.abort.abort();
         }
     });
-}
-
-fn default_provenance() -> Option<ProvenancePick> {
-    Some(ProvenancePick {
-        model_space: serde_json::json!({
-            "provider": "bedrock",
-            "model": "text-embed-v1",
-            "dimensions": 4,
-            "normalization": "l2_unit",
-            "metric": "cosine",
-            "generation": 1
-        }),
-        description_generation: 1,
-    })
 }
 
 fn coverage_bounds(source_id: &str) -> (Option<String>, Option<String>) {

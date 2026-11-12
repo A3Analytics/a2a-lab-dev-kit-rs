@@ -234,6 +234,70 @@ pub enum CaptureProfileError {
     },
 }
 
+/// Selects one advertised profile without exact width/height matching.
+pub fn select_capture_profile_flexible(
+    preference: CaptureFormatPreference,
+    output_rate: CaptureRate,
+    advertised: &[AdvertisedCaptureProfile],
+) -> Result<SelectedCaptureProfile, CaptureProfileError> {
+    if advertised.is_empty() {
+        return Err(CaptureProfileError::NoSuitableProfile);
+    }
+    let mut matches: Vec<(usize, AdvertisedCaptureProfile)> = advertised
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, profile)| format_allowed(preference, profile.mode.format()))
+        .collect();
+    if preference == CaptureFormatPreference::Auto {
+        let mjpeg: Vec<_> = matches
+            .iter()
+            .copied()
+            .filter(|(_, profile)| profile.mode.format() == CaptureFormat::Mjpeg)
+            .collect();
+        if !mjpeg.is_empty() {
+            matches = mjpeg;
+        }
+    }
+    if matches.is_empty() {
+        return Err(CaptureProfileError::NoSuitableProfile);
+    }
+    let native = matches
+        .iter()
+        .copied()
+        .filter(|(_, profile)| profile.sensor_rate.cmp_rate(output_rate).is_eq())
+        .max_by_key(|(index, profile)| {
+            let pixels = u64::from(profile.mode.width()) * u64::from(profile.mode.height());
+            (pixels, usize::MAX - *index)
+        });
+    let chosen = native.or_else(|| {
+        matches
+            .iter()
+            .copied()
+            .filter(|(_, profile)| profile.sensor_rate.cmp_rate(output_rate).is_ge())
+            .min_by(|(left_index, left), (right_index, right)| {
+                left.sensor_rate
+                    .cmp_rate(right.sensor_rate)
+                    .then_with(|| {
+                        let left_pixels =
+                            u64::from(left.mode.width()) * u64::from(left.mode.height());
+                        let right_pixels =
+                            u64::from(right.mode.width()) * u64::from(right.mode.height());
+                        right_pixels.cmp(&left_pixels)
+                    })
+                    .then(left_index.cmp(right_index))
+            })
+    });
+    let Some((_, profile)) = chosen else {
+        return Err(CaptureProfileError::NoSuitableProfile);
+    };
+    Ok(SelectedCaptureProfile {
+        mode: profile.mode,
+        sensor_rate: profile.sensor_rate,
+        output_rate,
+    })
+}
+
 /// Selects one advertised profile. Does not open a device.
 pub fn select_capture_profile(
     request: CaptureProfileRequest,
@@ -310,5 +374,148 @@ fn format_allowed(preference: CaptureFormatPreference, format: CaptureFormat) ->
         CaptureFormatPreference::Auto => true,
         CaptureFormatPreference::Mjpeg => format == CaptureFormat::Mjpeg,
         CaptureFormatPreference::Yuy2 => format == CaptureFormat::Yuy2,
+    }
+}
+
+/// Stable label for one raw capture format.
+#[must_use]
+pub fn format_capture_format_label(format: CaptureFormat) -> &'static str {
+    match format {
+        CaptureFormat::Mjpeg => "MJPEG",
+        CaptureFormat::Yuy2 => "YUYV",
+    }
+}
+
+/// Stable label for one profile preference.
+#[must_use]
+pub fn format_capture_preference_label(preference: CaptureFormatPreference) -> &'static str {
+    match preference {
+        CaptureFormatPreference::Auto => "auto",
+        CaptureFormatPreference::Mjpeg => "MJPEG",
+        CaptureFormatPreference::Yuy2 => "YUYV",
+    }
+}
+
+/// One line describing the configured capture request.
+#[must_use]
+pub fn format_capture_profile_request(request: &CaptureProfileRequest) -> String {
+    format!(
+        "{} {}x{} output {}fps",
+        format_capture_preference_label(request.preference()),
+        request.width(),
+        request.height(),
+        request.output_rate().numerator()
+    )
+}
+
+fn format_sensor_fps(rate: CaptureRate) -> String {
+    if rate.denominator() == 1 {
+        rate.numerator().to_string()
+    } else {
+        format!("{}/{}", rate.numerator(), rate.denominator())
+    }
+}
+
+/// Sorted, semicolon-separated advertised modes for operator-facing diagnostics.
+#[must_use]
+pub fn format_advertised_capture_profiles(profiles: &[AdvertisedCaptureProfile]) -> String {
+    if profiles.is_empty() {
+        return "none".to_owned();
+    }
+    let mut lines = profiles
+        .iter()
+        .map(|profile| {
+            format!(
+                "{} {}x{}@{}fps",
+                format_capture_format_label(profile.mode().format()),
+                profile.mode().width(),
+                profile.mode().height(),
+                format_sensor_fps(profile.sensor_rate())
+            )
+        })
+        .collect::<Vec<_>>();
+    lines.sort();
+    lines.dedup();
+    lines.join("; ")
+}
+
+/// Operator-facing text when the configured profile cannot be negotiated.
+#[must_use]
+pub fn describe_capture_profile_error(
+    request: &CaptureProfileRequest,
+    error: &CaptureProfileError,
+    advertised: &[AdvertisedCaptureProfile],
+) -> String {
+    let available = format_advertised_capture_profiles(advertised);
+    let configured = format_capture_profile_request(request);
+    match error {
+        CaptureProfileError::Unsupported { .. } | CaptureProfileError::NoSuitableProfile => {
+            format!("configured profile {configured} is not advertised; available: {available}")
+        }
+        CaptureProfileError::DeviceRejected { profile } => {
+            format!(
+                "device rejected configured profile {configured}; negotiated {} {}x{}@{}fps; available: {available}",
+                format_capture_format_label(profile.mode().format()),
+                profile.mode().width(),
+                profile.mode().height(),
+                format_sensor_fps(profile.sensor_rate()),
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::{
+        AdvertisedCaptureProfile, CaptureFormat, CaptureFormatPreference, CaptureMode,
+        CaptureProfileError, CaptureRate, describe_capture_profile_error,
+        format_advertised_capture_profiles,
+    };
+    use crate::videos::CaptureProfileRequest;
+
+    fn profile(
+        format: CaptureFormat,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> AdvertisedCaptureProfile {
+        AdvertisedCaptureProfile::new(
+            CaptureMode::new(format, width, height).expect("mode"),
+            CaptureRate::fps(fps).unwrap(),
+        )
+    }
+
+    #[test]
+    fn advertised_profile_list_is_sorted_and_deduped() {
+        let advertised = [
+            profile(CaptureFormat::Yuy2, 640, 480, 30),
+            profile(CaptureFormat::Mjpeg, 1920, 1080, 30),
+            profile(CaptureFormat::Mjpeg, 1920, 1080, 30),
+        ];
+        let text = format_advertised_capture_profiles(&advertised);
+        assert!(text.contains("MJPEG 1920x1080@30fps"));
+        assert!(text.contains("YUYV 640x480@30fps"));
+        assert_eq!(text.matches("MJPEG 1920x1080@30fps").count(), 1);
+    }
+
+    #[test]
+    fn unsupported_request_lists_configured_and_available_profiles() {
+        let advertised = [profile(CaptureFormat::Mjpeg, 1920, 1080, 30)];
+        let request = CaptureProfileRequest::new(
+            CaptureFormatPreference::Mjpeg,
+            1280,
+            720,
+            CaptureRate::fps(5).unwrap(),
+        )
+        .unwrap();
+        let message = describe_capture_profile_error(
+            &request,
+            &CaptureProfileError::Unsupported {
+                available: advertised.to_vec(),
+            },
+            &advertised,
+        );
+        assert!(message.contains("configured profile MJPEG 1280x720 output 5fps"));
+        assert!(message.contains("available: MJPEG 1920x1080@30fps"));
     }
 }

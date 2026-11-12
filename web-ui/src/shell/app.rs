@@ -272,7 +272,11 @@ fn Shell() -> Element {
                     id: "view-videos",
                     class: "view",
                     hidden: panes.videos,
-                    VideoView { ui: video_view, visible: route.view == "view-videos" }
+                    VideoView {
+                        ui: video_view,
+                        visible: route.view == "view-videos",
+                        panel: nav::video_panel_for(&current),
+                    }
                     InventoryView {
                         primitive: Primitive::Videos,
                         ui: videos,

@@ -7,8 +7,8 @@ use crate::error::A2aLabError;
 use crate::{
     DEFAULT_JEV_MODEL_REVISION, EmbeddingMetric, FrameDescriptionBackend,
     JEV_EVALUATOR_PROVIDER_ID, MAX_SEMANTIC_CANDIDATES, MAX_SEMANTIC_NEIGHBOR_FRAMES,
-    MAX_SEMANTIC_TOP_K, ModelSpaceIdentity, ProvenanceGeneration, VectorNormalization,
-    parse_decision_evaluator_provider,
+    MAX_SEMANTIC_TOP_K, ModelSpaceIdentity, ProvenanceGeneration, SemanticProvenanceSelector,
+    VectorNormalization, parse_decision_evaluator_provider,
 };
 
 use super::duration::ConfigDuration;
@@ -188,7 +188,7 @@ impl SemanticEmbeddingsConfig {
             self.space.dimensions,
             self.space.normalization,
             self.space.metric,
-            ProvenanceGeneration::new(1)?,
+            self.space.generation,
         )
     }
 }
@@ -199,6 +199,7 @@ pub struct EmbeddingSpaceConfig {
     pub dimensions: u32,
     pub normalization: VectorNormalization,
     pub metric: EmbeddingMetric,
+    pub generation: ProvenanceGeneration,
 }
 
 /// Jev decision evaluator file settings.
@@ -420,6 +421,17 @@ impl SemanticIndexingConfig {
             .find(|schedule| schedule.stream() == stream)
             .cloned()
             .unwrap_or_else(|| SemanticStreamSchedule::every_saved_frame(stream))
+    }
+
+    /// Active model space and description generation for semantic search clients.
+    pub fn active_search_provenance(&self) -> Result<SemanticProvenanceSelector, A2aLabError> {
+        let embeddings = self
+            .embeddings
+            .as_ref()
+            .ok_or_else(|| A2aLabError::unavailable("semantic vector search is disabled"))?;
+        let model_space = embeddings.model_space_identity()?;
+        let description_generation = ProvenanceGeneration::new(1)?;
+        SemanticProvenanceSelector::new(model_space, description_generation)
     }
 
     /// Rejects forbidden decision paths and non-Jev providers before runtime wiring.
@@ -664,7 +676,7 @@ fn parse_embedding_space(value: Option<&Value>) -> Result<EmbeddingSpaceConfig, 
     reject_unknown_keys(
         map,
         "semantic_indexing.embeddings.space",
-        &["dimensions", "normalization", "metric"],
+        &["dimensions", "normalization", "metric", "generation"],
     )?;
     let dimensions = match map.get("dimensions") {
         Some(value) => parse_u32("semantic_indexing.embeddings.space.dimensions", value)?,
@@ -677,10 +689,18 @@ fn parse_embedding_space(value: Option<&Value>) -> Result<EmbeddingSpaceConfig, 
     };
     let normalization = parse_normalization(map.get("normalization"))?;
     let metric = parse_metric(map.get("metric"))?;
+    let generation = match map.get("generation") {
+        Some(value) => ProvenanceGeneration::new(u64::from(parse_u32(
+            "semantic_indexing.embeddings.space.generation",
+            value,
+        )?))?,
+        None => ProvenanceGeneration::new(1)?,
+    };
     Ok(EmbeddingSpaceConfig {
         dimensions,
         normalization,
         metric,
+        generation,
     })
 }
 

@@ -14,6 +14,12 @@ pub const MAX_SEMANTIC_CANDIDATES: u32 = 10_000;
 /// Maximum neighbor frames returned for bounded playback context.
 pub const MAX_SEMANTIC_NEIGHBOR_FRAMES: u32 = 30;
 
+/// Largest Jev history row budget attached to each semantic hit.
+pub const MAX_SEMANTIC_HIT_ASSESSMENT_ROWS: u32 = 100;
+
+/// Default per-hit Jev history row budget for interactive search.
+pub const DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS: u32 = 20;
+
 /// Default ranked hit cap for interactive search.
 pub const DEFAULT_SEMANTIC_TOP_K: u32 = 10;
 
@@ -26,6 +32,8 @@ pub struct SemanticSearchLimits {
     top_k: u32,
     candidate_limit: u32,
     max_neighbor_frames: u32,
+    #[serde(default = "default_max_assessment_rows_per_hit")]
+    max_assessment_rows_per_hit: u32,
 }
 
 impl SemanticSearchLimits {
@@ -36,6 +44,7 @@ impl SemanticSearchLimits {
             top_k: DEFAULT_SEMANTIC_TOP_K,
             candidate_limit: DEFAULT_SEMANTIC_CANDIDATES,
             max_neighbor_frames: 5,
+            max_assessment_rows_per_hit: DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS,
         }
     }
 
@@ -45,10 +54,22 @@ impl SemanticSearchLimits {
         candidate_limit: u32,
         max_neighbor_frames: u32,
     ) -> Result<Self, A2aLabError> {
+        Self::with_assessment_rows(top_k, candidate_limit, max_neighbor_frames, None)
+    }
+
+    /// Creates limits including an optional per-hit assessment row budget.
+    pub fn with_assessment_rows(
+        top_k: u32,
+        candidate_limit: u32,
+        max_neighbor_frames: u32,
+        max_assessment_rows_per_hit: Option<u32>,
+    ) -> Result<Self, A2aLabError> {
         let limits = Self {
             top_k,
             candidate_limit,
             max_neighbor_frames,
+            max_assessment_rows_per_hit: max_assessment_rows_per_hit
+                .unwrap_or(DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS),
         };
         limits.check()?;
         Ok(limits)
@@ -66,6 +87,11 @@ impl SemanticSearchLimits {
             "max_neighbor_frames",
             self.max_neighbor_frames,
             MAX_SEMANTIC_NEIGHBOR_FRAMES,
+        )?;
+        check_positive_bounded(
+            "max_assessment_rows_per_hit",
+            self.max_assessment_rows_per_hit,
+            MAX_SEMANTIC_HIT_ASSESSMENT_ROWS,
         )?;
         Ok(())
     }
@@ -87,6 +113,16 @@ impl SemanticSearchLimits {
     pub const fn max_neighbor_frames(self) -> u32 {
         self.max_neighbor_frames
     }
+
+    /// Maximum Jev history rows attached to each returned hit.
+    #[must_use]
+    pub const fn max_assessment_rows_per_hit(self) -> u32 {
+        self.max_assessment_rows_per_hit
+    }
+}
+
+const fn default_max_assessment_rows_per_hit() -> u32 {
+    DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS
 }
 
 fn check_positive_bounded(field: &'static str, value: u32, max: u32) -> Result<(), A2aLabError> {

@@ -4,11 +4,15 @@ use std::sync::Arc;
 
 use a2a_lab_dev_kit::{
     A2aClient, A2aLabApi, A2aLabCommand, A2aLabError, A2aLabResult, A2aLabService,
-    DvrStoreNamespace, DvrTrackId, EmbeddingMetric, FakeSemanticVideoSearchProvider,
-    FrameDescriptionProvenance, FrameRoiTransform, FrameVectorIndexAttachment,
-    GetSemanticIndexingCoverageRequest, GetSemanticSearchCapabilitiesRequest,
-    ListVideoSourcesRequest, McpLab, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks,
-    MemoryVideos, ModelSpaceIdentity, PageRequest, ProvenanceGeneration, SavedFrameRef,
+    DecisionEvaluationCoverage, DecisionEvidenceItem, DecisionIdempotencyKey, DecisionOutcome,
+    DecisionSubject, DvrStoreNamespace, DvrTrackId, EmbeddingMetric,
+    FakeFrameDecisionLedgerProvider, FakeSemanticVideoSearchProvider, FrameDecisionEvaluatorLimits,
+    FrameDecisionEvaluatorProviderConfig, FrameDecisionRecord, FrameDescriptionProvenance,
+    FrameRoiTransform, FrameVectorIndexAttachment, GetSemanticIndexingCoverageRequest,
+    GetSemanticSearchCapabilitiesRequest, JevEvaluationId, JevEvaluationProvenance,
+    JevProducerIdentity, JevStructuredOutput, LabPredicate, ListVideoSourcesRequest, McpLab,
+    McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, ModelSpaceIdentity,
+    PageRequest, PipetteChannelSubject, ProvenanceGeneration, SavedFrameRef,
     SearchSemanticFramesRequest, SemanticFrameIndexState, SemanticFrameMediaAvailability,
     SemanticFramePlaybackNeighbors, SemanticFrameSearchResult, SemanticIndexingCoverage,
     SemanticIndexingFreshness, SemanticIndexingStateCounts, SemanticProvenanceSelector,
@@ -140,6 +144,7 @@ fn search_provider() -> Arc<FakeSemanticVideoSearchProvider> {
         ),
         true,
     ));
+    provider.set_active_provenance(selector(1));
     Arc::new(provider)
 }
 
@@ -147,6 +152,66 @@ fn lab_with(provider: Arc<dyn SemanticVideoSearchProvider>) -> Arc<dyn A2aLabApi
     A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
         .with_videos(MemoryVideos::default())
         .with_semantic_search(provider)
+        .share()
+}
+
+fn parity_decision_record(saved: &SavedFrameRef) -> FrameDecisionRecord {
+    let key =
+        DecisionIdempotencyKey::new("jev-parity-001:lab.pipette_tip_attached:left-1").unwrap();
+    FrameDecisionRecord::new(
+        key,
+        saved.clone(),
+        LabPredicate::pipette_tip_attached_v1(),
+        DecisionSubject::PipetteChannel(PipetteChannelSubject::new("left", "ch1", None).unwrap()),
+        vec![
+            DecisionEvidenceItem::saved_frame_revision(
+                saved.frame_id().clone(),
+                FrameRoiTransform::new([0.0, 0.0, 1.0, 1.0]).unwrap(),
+            )
+            .unwrap(),
+        ],
+        DecisionOutcome::Present,
+        JevStructuredOutput::new(Some(0.91), None, None, None, None, None, None).unwrap(),
+        JevEvaluationProvenance::new(
+            saved.captured_at(),
+            saved.captured_at(),
+            JevProducerIdentity::default_production(),
+            JevEvaluationId::new("jev-parity-001").unwrap(),
+            Sha256Digest::hash_bytes(b"config-v1"),
+            Sha256Digest::hash_bytes(b"prompt-v1"),
+            Sha256Digest::hash_bytes(b"criteria-v1"),
+            Sha256Digest::hash_bytes(b"threshold-v1"),
+            FrameRoiTransform::new([0.0, 0.0, 1.0, 1.0]).unwrap(),
+            Sha256Digest::hash_bytes(b"jev-response"),
+            DecisionEvaluationCoverage::Evaluated,
+            Option::<&str>::None,
+        )
+        .unwrap(),
+        None,
+    )
+    .unwrap()
+}
+
+fn lab_with_search_and_decisions() -> Arc<dyn A2aLabApi> {
+    let provider = search_provider();
+    let saved = frame(b"parity-pipette", "2024-06-01T12:00:05Z");
+    let config = FrameDecisionEvaluatorProviderConfig::pilot(
+        Sha256Digest::hash_bytes(b"eval-config"),
+        Sha256Digest::hash_bytes(b"threshold"),
+    )
+    .unwrap();
+    let decisions = Arc::new(
+        FakeFrameDecisionLedgerProvider::read_only_consumer(
+            &config,
+            FrameDecisionEvaluatorLimits::pilot(),
+        )
+        .unwrap(),
+    );
+    decisions.seed(parity_decision_record(&saved)).unwrap();
+    A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+        .with_videos(MemoryVideos::default())
+        .with_semantic_search(provider)
+        .with_frame_decisions(decisions)
         .share()
 }
 
@@ -224,6 +289,13 @@ fn same(left: &Observed, right: &Observed) -> bool {
     match (left, right) {
         (Observed::Capabilities(left), Observed::Capabilities(right)) => left == right,
         (Observed::Search(left), Observed::Search(right)) => {
+            fn assessment_snapshot(result: &SemanticFrameSearchResult) -> Option<(usize, usize)> {
+                result.hits().items().first().map(|hit| {
+                    hit.authorized_assessments().map_or((0, 0), |attached| {
+                        (attached.entries().len(), attached.fingerprints().len())
+                    })
+                })
+            }
             left.hits().items().len() == right.hits().items().len()
                 && left.incomplete_indexing() == right.incomplete_indexing()
                 && left
@@ -236,6 +308,7 @@ fn same(left: &Observed, right: &Observed) -> bool {
                         .items()
                         .first()
                         .map(|hit| hit.frame().frame_id())
+                && assessment_snapshot(left) == assessment_snapshot(right)
         }
         (Observed::Coverage(left), Observed::Coverage(right)) => {
             left.counts() == right.counts() && left.scope_complete() == right.scope_complete()
@@ -293,6 +366,46 @@ async fn registered_capabilities_match_across_transports() {
         caps.operations()
             .contains(&SemanticSearchOperation::SearchSemanticFrames)
     );
+    let active = caps.active_provenance().expect("active provenance");
+    assert_eq!(active.model_space(), &model_space(1));
+    assert_eq!(active.description_generation().get(), 1);
+}
+
+#[tokio::test]
+async fn registered_capabilities_omit_active_provenance_when_unpublished() {
+    let mut provider = FakeSemanticVideoSearchProvider::available();
+    provider.set_active_provenance(selector(1));
+    let published = A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+        .with_videos(MemoryVideos::default())
+        .with_semantic_search(Arc::new(provider))
+        .share();
+    let caps = published
+        .execute(A2aLabCommand::GetSemanticSearchCapabilities(
+            GetSemanticSearchCapabilitiesRequest::new(),
+        ))
+        .await
+        .unwrap();
+    let A2aLabResult::GetSemanticSearchCapabilities(caps) = caps.task.result else {
+        panic!("capabilities");
+    };
+    assert!(caps.is_registered());
+    assert!(caps.active_provenance().is_some());
+
+    let missing = A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+        .with_videos(MemoryVideos::default())
+        .with_semantic_search(Arc::new(FakeSemanticVideoSearchProvider::available()))
+        .share();
+    let caps = missing
+        .execute(A2aLabCommand::GetSemanticSearchCapabilities(
+            GetSemanticSearchCapabilitiesRequest::new(),
+        ))
+        .await
+        .unwrap();
+    let A2aLabResult::GetSemanticSearchCapabilities(caps) = caps.task.result else {
+        panic!("capabilities");
+    };
+    assert!(caps.is_registered());
+    assert!(caps.active_provenance().is_none());
 }
 
 #[tokio::test]
@@ -325,6 +438,28 @@ async fn text_search_matches_across_transports() {
         A2aLabCommand::SearchSemanticFrames(text_search("pipette", 1)),
     )
     .await;
+}
+
+#[tokio::test]
+async fn search_assessments_match_across_transports() {
+    let endpoints = open(lab_with_search_and_decisions()).await;
+    compare(
+        &endpoints,
+        "text-search-assessments",
+        A2aLabCommand::SearchSemanticFrames(text_search("pipette", 1)),
+    )
+    .await;
+    let a2a = observe_a2a(
+        &endpoints.a2a,
+        A2aLabCommand::SearchSemanticFrames(text_search("pipette", 1)),
+    )
+    .await;
+    let Observed::Search(result) = a2a else {
+        panic!("search");
+    };
+    let hit = result.hits().items().first().expect("hit");
+    let attached = hit.authorized_assessments().expect("assessments");
+    assert_eq!(attached.entries().len(), 1);
 }
 
 #[tokio::test]

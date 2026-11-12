@@ -9,7 +9,7 @@ use crate::error::A2aLabError;
 use crate::videos::{
     AdvertisedCaptureProfile, CaptureFormat, CaptureIdentity, CaptureProfileRequest, CaptureTiming,
     CapturedColorFrame, ColorProperties, SelectedCaptureProfile, confirm_selected_profile,
-    select_capture_profile,
+    describe_capture_profile_error, select_capture_profile,
 };
 
 /// One raw camera buffer before it becomes a capture frame.
@@ -87,15 +87,48 @@ impl<C: ColorCamera> CaptureSession<C> {
     /// Selects an advertised profile and opens it.
     pub fn open(&mut self) -> Result<SelectedCaptureProfile, A2aLabError> {
         let advertised = self.camera.advertised()?;
-        let selected = select_capture_profile(self.request, &advertised)
-            .map_err(|error| profile_error(&error))?;
+        let selected = select_capture_profile(self.request, &advertised).map_err(|error| {
+            A2aLabError::invalid(
+                "profile",
+                describe_capture_profile_error(&self.request, &error, &advertised),
+            )
+        })?;
         let negotiated = self.camera.open(&selected)?;
         let accepted = negotiated.mode() == selected.mode()
             && negotiated.sensor_rate() == selected.sensor_rate();
-        let confirmed =
-            confirm_selected_profile(selected, accepted).map_err(|error| profile_error(&error))?;
+        let confirmed = confirm_selected_profile(selected, accepted).map_err(|error| {
+            A2aLabError::invalid(
+                "profile",
+                describe_capture_profile_error(&self.request, &error, &advertised),
+            )
+        })?;
         self.selected = Some(confirmed);
         Ok(confirmed)
+    }
+
+    /// Opens an exact pre-selected profile (tests and injection).
+    pub fn open_with_selected(
+        &mut self,
+        selected: SelectedCaptureProfile,
+    ) -> Result<SelectedCaptureProfile, A2aLabError> {
+        let advertised = self.camera.advertised()?;
+        let negotiated = self.camera.open(&selected)?;
+        let accepted = negotiated.mode() == selected.mode()
+            && negotiated.sensor_rate() == selected.sensor_rate();
+        let confirmed = confirm_selected_profile(selected, accepted).map_err(|error| {
+            A2aLabError::invalid(
+                "profile",
+                describe_capture_profile_error(&self.request, &error, &advertised),
+            )
+        })?;
+        self.selected = Some(confirmed);
+        Ok(confirmed)
+    }
+
+    /// Returns the camera after a failed open attempt.
+    #[must_use]
+    pub fn into_camera(self) -> C {
+        self.camera
     }
 
     /// Copies one raw frame. MJPEG stays JPEG and YUY2 stays packed.
@@ -178,8 +211,4 @@ pub fn captured_frame(
             )
         }
     }
-}
-
-fn profile_error(error: &crate::videos::CaptureProfileError) -> A2aLabError {
-    A2aLabError::invalid("profile", format!("{error:?}"))
 }

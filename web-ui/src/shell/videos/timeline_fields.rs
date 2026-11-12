@@ -44,6 +44,43 @@ pub(super) fn reshow(text: &str, from_local: bool, to_local: bool) -> String {
     display_clock(&utc, to_local)
 }
 
+pub(super) fn display_picker(stored: &str, local: bool) -> String {
+    if stored.is_empty() {
+        return String::new();
+    }
+    if let Some(us) = crate::videos::mjpeg::captured_us(stored) {
+        if local && let Some(parts) = browser_date_from_us(us) {
+            return format!(
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second
+            );
+        }
+        return track::format_utc(us).chars().take(19).collect();
+    }
+    normalize_picker_text(stored)
+}
+
+pub(super) fn reshow_picker(text: &str, from_local: bool, to_local: bool) -> String {
+    if text.trim().is_empty() || from_local == to_local {
+        return text.to_owned();
+    }
+    let utc = field_to_utc(text, from_local);
+    if crate::videos::mjpeg::captured_us(&utc).is_none() {
+        return text.to_owned();
+    }
+    display_picker(&utc, to_local)
+}
+
+fn normalize_picker_text(value: &str) -> String {
+    let value = value.trim();
+    let Some((date, time)) = value.split_once('T').or_else(|| value.split_once(' ')) else {
+        return value.chars().take(19).collect();
+    };
+    let clock = time.split('.').next().unwrap_or(time);
+    let clock = clock.trim_end_matches('Z');
+    format!("{date}T{clock}")
+}
+
 pub(super) fn field_to_utc(value: &str, local: bool) -> String {
     let value = value.trim();
     if value.is_empty() {
@@ -291,7 +328,7 @@ fn wall_micros(digits: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::field_to_utc;
+    use super::{display_picker, field_to_utc, reshow_picker};
 
     #[test]
     fn explicit_utc_text_stays_utc_in_either_mode() {
@@ -306,6 +343,23 @@ mod tests {
         assert_eq!(
             field_to_utc("2024-01-01T00:00:00Z", true),
             "2024-01-01T00:00:00Z"
+        );
+    }
+
+    #[test]
+    fn picker_values_round_trip_through_utc_conversion() {
+        let stored = "2024-01-01T00:00:01Z";
+        let shown = display_picker(stored, false);
+        assert_eq!(shown, "2024-01-01T00:00:01");
+        assert_eq!(field_to_utc(&shown, false), stored);
+        assert_eq!(reshow_picker(&shown, false, false), shown);
+    }
+
+    #[test]
+    fn datetime_local_shape_parses_as_naive_utc() {
+        assert_eq!(
+            field_to_utc("2024-01-01T00:00:05", false),
+            "2024-01-01T00:00:05Z"
         );
     }
 }

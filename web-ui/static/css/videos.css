@@ -165,6 +165,16 @@
   display: none;
 }
 
+#video-search-result-state[data-state="loading"] {
+  align-items: stretch;
+  width: 100%;
+  padding-top: 0;
+}
+
+#video-semantic-search-loading {
+  width: 100%;
+}
+
 .video-filter-group {
   border-bottom: 1px solid var(--border);
   padding: 0.5rem;
@@ -259,13 +269,24 @@
 .video-semantic-hit {
   display: flex;
   align-items: flex-start;
+  justify-content: flex-start;
   gap: 0.5rem;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: var(--density-control-height);
+  box-sizing: border-box;
   padding: 0.45rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: none;
   background: var(--card);
-  text-align: left;
+  text-align: start;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .video-semantic-hit[aria-selected="true"] {
@@ -274,20 +295,31 @@
 
 .video-semantic-hit-copy {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 0.15rem;
   min-width: 0;
+  max-width: 100%;
 }
 
 .video-semantic-description {
   font-size: 0.8rem;
   color: var(--foreground);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .video-semantic-source,
 .video-semantic-score {
   font-size: 0.7rem;
   color: var(--muted-foreground);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.video-semantic-hit time {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .video-semantic-thumb,
@@ -305,11 +337,35 @@
   text-align: center;
 }
 
+#video-search-results .log-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#video-search-results .log-chips,
+#video-search-results .log-meta {
+  max-width: 100%;
+}
+
+#video-semantic-hits {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .video-semantic-detail {
   margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.video-metadata-panel,
+.video-decision-panel {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .video-semantic-pagination {
@@ -338,9 +394,28 @@
 .video-decision-row dl {
   margin: 0;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   gap: 0.2rem 0.65rem;
   font-size: 0.8rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.video-metadata-panel dt,
+.video-metadata-panel dd,
+.video-decision-row dt,
+.video-decision-row dd {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+#video-semantic-coverage,
+#video-semantic-capability,
+#video-semantic-alert,
+#video-decision-alert {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .video-decision-row {
@@ -792,7 +867,8 @@
   }
 
   #video-search-results .log-scroll {
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: visible;
   }
 }
 
