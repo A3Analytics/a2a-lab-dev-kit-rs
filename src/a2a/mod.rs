@@ -4,6 +4,8 @@
 
 mod access;
 mod auth;
+#[cfg(feature = "web-ui")]
+mod capture_settings;
 mod card;
 mod client;
 mod executor;
@@ -17,6 +19,8 @@ mod wire;
 pub(crate) use access::{AccessGate, auth_response, security_configuration_error};
 
 pub use auth::{AuthError, Authenticator, OidcAuthenticator, Principal};
+#[cfg(feature = "web-ui")]
+pub use capture_settings::{CAPTURE_SETTINGS_PATH, VideoCaptureSettingsHandle};
 pub use client::{A2aClient, AgentMessageResponse};
 pub use message::{
     AgentMessageFuture, AgentMessageHandler, AgentMessageReply, AgentMessageRequest,

@@ -262,3 +262,191 @@ fn reject(frame: &CapturedColorFrame, reason: FrameRejection) -> RejectedFrame {
         reason,
     }
 }
+
+/// Whether a dispatch asks for live output, DVR persistence, or both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CadenceDestinations {
+    live: bool,
+    dvr: bool,
+}
+
+impl CadenceDestinations {
+    /// Live viewers only.
+    #[must_use]
+    pub const fn live_only() -> Self {
+        Self {
+            live: true,
+            dvr: false,
+        }
+    }
+
+    /// DVR persistence only.
+    #[must_use]
+    pub const fn dvr_only() -> Self {
+        Self {
+            live: false,
+            dvr: true,
+        }
+    }
+
+    /// One encode fans out to both destinations.
+    #[must_use]
+    pub const fn shared() -> Self {
+        Self {
+            live: true,
+            dvr: true,
+        }
+    }
+
+    /// Live path selected.
+    #[must_use]
+    pub const fn live(self) -> bool {
+        self.live
+    }
+
+    /// DVR path selected.
+    #[must_use]
+    pub const fn dvr(self) -> bool {
+        self.dvr
+    }
+}
+
+/// Outcome of independent live and DVR cadence gates before conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CadenceDispatch {
+    /// Live output without DVR persistence for this capture time.
+    Live(CapturedColorFrame),
+    /// DVR persistence without live output for this capture time.
+    Dvr(CapturedColorFrame),
+    /// One encode serves live output and DVR persistence together.
+    Shared(CapturedColorFrame),
+}
+
+impl CadenceDispatch {
+    /// True when a caller should run color conversion for this dispatch.
+    #[must_use]
+    pub const fn requests_conversion(&self) -> bool {
+        true
+    }
+
+    /// Destinations that should consume one encoded picture.
+    #[must_use]
+    pub const fn destinations(&self) -> CadenceDestinations {
+        match self {
+            Self::Live(_) => CadenceDestinations::live_only(),
+            Self::Dvr(_) => CadenceDestinations::dvr_only(),
+            Self::Shared(_) => CadenceDestinations::shared(),
+        }
+    }
+
+    /// Owned frame when conversion is required.
+    #[must_use]
+    pub fn into_frame(self) -> CapturedColorFrame {
+        match self {
+            Self::Live(frame) | Self::Dvr(frame) | Self::Shared(frame) => frame,
+        }
+    }
+
+    /// Borrowed frame when conversion is required.
+    #[must_use]
+    pub const fn frame(&self) -> &CapturedColorFrame {
+        match self {
+            Self::Live(frame) | Self::Dvr(frame) | Self::Shared(frame) => frame,
+        }
+    }
+}
+
+/// Independent live and DVR cadence selection on capture timestamps.
+///
+/// Each destination keeps its own gate. Frames rejected by both gates are
+/// discarded before conversion. When both gates release the same source
+/// sequence, the selector emits one shared encode representation.
+#[derive(Debug)]
+pub struct LiveDvrCadenceSelector {
+    live: FreshFrameGate,
+    dvr: FreshFrameGate,
+    queue_capacity: usize,
+}
+
+impl LiveDvrCadenceSelector {
+    /// `live_period_ns` and `dvr_period_ns` are output spacings. `capacity`
+    /// bounds selected frames waiting on each destination.
+    pub fn new(
+        live_period_ns: u64,
+        dvr_period_ns: u64,
+        capacity: usize,
+    ) -> Result<Self, A2aLabError> {
+        Ok(Self {
+            live: FreshFrameGate::new(live_period_ns, capacity)?,
+            dvr: FreshFrameGate::new(dvr_period_ns, capacity)?,
+            queue_capacity: capacity,
+        })
+    }
+
+    /// Live at [`OUTPUT_5FPS_PERIOD_NS`] and DVR at `dvr_period_ns`.
+    pub fn live_at_5fps(dvr_period_ns: u64, capacity: usize) -> Result<Self, A2aLabError> {
+        Self::new(OUTPUT_5FPS_PERIOD_NS, dvr_period_ns, capacity)
+    }
+
+    /// Replace the live output cadence and reset live selection state.
+    pub fn set_live_period_ns(&mut self, period_ns: u64) -> Result<(), A2aLabError> {
+        self.live = FreshFrameGate::new(period_ns, self.queue_capacity)?;
+        Ok(())
+    }
+
+    /// Replace the DVR save cadence and reset DVR selection state.
+    pub fn set_dvr_period_ns(&mut self, period_ns: u64) -> Result<(), A2aLabError> {
+        self.dvr = FreshFrameGate::new(period_ns, self.queue_capacity)?;
+        Ok(())
+    }
+
+    /// Consider one captured frame. Returns conversion dispatches only for
+    /// frames selected by at least one destination.
+    pub fn push(&mut self, frame: CapturedColorFrame) -> Result<Vec<CadenceDispatch>, A2aLabError> {
+        self.live.push(frame.clone())?;
+        self.dvr.push(frame)?;
+        Ok(merge_dispatches(
+            collect_selected(&mut self.live),
+            collect_selected(&mut self.dvr),
+        ))
+    }
+}
+
+fn collect_selected(gate: &mut FreshFrameGate) -> Vec<CapturedColorFrame> {
+    let mut selected = Vec::new();
+    while let Some(frame) = gate.pull() {
+        selected.push(frame);
+    }
+    selected
+}
+
+fn merge_dispatches(
+    live: Vec<CapturedColorFrame>,
+    dvr: Vec<CapturedColorFrame>,
+) -> Vec<CadenceDispatch> {
+    if live.is_empty() && dvr.is_empty() {
+        return Vec::new();
+    }
+    let mut dvr_pending: Vec<CapturedColorFrame> = dvr;
+    let mut out = Vec::with_capacity(live.len() + dvr_pending.len());
+    for live_frame in live {
+        if let Some(index) = dvr_pending
+            .iter()
+            .position(|frame| frame.identity().sequence() == live_frame.identity().sequence())
+        {
+            let dvr_frame = dvr_pending.remove(index);
+            debug_assert_eq!(
+                live_frame.timing(),
+                dvr_frame.timing(),
+                "shared cadence must preserve one capture timestamp"
+            );
+            out.push(CadenceDispatch::Shared(live_frame));
+        } else {
+            out.push(CadenceDispatch::Live(live_frame));
+        }
+    }
+    for dvr_frame in dvr_pending {
+        out.push(CadenceDispatch::Dvr(dvr_frame));
+    }
+    out
+}

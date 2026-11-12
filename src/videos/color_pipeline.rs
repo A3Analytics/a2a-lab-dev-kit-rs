@@ -249,6 +249,14 @@ impl ColorEncodePipeline {
         self.output.pop_front()
     }
 
+    /// Converts and encodes one caller-selected frame without the internal cadence gate.
+    pub fn encode_frame(
+        &mut self,
+        frame: CapturedColorFrame,
+    ) -> Result<Option<ColorEncodedFrame>, A2aLabError> {
+        self.encode_selected(frame)
+    }
+
     fn encode_selected(
         &mut self,
         frame: CapturedColorFrame,

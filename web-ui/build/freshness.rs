@@ -91,6 +91,7 @@ pub const STYLE_FRAGMENTS: &[&str] = &[
     "chat.css",
     "inventory.css",
     "workbench.css",
+    "settings.css",
 ];
 
 fn hex(bytes: &[u8]) -> String {

@@ -172,6 +172,12 @@ pub fn route_for(path: &str) -> Route {
             title: "Chat",
             primitive: None,
         },
+        "config/settings" | "config/settings/" => Route {
+            view: "view-config-settings",
+            link: "nav-config-settings",
+            title: "Settings",
+            primitive: None,
+        },
         _ => primitive(Primitive::Logs, "view-logs", "nav-logs", "Logs"),
     }
 }

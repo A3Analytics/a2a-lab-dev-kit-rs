@@ -58,6 +58,14 @@ fn http() -> reqwest::Client {
         .unwrap()
 }
 
+fn no_redirect() -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap()
+}
+
 async fn get(url: &str, token: Option<&str>) -> reqwest::Response {
     let mut request = http().get(url);
     if let Some(token) = token {
@@ -266,9 +274,22 @@ async fn web_ui_is_absent_until_opt_in() {
     let base = serve(false, false).await;
     let shell = get(&format!("{base}{WEB_UI_PATH}"), None).await;
     assert_eq!(shell.status(), reqwest::StatusCode::NOT_FOUND);
+    let home = no_redirect().get(format!("{base}/")).send().await.unwrap();
+    assert_eq!(home.status(), reqwest::StatusCode::METHOD_NOT_ALLOWED);
     let card = get(&format!("{base}/.well-known/agent-card.json"), None).await;
     assert_eq!(card.status(), reqwest::StatusCode::OK);
     assert!(card.text().await.unwrap().contains("list-tasks"));
+}
+
+#[tokio::test]
+async fn web_ui_root_redirects_to_the_shell() {
+    let base = serve(true, true).await;
+    let home = no_redirect().get(format!("{base}/")).send().await.unwrap();
+    assert_eq!(home.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(header(&home, "location"), WEB_UI_PATH);
+    let followed = get(&format!("{base}/"), None).await;
+    assert_eq!(followed.status(), reqwest::StatusCode::OK);
+    assert!(followed.text().await.unwrap().contains("id=\"app\""));
 }
 
 #[tokio::test]
@@ -283,13 +304,14 @@ async fn web_ui_opt_in_serves_shell_and_hashed_assets() {
     assert!(policy.contains("default-src 'none'"));
     assert!(policy.contains("script-src 'self' 'wasm-unsafe-eval'"));
     assert!(policy.contains("style-src 'self'"));
+    assert!(policy.contains("style-src-attr 'unsafe-inline'"));
     assert!(policy.contains("font-src 'self'"));
     assert!(!policy.contains("fonts.googleapis.com"));
     assert!(!policy.contains("fonts.gstatic.com"));
     assert!(policy.contains("img-src 'self' data:"));
     assert!(policy.contains("media-src blob:"));
     assert!(policy.contains("connect-src 'self'"));
-    assert!(!policy.contains("unsafe-inline"));
+    assert!(!policy.contains("script-src 'self' 'unsafe-inline'"));
     assert!(!policy.contains('*'));
     assert!(!policy.contains("http:"));
     let html = shell.text().await.unwrap();

@@ -8,7 +8,7 @@ use crate::error::A2aLabError;
 use crate::id::VideoSourceId;
 use crate::videos::{CaptureFormat, CaptureFormatPreference};
 
-use super::duration::ConfigDuration;
+use super::duration::{ConfigDuration, SaveIntervalDuration};
 use super::semantic_indexing::{SemanticStreamSchedule, parse_schedule};
 
 /// Camera input requested from the capture library.
@@ -16,6 +16,8 @@ use super::semantic_indexing::{SemanticStreamSchedule, parse_schedule};
 /// This is not a playback [`crate::videos::VideoCodec`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoInputFormat {
+    /// Same-resolution MJPEG when advertised, otherwise same-resolution YUY2.
+    Auto,
     /// Encoded JPEG frames from the device.
     Mjpeg,
     /// Packed `Y0 U0 Y1 V0` bytes. `yuyv` normalizes to this variant.
@@ -27,15 +29,16 @@ impl VideoInputFormat {
     #[must_use]
     pub const fn capture_format(self) -> CaptureFormat {
         match self {
-            Self::Mjpeg => CaptureFormat::Mjpeg,
+            Self::Auto | Self::Mjpeg => CaptureFormat::Mjpeg,
             Self::Yuy2 => CaptureFormat::Yuy2,
         }
     }
 
-    /// Existing profile preference for this input. Never `Auto`.
+    /// Dev-kit profile preference for negotiation.
     #[must_use]
     pub const fn capture_preference(self) -> CaptureFormatPreference {
         match self {
+            Self::Auto => CaptureFormatPreference::Auto,
             Self::Mjpeg => CaptureFormatPreference::Mjpeg,
             Self::Yuy2 => CaptureFormatPreference::Yuy2,
         }
@@ -72,6 +75,8 @@ pub struct VideoSourceConfig {
     pub width: Option<u32>,
     /// Explicit frame height. Required for non-legacy source ids.
     pub height: Option<u32>,
+    /// Optional capture frame rate. Omitted means largest matching resolution, then lowest working rate.
+    pub capture_rate: Option<u32>,
     /// Optional per-source semantic indexing stage schedules.
     pub semantic_indexing: Option<SemanticStreamSchedule>,
 }
@@ -97,6 +102,8 @@ impl VideoSourceConfig {
 pub struct VideoDvrConfig {
     /// Disk retention when the file sets one.
     pub retention: Option<ConfigDuration>,
+    /// DVR frame persistence cadence when the file sets one.
+    pub save_interval: Option<SaveIntervalDuration>,
     /// Storage directory text when the file sets one. Not resolved here.
     pub storage_path: Option<String>,
 }
@@ -137,6 +144,7 @@ const SOURCE_KEYS_V1: &[&str] = &[
     "device_index",
     "width",
     "height",
+    "capture_rate",
 ];
 const SOURCE_KEYS_V2: &[&str] = &[
     "id",
@@ -146,9 +154,10 @@ const SOURCE_KEYS_V2: &[&str] = &[
     "device_index",
     "width",
     "height",
+    "capture_rate",
     "semantic_indexing",
 ];
-const DVR_KEYS: &[&str] = &["retention", "storage_path"];
+const DVR_KEYS: &[&str] = &["retention", "save_interval", "storage_path"];
 
 fn parse_sources(
     value: Option<&Value>,
@@ -220,6 +229,8 @@ fn parse_source(
     };
     let width = parse_optional_positive_u32(map.get("width"), "videos.sources.width")?;
     let height = parse_optional_positive_u32(map.get("height"), "videos.sources.height")?;
+    let capture_rate =
+        parse_optional_positive_u32(map.get("capture_rate"), "videos.sources.capture_rate")?;
     let semantic_indexing = if allow_semantic_indexing {
         parse_source_semantic_indexing(map.get("semantic_indexing"), id.as_str())?
     } else {
@@ -233,6 +244,7 @@ fn parse_source(
         device_index,
         width,
         height,
+        capture_rate,
         semantic_indexing,
     })
 }
@@ -323,6 +335,7 @@ fn parse_format(value: Option<&Value>) -> Result<VideoInputFormat, A2aLabError> 
         ));
     };
     match text.as_str() {
+        "auto" => Ok(VideoInputFormat::Auto),
         "mjpeg" => Ok(VideoInputFormat::Mjpeg),
         "yuy2" | "yuyv" => Ok(VideoInputFormat::Yuy2),
         _ => Err(A2aLabError::invalid(
@@ -353,11 +366,26 @@ fn parse_dvr(value: Option<&Value>) -> Result<Option<VideoDvrConfig>, A2aLabErro
     let map = super::object_at("videos.dvr", value)?;
     super::reject_unknown_keys(map, "videos.dvr", DVR_KEYS)?;
     let retention = parse_duration("videos.dvr.retention", map.get("retention"))?;
+    let save_interval = parse_save_interval("videos.dvr.save_interval", map.get("save_interval"))?;
     let storage_path = optional_text(map.get("storage_path"), "videos.dvr.storage_path")?;
     Ok(Some(VideoDvrConfig {
         retention,
+        save_interval,
         storage_path,
     }))
+}
+
+fn parse_save_interval(
+    field: &'static str,
+    value: Option<&Value>,
+) -> Result<Option<SaveIntervalDuration>, A2aLabError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let Value::String(text) = value else {
+        return Err(A2aLabError::invalid(field, "must be a positive duration"));
+    };
+    SaveIntervalDuration::parse(field, text).map(Some)
 }
 
 fn parse_duration(

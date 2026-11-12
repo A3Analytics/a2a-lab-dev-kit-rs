@@ -6,6 +6,7 @@
 
 mod capture;
 mod capture_profile;
+mod capture_runner;
 mod capture_session;
 mod catalog;
 mod cmaf;
@@ -15,6 +16,7 @@ mod color_convert;
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 mod color_pipeline;
 mod digest;
+mod dvr;
 mod dvr_store;
 mod epoch_hls;
 mod frame_decision;
@@ -26,6 +28,7 @@ pub(crate) mod http;
 mod index_provenance;
 #[cfg(feature = "yuv")]
 mod jpeg_derivative;
+mod live;
 mod local_media;
 mod media_asset;
 #[cfg(feature = "yuv")]
@@ -48,9 +51,15 @@ pub use capture::{
 };
 pub use capture_profile::{
     AdvertisedCaptureProfile, CaptureFormatPreference, CaptureProfileError, CaptureProfileRequest,
-    CaptureRate, DEFAULT_CAPTURE_OUTPUT_FPS, SelectedCaptureProfile, confirm_selected_profile,
-    describe_capture_profile_error, format_advertised_capture_profiles,
-    format_capture_profile_request, select_capture_profile, select_capture_profile_flexible,
+    CaptureRate, DEFAULT_CAPTURE_MAX_HEIGHT, DEFAULT_CAPTURE_MAX_WIDTH, DEFAULT_CAPTURE_OUTPUT_FPS,
+    SelectedCaptureProfile, confirm_selected_profile, describe_capture_profile_error,
+    format_advertised_capture_profiles, format_capture_format_label,
+    format_capture_preference_label, format_capture_profile_request, rank_capture_profiles,
+    select_capture_profile, select_capture_profile_flexible,
+};
+pub use capture_runner::{
+    CaptureDrainCounters, CaptureDrainLoop, CaptureDrainRunner, CaptureRunnerPhase,
+    LatestFrameReplacement, LatestFrameStore, ReplacedLatestFrame, SENSOR_30FPS_PERIOD_NS,
 };
 pub use capture_session::{CaptureSession, ColorCamera, RawCameraSample, captured_frame};
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
@@ -63,6 +72,7 @@ pub use color_convert::{
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 pub use color_pipeline::{ColorEncodeCounters, ColorEncodePipeline, ColorEncodedFrame};
 pub use digest::Sha256Digest;
+pub use dvr::{DvrEnqueueStatus, DvrPersistenceQueue, DvrQueuedSample};
 pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPictureProperties, DvrRetentionBounds,
@@ -70,7 +80,8 @@ pub use dvr_store::{
 };
 pub use epoch_hls::{
     EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind, FiniteH264Clip,
-    export_finite_h264_epochs, package_h264_epochs,
+    export_finite_h264_epochs, live_h264_edge_anchor, load_epoch_hls_asset, load_live_hls_asset,
+    package_h264_epochs, package_h264_live_at, package_h264_live_snapshot,
 };
 pub use frame_decision::{
     AppendFrameDecisionRequest, AppendFrameDecisionResult, DEFAULT_FRAME_DECISION_HISTORY_ROWS,
@@ -101,7 +112,10 @@ pub use frame_decision::{
     reject_decision_provenance, reject_forbidden_decision_input, unsupported_predicate_result,
     validate_evaluation_batch,
 };
-pub use frame_select::{FrameRejection, FreshFrameGate, OUTPUT_5FPS_PERIOD_NS, RejectedFrame};
+pub use frame_select::{
+    CadenceDestinations, CadenceDispatch, FrameRejection, FreshFrameGate, LiveDvrCadenceSelector,
+    OUTPUT_5FPS_PERIOD_NS, RejectedFrame,
+};
 #[cfg(feature = "openh264")]
 pub use h264_encode::{
     AllIdrEncoder, EncodedAccessUnit, I420Picture, OPENH264_NOTICE, decode_luma,
@@ -116,6 +130,10 @@ pub use index_provenance::{
 pub use jpeg_derivative::{
     JpegDerivative, JpegDerivativeCache, JpegDerivativeLimits, MAX_JPEG_QUALITY, MIN_JPEG_QUALITY,
     jpeg_derivative,
+};
+pub use live::{
+    H264LiveAppendStats, H264LiveEpoch, H264LiveSample, H264LiveSnapshot, H264LiveStore,
+    H264LiveStoreLimits,
 };
 pub use local_media::LocalMediaAssetProvider;
 pub use media_asset::{

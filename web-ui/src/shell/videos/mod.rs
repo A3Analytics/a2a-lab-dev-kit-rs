@@ -218,16 +218,25 @@ pub fn VideoView(ui: Signal<VideoUi>, visible: bool, panel: VideoPanel) -> Eleme
         semantic::bind_loader(semantic_search, semantic_caps, semantic_history);
     });
     use_drop(leave_videos);
-    let mut was_visible = use_signal(|| false);
+    let mut shown = use_signal(|| false);
+    if shown() != visible {
+        shown.set(visible);
+    }
+    let mut active_panel = use_signal(|| panel);
+    if active_panel() != panel {
+        active_panel.set(panel);
+    }
+    let was_visible = use_hook(|| Cell::new(false));
     if visible {
         sync_video_panel(panel);
     }
     use_effect(move || {
+        let visible = shown();
+        let panel = active_panel();
         if !visible {
-            if was_visible() {
+            if was_visible.replace(false) {
                 leave_videos();
             }
-            was_visible.set(false);
             return;
         }
         was_visible.set(true);

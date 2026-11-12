@@ -30,6 +30,27 @@ impl Transport {
             .await
     }
 
+    pub async fn patch_json(
+        &self,
+        path: &str,
+        body: &str,
+        token: Option<&str>,
+    ) -> Result<Reply, ()> {
+        self.request_with_type(
+            "PATCH",
+            path,
+            Some(body),
+            Some("application/json"),
+            token,
+            None,
+        )
+        .await
+    }
+
+    pub async fn get_json(&self, path: &str, token: Option<&str>) -> Result<Reply, ()> {
+        self.request("GET", path, None, token, None).await
+    }
+
     pub async fn send_signaled(
         &self,
         body: &str,
@@ -51,7 +72,7 @@ impl Transport {
             return Err(());
         }
         let url = format!("{}{path}", self.origin.trim_end_matches('/'));
-        let request = build_request(&url, "GET", None, token, signal)?;
+        let request = build_request(&url, "GET", None, None, token, signal)?;
         let value = JsFuture::from(window.fetch_with_request(&request))
             .await
             .map_err(|_| ())?;
@@ -66,12 +87,25 @@ impl Transport {
         token: Option<&str>,
         signal: Option<&AbortSignal>,
     ) -> Result<Reply, ()> {
+        self.request_with_type(method, path, body, None, token, signal)
+            .await
+    }
+
+    async fn request_with_type(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&str>,
+        content_type: Option<&str>,
+        token: Option<&str>,
+        signal: Option<&AbortSignal>,
+    ) -> Result<Reply, ()> {
         let window = web_sys::window().ok_or(())?;
         if !window.navigator().on_line() {
             return Err(());
         }
         let url = format!("{}{path}", self.origin.trim_end_matches('/'));
-        let request = build_request(&url, method, body, token, signal)?;
+        let request = build_request(&url, method, body, content_type, token, signal)?;
         let value = JsFuture::from(window.fetch_with_request(&request))
             .await
             .map_err(|_| ())?;
@@ -93,6 +127,7 @@ fn build_request(
     url: &str,
     method: &str,
     body: Option<&str>,
+    content_type: Option<&str>,
     token: Option<&str>,
     signal: Option<&AbortSignal>,
 ) -> Result<Request, ()> {
@@ -100,7 +135,10 @@ fn build_request(
     headers.set("A2A-Version", "1.0").map_err(|_| ())?;
     if body.is_some() {
         headers
-            .set("Content-Type", "application/a2a+json")
+            .set(
+                "Content-Type",
+                content_type.unwrap_or("application/a2a+json"),
+            )
             .map_err(|_| ())?;
     }
     if let Some(token) = token.filter(|token| !token.is_empty()) {

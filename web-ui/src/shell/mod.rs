@@ -13,6 +13,7 @@ mod metrics;
 mod nav;
 mod playback;
 mod session;
+mod settings;
 mod tasks;
 mod videos;
 mod workbench;

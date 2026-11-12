@@ -1,14 +1,22 @@
-//! Portable selection of a capture format and sensor rate.
+//! Portable selection of a capture format and capture rate.
 //!
-//! Output rate and sensor rate are separate. Auto keeps an advertised
-//! same-resolution MJPEG profile. An explicit raw request never drops to a
-//! smaller resolution.
+//! Output rate and capture rate are separate. Omitted size or capture rate
+//! selects the largest advertised resolution at or below 1920×1080, then the
+//! lowest capture rate that still meets the live output cadence. Explicit
+//! width and height may request 2K/4K. Auto keeps advertised MJPEG when
+//! present. An explicit raw request never drops to a smaller resolution.
 
 use crate::error::A2aLabError;
 use crate::videos::capture::{CaptureFormat, CaptureMode};
 
-/// Default delivery rate. Sensor rate is negotiated independently.
+/// Default delivery rate. Capture rate is negotiated independently.
 pub const DEFAULT_CAPTURE_OUTPUT_FPS: u32 = 5;
+
+/// Unpinned capture stays at or below this width. Explicit `width` may exceed it.
+pub const DEFAULT_CAPTURE_MAX_WIDTH: u32 = 1920;
+
+/// Unpinned capture stays at or below this height. Explicit `height` may exceed it.
+pub const DEFAULT_CAPTURE_MAX_HEIGHT: u32 = 1080;
 
 /// Caller preference for the raw capture format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,6 +77,18 @@ impl CaptureRate {
         self.denominator
     }
 
+    /// Nominal spacing between capture frames in nanoseconds.
+    pub fn period_ns(self) -> Result<u64, A2aLabError> {
+        let numerator = u64::from(self.numerator);
+        let denominator = u64::from(self.denominator);
+        denominator
+            .checked_mul(1_000_000_000)
+            .and_then(|nanos| nanos.checked_div(numerator))
+            .ok_or_else(|| {
+                A2aLabError::invalid("rate", "capture period does not fit in nanoseconds")
+            })
+    }
+
     fn cmp_rate(self, other: Self) -> std::cmp::Ordering {
         let left = u64::from(self.numerator) * u64::from(other.denominator);
         let right = u64::from(other.numerator) * u64::from(self.denominator);
@@ -76,18 +96,18 @@ impl CaptureRate {
     }
 }
 
-/// One device-advertised mode, including its sensor rate.
+/// One device-advertised mode, including its capture rate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdvertisedCaptureProfile {
     mode: CaptureMode,
-    sensor_rate: CaptureRate,
+    capture_rate: CaptureRate,
 }
 
 impl AdvertisedCaptureProfile {
-    /// Stores a validated mode and sensor rate.
+    /// Stores a validated mode and capture rate.
     #[must_use]
-    pub const fn new(mode: CaptureMode, sensor_rate: CaptureRate) -> Self {
-        Self { mode, sensor_rate }
+    pub const fn new(mode: CaptureMode, capture_rate: CaptureRate) -> Self {
+        Self { mode, capture_rate }
     }
 
     /// Advertised dimensions and raw format.
@@ -96,10 +116,10 @@ impl AdvertisedCaptureProfile {
         self.mode
     }
 
-    /// Advertised sensor rate.
+    /// Advertised capture rate.
     #[must_use]
-    pub const fn sensor_rate(self) -> CaptureRate {
-        self.sensor_rate
+    pub const fn capture_rate(self) -> CaptureRate {
+        self.capture_rate
     }
 }
 
@@ -107,26 +127,46 @@ impl AdvertisedCaptureProfile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureProfileRequest {
     preference: CaptureFormatPreference,
-    width: u32,
-    height: u32,
+    width: Option<u32>,
+    height: Option<u32>,
     output_rate: CaptureRate,
+    capture_rate: Option<CaptureRate>,
 }
 
 impl CaptureProfileRequest {
-    /// Requests exact dimensions. `output_rate` stays the delivery rate.
+    /// Requests optional dimensions and capture rate. `output_rate` stays the delivery rate.
     pub fn new(
         preference: CaptureFormatPreference,
-        width: u32,
-        height: u32,
+        width: Option<u32>,
+        height: Option<u32>,
         output_rate: CaptureRate,
+        capture_rate: Option<CaptureRate>,
     ) -> Result<Self, A2aLabError> {
-        if width == 0 {
+        match (width, height) {
+            (None, None) | (Some(_), Some(_)) => {}
+            (Some(_), None) => {
+                return Err(A2aLabError::invalid(
+                    "height",
+                    "required when videos.sources.width is set",
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(A2aLabError::invalid(
+                    "width",
+                    "required when videos.sources.height is set",
+                ));
+            }
+        }
+        if let Some(0) = width {
             return Err(A2aLabError::invalid("width", "must be positive"));
         }
-        if height == 0 {
+        if let Some(0) = height {
             return Err(A2aLabError::invalid("height", "must be positive"));
         }
-        if preference == CaptureFormatPreference::Yuy2 && !width.is_multiple_of(2) {
+        if preference == CaptureFormatPreference::Yuy2
+            && let Some(width) = width
+            && !width.is_multiple_of(2)
+        {
             return Err(A2aLabError::invalid(
                 "width",
                 "packed YUY2 width must be even",
@@ -137,17 +177,51 @@ impl CaptureProfileRequest {
             width,
             height,
             output_rate,
+            capture_rate,
         })
     }
 
-    /// Auto preference at the default 5 FPS output rate.
+    /// Exact dimensions and capture rate.
+    pub fn exact(
+        preference: CaptureFormatPreference,
+        width: u32,
+        height: u32,
+        output_rate: CaptureRate,
+        capture_rate: CaptureRate,
+    ) -> Result<Self, A2aLabError> {
+        Self::new(
+            preference,
+            Some(width),
+            Some(height),
+            output_rate,
+            Some(capture_rate),
+        )
+    }
+
+    /// Auto preference at the default 5 FPS output. Capture rate stays unpinned.
     pub fn auto(width: u32, height: u32) -> Result<Self, A2aLabError> {
         Self::new(
             CaptureFormatPreference::Auto,
-            width,
-            height,
+            Some(width),
+            Some(height),
             CaptureRate::output_default(),
+            None,
         )
+    }
+
+    /// Format preference only. Size and capture rate stay unpinned.
+    #[must_use]
+    pub const fn unconstrained(
+        preference: CaptureFormatPreference,
+        output_rate: CaptureRate,
+    ) -> Self {
+        Self {
+            preference,
+            width: None,
+            height: None,
+            output_rate,
+            capture_rate: None,
+        }
     }
 
     /// Format preference.
@@ -156,30 +230,36 @@ impl CaptureProfileRequest {
         self.preference
     }
 
-    /// Requested width.
+    /// Requested width when the caller pinned one.
     #[must_use]
-    pub const fn width(self) -> u32 {
+    pub const fn width(self) -> Option<u32> {
         self.width
     }
 
-    /// Requested height.
+    /// Requested height when the caller pinned one.
     #[must_use]
-    pub const fn height(self) -> u32 {
+    pub const fn height(self) -> Option<u32> {
         self.height
     }
 
-    /// Delivery rate. This is not the sensor rate.
+    /// Delivery rate. This is not the capture rate.
     #[must_use]
     pub const fn output_rate(self) -> CaptureRate {
         self.output_rate
     }
+
+    /// Exact capture rate when the caller pinned one.
+    #[must_use]
+    pub const fn capture_rate(self) -> Option<CaptureRate> {
+        self.capture_rate
+    }
 }
 
-/// Chosen sensor profile plus the unchanged output rate.
+/// Chosen capture profile plus the unchanged output rate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SelectedCaptureProfile {
     mode: CaptureMode,
-    sensor_rate: CaptureRate,
+    capture_rate: CaptureRate,
     output_rate: CaptureRate,
 }
 
@@ -188,12 +268,12 @@ impl SelectedCaptureProfile {
     #[must_use]
     pub const fn negotiated(
         mode: CaptureMode,
-        sensor_rate: CaptureRate,
+        capture_rate: CaptureRate,
         output_rate: CaptureRate,
     ) -> Self {
         Self {
             mode,
-            sensor_rate,
+            capture_rate,
             output_rate,
         }
     }
@@ -204,13 +284,13 @@ impl SelectedCaptureProfile {
         self.mode
     }
 
-    /// Sensor rate the device is asked to run.
+    /// Capture rate the device is asked to run.
     #[must_use]
-    pub const fn sensor_rate(self) -> CaptureRate {
-        self.sensor_rate
+    pub const fn capture_rate(self) -> CaptureRate {
+        self.capture_rate
     }
 
-    /// Delivery rate, unchanged by sensor negotiation.
+    /// Delivery rate, unchanged by capture negotiation.
     #[must_use]
     pub const fn output_rate(self) -> CaptureRate {
         self.output_rate
@@ -240,69 +320,17 @@ pub fn select_capture_profile_flexible(
     output_rate: CaptureRate,
     advertised: &[AdvertisedCaptureProfile],
 ) -> Result<SelectedCaptureProfile, CaptureProfileError> {
-    if advertised.is_empty() {
-        return Err(CaptureProfileError::NoSuitableProfile);
-    }
-    let mut matches: Vec<(usize, AdvertisedCaptureProfile)> = advertised
-        .iter()
-        .copied()
-        .enumerate()
-        .filter(|(_, profile)| format_allowed(preference, profile.mode.format()))
-        .collect();
-    if preference == CaptureFormatPreference::Auto {
-        let mjpeg: Vec<_> = matches
-            .iter()
-            .copied()
-            .filter(|(_, profile)| profile.mode.format() == CaptureFormat::Mjpeg)
-            .collect();
-        if !mjpeg.is_empty() {
-            matches = mjpeg;
-        }
-    }
-    if matches.is_empty() {
-        return Err(CaptureProfileError::NoSuitableProfile);
-    }
-    let native = matches
-        .iter()
-        .copied()
-        .filter(|(_, profile)| profile.sensor_rate.cmp_rate(output_rate).is_eq())
-        .max_by_key(|(index, profile)| {
-            let pixels = u64::from(profile.mode.width()) * u64::from(profile.mode.height());
-            (pixels, usize::MAX - *index)
-        });
-    let chosen = native.or_else(|| {
-        matches
-            .iter()
-            .copied()
-            .filter(|(_, profile)| profile.sensor_rate.cmp_rate(output_rate).is_ge())
-            .min_by(|(left_index, left), (right_index, right)| {
-                left.sensor_rate
-                    .cmp_rate(right.sensor_rate)
-                    .then_with(|| {
-                        let left_pixels =
-                            u64::from(left.mode.width()) * u64::from(left.mode.height());
-                        let right_pixels =
-                            u64::from(right.mode.width()) * u64::from(right.mode.height());
-                        right_pixels.cmp(&left_pixels)
-                    })
-                    .then(left_index.cmp(right_index))
-            })
-    });
-    let Some((_, profile)) = chosen else {
-        return Err(CaptureProfileError::NoSuitableProfile);
-    };
-    Ok(SelectedCaptureProfile {
-        mode: profile.mode,
-        sensor_rate: profile.sensor_rate,
-        output_rate,
-    })
+    select_capture_profile(
+        CaptureProfileRequest::unconstrained(preference, output_rate),
+        advertised,
+    )
 }
 
-/// Selects one advertised profile. Does not open a device.
-pub fn select_capture_profile(
+/// Advertised profiles that satisfy `request`, largest resolution then lowest capture rate.
+pub fn rank_capture_profiles(
     request: CaptureProfileRequest,
     advertised: &[AdvertisedCaptureProfile],
-) -> Result<SelectedCaptureProfile, CaptureProfileError> {
+) -> Result<Vec<SelectedCaptureProfile>, CaptureProfileError> {
     if advertised.is_empty() {
         return Err(CaptureProfileError::NoSuitableProfile);
     }
@@ -311,8 +339,7 @@ pub fn select_capture_profile(
         .copied()
         .enumerate()
         .filter(|(_, profile)| {
-            profile.mode.width() == request.width
-                && profile.mode.height() == request.height
+            size_allowed(request, profile.mode)
                 && format_allowed(request.preference, profile.mode.format())
         })
         .collect();
@@ -327,34 +354,71 @@ pub fn select_capture_profile(
         }
     }
     if matches.is_empty() {
-        return Err(CaptureProfileError::Unsupported {
-            available: advertised.to_vec(),
-        });
+        return Err(unmatched(request, advertised));
     }
-    let native = matches
-        .iter()
-        .copied()
-        .filter(|(_, profile)| profile.sensor_rate.cmp_rate(request.output_rate).is_eq())
-        .min_by_key(|(index, _)| *index);
-    let chosen = native.or_else(|| {
-        matches
-            .iter()
-            .copied()
-            .filter(|(_, profile)| profile.sensor_rate.cmp_rate(request.output_rate).is_ge())
-            .min_by(|(left_index, left), (right_index, right)| {
-                left.sensor_rate
-                    .cmp_rate(right.sensor_rate)
-                    .then(left_index.cmp(right_index))
-            })
+    matches.retain(|(_, profile)| rate_allowed(request, profile.capture_rate));
+    if matches.is_empty() {
+        return Err(unmatched(request, advertised));
+    }
+    matches.sort_by(|(left_index, left), (right_index, right)| {
+        let left_pixels = u64::from(left.mode.width()) * u64::from(left.mode.height());
+        let right_pixels = u64::from(right.mode.width()) * u64::from(right.mode.height());
+        right_pixels
+            .cmp(&left_pixels)
+            .then_with(|| left.capture_rate.cmp_rate(right.capture_rate))
+            .then(left_index.cmp(right_index))
     });
-    let Some((_, profile)) = chosen else {
-        return Err(CaptureProfileError::NoSuitableProfile);
-    };
-    Ok(SelectedCaptureProfile {
-        mode: profile.mode,
-        sensor_rate: profile.sensor_rate,
-        output_rate: request.output_rate,
-    })
+    Ok(matches
+        .into_iter()
+        .map(|(_, profile)| SelectedCaptureProfile {
+            mode: profile.mode,
+            capture_rate: profile.capture_rate,
+            output_rate: request.output_rate,
+        })
+        .collect())
+}
+
+/// Selects one advertised profile. Does not open a device.
+pub fn select_capture_profile(
+    request: CaptureProfileRequest,
+    advertised: &[AdvertisedCaptureProfile],
+) -> Result<SelectedCaptureProfile, CaptureProfileError> {
+    let ranked = rank_capture_profiles(request, advertised)?;
+    Ok(ranked[0])
+}
+
+fn size_allowed(request: CaptureProfileRequest, mode: CaptureMode) -> bool {
+    match (request.width, request.height) {
+        (Some(width), Some(height)) => mode.width() == width && mode.height() == height,
+        (None, None) => {
+            mode.width() <= DEFAULT_CAPTURE_MAX_WIDTH && mode.height() <= DEFAULT_CAPTURE_MAX_HEIGHT
+        }
+        _ => false,
+    }
+}
+
+fn rate_allowed(request: CaptureProfileRequest, advertised: CaptureRate) -> bool {
+    match request.capture_rate {
+        Some(pinned) => advertised.cmp_rate(pinned).is_eq(),
+        None => advertised.cmp_rate(request.output_rate).is_ge(),
+    }
+}
+
+fn unmatched(
+    request: CaptureProfileRequest,
+    advertised: &[AdvertisedCaptureProfile],
+) -> CaptureProfileError {
+    if request.width.is_none()
+        && request.height.is_none()
+        && request.capture_rate.is_none()
+        && request.preference == CaptureFormatPreference::Auto
+    {
+        CaptureProfileError::NoSuitableProfile
+    } else {
+        CaptureProfileError::Unsupported {
+            available: advertised.to_vec(),
+        }
+    }
 }
 
 /// Records a device accept/reject without choosing a different profile.
@@ -399,16 +463,21 @@ pub fn format_capture_preference_label(preference: CaptureFormatPreference) -> &
 /// One line describing the configured capture request.
 #[must_use]
 pub fn format_capture_profile_request(request: &CaptureProfileRequest) -> String {
+    let size = match (request.width(), request.height()) {
+        (Some(width), Some(height)) => format!("{width}x{height}"),
+        _ => "max".to_owned(),
+    };
+    let capture = request
+        .capture_rate()
+        .map_or_else(|| "min".to_owned(), format_capture_fps);
     format!(
-        "{} {}x{} output {}fps",
+        "{} {size}@{capture}fps output {}fps",
         format_capture_preference_label(request.preference()),
-        request.width(),
-        request.height(),
         request.output_rate().numerator()
     )
 }
 
-fn format_sensor_fps(rate: CaptureRate) -> String {
+fn format_capture_fps(rate: CaptureRate) -> String {
     if rate.denominator() == 1 {
         rate.numerator().to_string()
     } else {
@@ -430,7 +499,7 @@ pub fn format_advertised_capture_profiles(profiles: &[AdvertisedCaptureProfile])
                 format_capture_format_label(profile.mode().format()),
                 profile.mode().width(),
                 profile.mode().height(),
-                format_sensor_fps(profile.sensor_rate())
+                format_capture_fps(profile.capture_rate())
             )
         })
         .collect::<Vec<_>>();
@@ -458,7 +527,7 @@ pub fn describe_capture_profile_error(
                 format_capture_format_label(profile.mode().format()),
                 profile.mode().width(),
                 profile.mode().height(),
-                format_sensor_fps(profile.sensor_rate()),
+                format_capture_fps(profile.capture_rate()),
             )
         }
     }
@@ -501,10 +570,11 @@ mod diagnostics_tests {
     #[test]
     fn unsupported_request_lists_configured_and_available_profiles() {
         let advertised = [profile(CaptureFormat::Mjpeg, 1920, 1080, 30)];
-        let request = CaptureProfileRequest::new(
+        let request = CaptureProfileRequest::exact(
             CaptureFormatPreference::Mjpeg,
             1280,
             720,
+            CaptureRate::fps(5).unwrap(),
             CaptureRate::fps(5).unwrap(),
         )
         .unwrap();
@@ -515,7 +585,7 @@ mod diagnostics_tests {
             },
             &advertised,
         );
-        assert!(message.contains("configured profile MJPEG 1280x720 output 5fps"));
+        assert!(message.contains("configured profile MJPEG 1280x720@5fps output 5fps"));
         assert!(message.contains("available: MJPEG 1920x1080@30fps"));
     }
 }

@@ -125,7 +125,7 @@ fn camera_format(profile: &SelectedCaptureProfile) -> Result<CameraFormat, A2aLa
         CaptureFormat::Mjpeg => FrameFormat::MJPEG,
         CaptureFormat::Yuy2 => FrameFormat::YUYV,
     };
-    if profile.sensor_rate().denominator() != 1 {
+    if profile.capture_rate().denominator() != 1 {
         return Err(A2aLabError::invalid(
             "rate",
             "Nokhwa advertises whole-number frame rates",
@@ -135,7 +135,7 @@ fn camera_format(profile: &SelectedCaptureProfile) -> Result<CameraFormat, A2aLa
         profile.mode().width(),
         profile.mode().height(),
         format,
-        profile.sensor_rate().numerator(),
+        profile.capture_rate().numerator(),
     ))
 }
 
@@ -151,7 +151,7 @@ fn negotiated_profile(
     };
     Ok(SelectedCaptureProfile::negotiated(
         profile.mode(),
-        profile.sensor_rate(),
+        profile.capture_rate(),
         requested.output_rate(),
     ))
 }

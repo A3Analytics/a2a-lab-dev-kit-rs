@@ -61,6 +61,8 @@ pub struct A2aServer {
     media_assets: Option<SharedMediaAssetProvider>,
     #[cfg(feature = "web-ui")]
     web_ui: bool,
+    #[cfg(feature = "web-ui")]
+    capture_settings: Option<super::capture_settings::VideoCaptureSettingsHandle>,
 }
 
 impl A2aServer {
@@ -81,6 +83,8 @@ impl A2aServer {
             media_assets: None,
             #[cfg(feature = "web-ui")]
             web_ui: false,
+            #[cfg(feature = "web-ui")]
+            capture_settings: None,
         }
     }
 
@@ -157,14 +161,25 @@ impl A2aServer {
 
     /// Serves the packaged web interface at `/ui/` on this HTTP listener.
     ///
-    /// Section paths such as `/ui/logs` return that same shell. The shell,
-    /// JavaScript, WebAssembly, and stylesheet are public and carry no agent
-    /// data or credentials. A2A protocol routes keep the configured access gate.
-    /// Without this opt-in, `/ui/` is not served.
+    /// `GET /` redirects to `/ui/`. Section paths such as `/ui/logs` return
+    /// that same shell. The shell, JavaScript, WebAssembly, and stylesheet are
+    /// public and carry no agent data or credentials. A2A protocol routes keep
+    /// the configured access gate. Without this opt-in, `/ui/` is not served.
     #[cfg(feature = "web-ui")]
     #[must_use]
     pub fn with_web_ui(mut self) -> Self {
         self.web_ui = true;
+        self
+    }
+
+    /// Serves `GET`/`PATCH /config/settings` for the packaged shell.
+    #[cfg(feature = "web-ui")]
+    #[must_use]
+    pub fn with_video_capture_settings(
+        mut self,
+        settings: super::capture_settings::VideoCaptureSettingsHandle,
+    ) -> Self {
+        self.capture_settings = Some(settings);
         self
     }
 
@@ -243,6 +258,7 @@ pub async fn bind_local() -> Result<(TcpListener, SocketAddr), A2aLabError> {
     Ok((listener, address))
 }
 
+#[allow(clippy::too_many_lines)]
 fn router(
     server: &A2aServer,
     public_url: &str,
@@ -302,6 +318,8 @@ fn router(
     });
     #[cfg(feature = "web-ui")]
     let serve_web_ui = server.web_ui;
+    #[cfg(feature = "web-ui")]
+    let capture_settings = server.capture_settings.clone();
     let app = Router::new()
         .merge(a2a_server::agent_card::agent_card_router(Arc::new(
             StaticAgentCard::new(card),
@@ -311,7 +329,11 @@ fn router(
         .merge(crate::videos::http::router(media));
     #[cfg(feature = "web-ui")]
     let app = if serve_web_ui {
-        app.merge(super::web_ui::router())
+        let mut routes = super::web_ui::router();
+        if let Some(settings) = capture_settings {
+            routes = routes.merge(super::capture_settings::router(settings));
+        }
+        app.merge(routes)
     } else {
         app
     };
@@ -324,10 +346,14 @@ fn router(
                 return normalize_a2a_json(request, next).await;
             }
             #[cfg(feature = "web-ui")]
-            if serve_web_ui
-                && super::web_ui::is_public_route(request.method(), request.uri().path())
-            {
-                return next.run(request).await;
+            if serve_web_ui {
+                let path = request.uri().path();
+                let method = request.method();
+                if super::web_ui::is_public_route(method, path)
+                    || super::capture_settings::is_public_route(method, path)
+                {
+                    return next.run(request).await;
+                }
             }
             match gate
                 .authenticate(request.headers(), request.uri().query())

@@ -97,6 +97,20 @@ fn three_sources_keep_ids_formats_and_optional_presence() {
 }
 
 #[test]
+fn auto_format_maps_to_capture_preference() {
+    let config = A2aLabConfig::parse(
+        r#"{"schema_version":1,"videos":{"sources":[{"id":"cam","format":"auto","width":1280,"height":720,"device_index":0}]}}"#,
+    )
+    .unwrap();
+    let source = &config.videos.unwrap().sources[0];
+    assert_eq!(source.format, VideoInputFormat::Auto);
+    assert_eq!(
+        source.format.capture_preference(),
+        CaptureFormatPreference::Auto
+    );
+}
+
+#[test]
 fn duration_strings_share_one_elapsed_second_interpretation() {
     for (text, seconds) in [
         ("5s", 5),
@@ -270,5 +284,35 @@ fn partial_dvr_block_keeps_omitted_fields_absent() {
     .unwrap();
     let dvr = config.videos.unwrap().dvr.unwrap();
     assert!(dvr.retention.is_none());
+    assert!(dvr.save_interval.is_none());
     assert_eq!(dvr.storage_path.as_deref(), Some("/var/dvr"));
+}
+
+#[test]
+fn dvr_save_interval_accepts_subsecond_durations() {
+    for (text, nanos) in [
+        ("500ms", 500_000_000_u64),
+        ("1s", 1_000_000_000),
+        ("5s", 5_000_000_000),
+        ("30s", 30_000_000_000),
+    ] {
+        let document = format!(
+            r#"{{"schema_version":1,"videos":{{"sources":[],"dvr":{{"save_interval":"{text}"}}}}}}"#
+        );
+        let config = A2aLabConfig::parse(&document).unwrap();
+        let interval = config.videos.unwrap().dvr.unwrap().save_interval.unwrap();
+        assert_eq!(interval.as_nanos(), nanos, "{text}");
+    }
+}
+
+#[test]
+fn rejects_invalid_dvr_save_interval_without_echoing_values() {
+    for text in ["", "0ms", "-1s", "badspanzz"] {
+        let document = format!(
+            r#"{{"schema_version":1,"videos":{{"sources":[],"dvr":{{"save_interval":"{text}"}}}}}}"#
+        );
+        let error = A2aLabConfig::parse(&document).unwrap_err();
+        assert!(!error.to_string().contains("badspanzz"));
+        assert_eq!(error.code(), "invalid");
+    }
 }

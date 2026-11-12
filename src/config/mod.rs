@@ -3,6 +3,7 @@
 //! File loading is separate. Parsing does not open devices or apply application
 //! defaults for omitted video runtime fields.
 
+mod capture_settings;
 mod duration;
 mod load;
 mod logging;
@@ -19,7 +20,10 @@ use semantic_indexing::{
 use strict_json::parse_strict_json;
 use video::parse_videos;
 
-pub use duration::ConfigDuration;
+pub use capture_settings::{
+    DEFAULT_LIVE_OUTPUT_FPS, VideoCaptureSettings, VideoCaptureSettingsView, VideoCaptureSourceView,
+};
+pub use duration::{ConfigDuration, SaveIntervalDuration};
 pub use load::LoadedLabConfig;
 pub use logging::{
     DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, LogOutputFormat, LoggingConfig,

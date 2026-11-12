@@ -18,6 +18,7 @@ use crate::shell::logs::{self, LogUi, LogView};
 use crate::shell::metric_chart::MetricView;
 use crate::shell::nav::{self, Route};
 use crate::shell::session::{self, CardLoad, SessionUi};
+use crate::shell::settings::{self, SettingsUi, SettingsView};
 use crate::shell::tasks::{self, TaskUi, TaskView};
 use crate::shell::videos::{self as video_ui, VideoUi, VideoView};
 use crate::shell::workbench::{self, WorkbenchUi, WorkbenchView};
@@ -55,6 +56,7 @@ fn Shell() -> Element {
     let video_view = use_signal(VideoUi::new);
     let task_view = use_signal(TaskUi::new);
     let workbench = use_signal(WorkbenchUi::new);
+    let settings = use_signal(SettingsUi::new);
     let ready = use_signal(|| false);
     let fetch_gen = use_signal(|| 0u32);
     use_hook(|| {
@@ -67,6 +69,7 @@ fn Shell() -> Element {
         video_ui::bind(video_view);
         tasks::bind(task_view);
         workbench::bind(workbench);
+        settings::bind(settings);
     });
     use_effect(move || {
         boot_islands(session, ready);
@@ -153,6 +156,7 @@ fn Shell() -> Element {
                     NavLink { id: "nav-tasks", href: "/ui/tasks", route, label: "Tasks", glyph: "T" }
                     NavLink { id: "nav-images", href: "/ui/images", route, label: "Images", glyph: "I" }
                     NavLink { id: "nav-videos", href: "/ui/videos", route, label: "Videos", glyph: "V" }
+                    NavLink { id: "nav-config-settings", href: "/ui/config/settings", route, label: "Settings", glyph: "S" }
                 }
             }
             div { class: "shell-main",
@@ -289,6 +293,15 @@ fn Shell() -> Element {
                     hidden: panes.chat,
                     ChatView { chat }
                 }
+                div {
+                    id: "view-config-settings",
+                    class: "view",
+                    hidden: panes.settings,
+                    SettingsView {
+                        ui: settings,
+                        visible: route.view == "view-config-settings",
+                    }
+                }
                 WorkbenchView {
                     ui: workbench,
                     hidden: panes.workbench,
@@ -367,6 +380,7 @@ struct PaneHidden {
     images: bool,
     videos: bool,
     chat: bool,
+    settings: bool,
     workbench: bool,
     loading: bool,
 }
@@ -380,6 +394,7 @@ fn pane_hidden(loading: bool, route: Route, path: &str) -> PaneHidden {
         images: loading || route.view != "view-images",
         videos: loading || route.view != "view-videos",
         chat: loading || route.view != "view-chat",
+        settings: loading || route.view != "view-config-settings",
         workbench: loading || path != "workbench",
     }
 }

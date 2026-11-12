@@ -1,0 +1,55 @@
+/* fragment:settings */
+
+.config-settings {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.config-settings-lead {
+  margin: 0;
+  color: var(--muted-foreground);
+  max-width: 48rem;
+}
+
+.config-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.config-settings-table th,
+.config-settings-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.config-settings-meta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.config-settings-meta div {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.config-settings-meta dt {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.config-settings-meta dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.config-settings-form {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 16rem;
+}

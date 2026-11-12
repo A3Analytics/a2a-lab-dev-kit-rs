@@ -33,28 +33,29 @@ pub mod tasks;
 pub mod time;
 pub mod videos;
 
-#[cfg(feature = "web-ui")]
-pub use a2a::WEB_UI_PATH;
 pub use a2a::{
     A2A_PROTOCOL_VERSION, A2aClient, A2aServer, AgentCard, AgentMessageFuture, AgentMessageHandler,
     AgentMessageReply, AgentMessageRequest, AgentMessageResponse, AuthError, Authenticator,
     HttpAuthSecurityScheme, LAB_MEDIA_TYPE, OidcAuthenticator, OpenIdConnectSecurityScheme,
     Principal, SecurityScheme, StreamResponse, Task, TaskPushNotificationConfig, bind_local,
 };
+#[cfg(feature = "web-ui")]
+pub use a2a::{CAPTURE_SETTINGS_PATH, VideoCaptureSettingsHandle, WEB_UI_PATH};
 pub use catalog::{
     Asset, AssetCatalogProvider, AssetKey, Binding, BindingRole, Endpoint, ListAssetsRequest,
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
 };
 pub use config::{
     A2A_LAB_CONFIG_SCHEMA_VERSION, A2A_LAB_CONFIG_SCHEMA_VERSION_V2, A2aLabConfig, ChatConfig,
-    ChatProvider, ConfigDuration, CredentialReference, DEFAULT_LOG_OUTPUT_FORMAT,
-    DEFAULT_LOGGING_LEVEL, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND, DecisionCoveragePolicy,
-    EmbeddingSpaceConfig, LoadedLabConfig, LogOutputFormat, LoggingConfig,
-    OpenTelemetryLoggingConfig, SemanticDecisionLimits, SemanticDecisionsConfig,
-    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
-    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
-    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits, VideoConfig,
-    VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
+    ChatProvider, ConfigDuration, CredentialReference, DEFAULT_LIVE_OUTPUT_FPS,
+    DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
+    DecisionCoveragePolicy, EmbeddingSpaceConfig, LoadedLabConfig, LogOutputFormat, LoggingConfig,
+    OpenTelemetryLoggingConfig, SaveIntervalDuration, SemanticDecisionLimits,
+    SemanticDecisionsConfig, SemanticDescriptionConfig, SemanticEmbeddingsConfig,
+    SemanticIndexingConfig, SemanticIndexingLimits, SemanticIndexingSearchLimits,
+    SemanticRoiLimits, SemanticSchedule, SemanticStorageLimits, SemanticStreamSchedule,
+    SemanticWorkerLimits, VideoCaptureSettings, VideoCaptureSettingsView, VideoCaptureSourceView,
+    VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
 };
 pub use error::{A2aLabError, VideoAvailability};
 pub use id::{
@@ -106,15 +107,16 @@ pub use videos::{
     DEFAULT_SEMANTIC_TOP_K, DecisionEvaluationCoverage, DecisionEvidenceAvailability,
     DecisionEvidenceItem, DecisionEvidenceKind, DecisionHistoryPolicy, DecisionOutcome,
     DecisionSearchFilter, DecisionSubject, DecisionThresholdPolicy, DecisionUnknownReason,
-    DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPackager,
-    DvrMediaPayload, DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPackagerConfig,
-    DvrPictureProperties, DvrRetentionBounds, EmbeddingMetric, EpochHlsInit, EpochHlsSegment,
-    EpochHlsSession, EpochPlaylistKind, FakeDescriptionBehavior, FakeEmbeddingBehavior,
-    FakeFrameDecisionEvaluator, FakeFrameDecisionLedgerProvider, FakeFrameDescriptionProvider,
-    FakeJevBehavior, FakeSemanticHit, FakeSemanticVideoSearchProvider, FakeTextEmbeddingProvider,
-    FiniteH264Clip, FinitePlaybackSession, FollowVideoRequest, ForbiddenDecisionInput,
-    ForeignObjectSubject, FrameDecisionAppendError, FrameDecisionCapabilities,
-    FrameDecisionClientRole, FrameDecisionEvaluationFailure, FrameDecisionEvaluationOwnership,
+    DvrDiscontinuity, DvrEnqueueStatus, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage,
+    DvrMediaPackager, DvrMediaPayload, DvrMediaSegment, DvrMediaStore, DvrMediaTrack,
+    DvrPackagerConfig, DvrPersistenceQueue, DvrPictureProperties, DvrQueuedSample,
+    DvrRetentionBounds, EmbeddingMetric, EpochHlsInit, EpochHlsSegment, EpochHlsSession,
+    EpochPlaylistKind, FakeDescriptionBehavior, FakeEmbeddingBehavior, FakeFrameDecisionEvaluator,
+    FakeFrameDecisionLedgerProvider, FakeFrameDescriptionProvider, FakeJevBehavior,
+    FakeSemanticHit, FakeSemanticVideoSearchProvider, FakeTextEmbeddingProvider, FiniteH264Clip,
+    FinitePlaybackSession, FollowVideoRequest, ForbiddenDecisionInput, ForeignObjectSubject,
+    FrameDecisionAppendError, FrameDecisionCapabilities, FrameDecisionClientRole,
+    FrameDecisionEvaluationFailure, FrameDecisionEvaluationOwnership,
     FrameDecisionEvaluationRequest, FrameDecisionEvaluationRouter, FrameDecisionEvaluator,
     FrameDecisionEvaluatorCapabilities, FrameDecisionEvaluatorLimits,
     FrameDecisionEvaluatorProviderConfig, FrameDecisionHistoryEntry, FrameDecisionHistoryResult,
@@ -126,15 +128,17 @@ pub use videos::{
     FrameEmbeddingVector, FrameRoiTransform, FrameVectorIndexAttachment,
     GetFrameDecisionCapabilitiesRequest, GetSemanticIndexingCoverageRequest,
     GetSemanticSearchCapabilitiesRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, H264PictureSample, H264TrackRelation,
-    HLS_INIT_RELATIVE_PATH, HLS_PLAYLIST_RELATIVE_PATH, HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH,
-    JEV_EVALUATOR_PROVIDER_ID, JEV_MAX_EDGE_PIXELS, JEV_MAX_IMAGE_BYTES, JEV_MAX_REQUEST_BYTES,
-    JEV_MIN_EDGE_PIXELS, JEV_PRODUCER_ID, JevEvaluationProvenance, JevProducerIdentity,
-    JevStructuredOutput, KeyedFrameDecisionEvaluation, KeyedFrameDescription, KeyedTextEmbedding,
-    LabPredicate, LabProbabilityVector, ListVideoSourcesRequest, LiveAssetRequest,
-    LivePlaybackSession, LocalMediaAssetProvider, MAX_SEMANTIC_CANDIDATES,
-    MAX_SEMANTIC_NEIGHBOR_FRAMES, MAX_SEMANTIC_TOP_K, MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE,
-    MediaAssetProvider, ModelSpaceIdentity, OperatorDecisionCriteria, OperatorReferenceImage,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, H264LiveAppendStats, H264LiveEpoch,
+    H264LiveSample, H264LiveSnapshot, H264LiveStore, H264LiveStoreLimits, H264PictureSample,
+    H264TrackRelation, HLS_INIT_RELATIVE_PATH, HLS_PLAYLIST_RELATIVE_PATH,
+    HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH, JEV_EVALUATOR_PROVIDER_ID, JEV_MAX_EDGE_PIXELS,
+    JEV_MAX_IMAGE_BYTES, JEV_MAX_REQUEST_BYTES, JEV_MIN_EDGE_PIXELS, JEV_PRODUCER_ID,
+    JevEvaluationProvenance, JevProducerIdentity, JevStructuredOutput,
+    KeyedFrameDecisionEvaluation, KeyedFrameDescription, KeyedTextEmbedding, LabPredicate,
+    LabProbabilityVector, ListVideoSourcesRequest, LiveAssetRequest, LivePlaybackSession,
+    LocalMediaAssetProvider, MAX_SEMANTIC_CANDIDATES, MAX_SEMANTIC_NEIGHBOR_FRAMES,
+    MAX_SEMANTIC_TOP_K, MAX_VIDEO_CLIP_DURATION_US, MJPEG_MEDIA_TYPE, MediaAssetProvider,
+    ModelSpaceIdentity, OperatorDecisionCriteria, OperatorReferenceImage,
     PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED, PREDICATE_PLATE_MISALIGNED,
     PackagedHlsSegment, PackagedHlsSession, PackagedHlsTrick8xRendition, PackagedMediaAsset,
     PipetteChannelSubject, PlateAlignmentReference, PlateSlotSubject, ProvenanceGeneration,
@@ -158,11 +162,12 @@ pub use videos::{
     encode_mjpeg_end, encode_mjpeg_multipart, encode_mjpeg_part, export_finite_h264_epochs,
     fake_semantic_hit, frame_decision_unavailable, frame_h264_picture, group_history_by_predicate,
     guard_against_description_evidence, h264_track_relation, interpret_structured_outcome,
-    map_append_error, mjpeg_content_type, package_h264_epochs, parse_decision_evaluator_provider,
-    reject_decision_evaluator_backend, reject_decision_provenance, reject_forbidden_decision_input,
-    router, router_for_lab, semantic_search_unavailable, unsupported_predicate_result,
-    validate_description_batch, validate_embedding_batch, validate_evaluation_batch,
-    video_clip_path, video_live_path,
+    live_h264_edge_anchor, load_epoch_hls_asset, load_live_hls_asset, map_append_error,
+    mjpeg_content_type, package_h264_epochs, package_h264_live_at,
+    parse_decision_evaluator_provider, reject_decision_evaluator_backend,
+    reject_decision_provenance, reject_forbidden_decision_input, router, router_for_lab,
+    semantic_search_unavailable, unsupported_predicate_result, validate_description_batch,
+    validate_embedding_batch, validate_evaluation_batch, video_clip_path, video_live_path,
 };
 
 /// Returns the crate version.

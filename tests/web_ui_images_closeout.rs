@@ -54,7 +54,14 @@ async fn browser_image_reader_closes_the_usability_matrix() {
         policy.contains("script-src 'self' 'wasm-unsafe-eval'"),
         "{policy}"
     );
-    assert!(!policy.contains("unsafe-inline"), "{policy}");
+    assert!(
+        policy.contains("style-src-attr 'unsafe-inline'"),
+        "{policy}"
+    );
+    assert!(
+        !policy.contains("script-src 'self' 'unsafe-inline'"),
+        "{policy}"
+    );
     let handle = tokio::runtime::Handle::current();
     let bad = bad_b64();
     tokio::task::spawn_blocking(move || flow(&base, &empty, &secured, &images, &bad, &handle))

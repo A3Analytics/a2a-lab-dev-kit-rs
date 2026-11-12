@@ -9,7 +9,7 @@ use crate::error::A2aLabError;
 use crate::videos::{
     AdvertisedCaptureProfile, CaptureFormat, CaptureIdentity, CaptureProfileRequest, CaptureTiming,
     CapturedColorFrame, ColorProperties, SelectedCaptureProfile, confirm_selected_profile,
-    describe_capture_profile_error, select_capture_profile,
+    describe_capture_profile_error, rank_capture_profiles,
 };
 
 /// One raw camera buffer before it becomes a capture frame.
@@ -84,26 +84,40 @@ impl<C: ColorCamera> CaptureSession<C> {
         self.selected
     }
 
-    /// Selects an advertised profile and opens it.
+    /// Selects advertised profiles and opens the first the device accepts.
     pub fn open(&mut self) -> Result<SelectedCaptureProfile, A2aLabError> {
         let advertised = self.camera.advertised()?;
-        let selected = select_capture_profile(self.request, &advertised).map_err(|error| {
+        let ranked = rank_capture_profiles(self.request, &advertised).map_err(|error| {
             A2aLabError::invalid(
                 "profile",
                 describe_capture_profile_error(&self.request, &error, &advertised),
             )
         })?;
-        let negotiated = self.camera.open(&selected)?;
-        let accepted = negotiated.mode() == selected.mode()
-            && negotiated.sensor_rate() == selected.sensor_rate();
-        let confirmed = confirm_selected_profile(selected, accepted).map_err(|error| {
-            A2aLabError::invalid(
-                "profile",
-                describe_capture_profile_error(&self.request, &error, &advertised),
-            )
-        })?;
-        self.selected = Some(confirmed);
-        Ok(confirmed)
+        let mut last_error = None;
+        for selected in ranked {
+            match self.camera.open(&selected) {
+                Ok(negotiated) => {
+                    let accepted = negotiated.mode() == selected.mode()
+                        && negotiated.capture_rate() == selected.capture_rate();
+                    match confirm_selected_profile(selected, accepted) {
+                        Ok(confirmed) => {
+                            self.selected = Some(confirmed);
+                            return Ok(confirmed);
+                        }
+                        Err(error) => {
+                            last_error = Some(A2aLabError::invalid(
+                                "profile",
+                                describe_capture_profile_error(&self.request, &error, &advertised),
+                            ));
+                        }
+                    }
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            A2aLabError::invalid("profile", "no advertised capture profile could be opened")
+        }))
     }
 
     /// Opens an exact pre-selected profile (tests and injection).
@@ -114,7 +128,7 @@ impl<C: ColorCamera> CaptureSession<C> {
         let advertised = self.camera.advertised()?;
         let negotiated = self.camera.open(&selected)?;
         let accepted = negotiated.mode() == selected.mode()
-            && negotiated.sensor_rate() == selected.sensor_rate();
+            && negotiated.capture_rate() == selected.capture_rate();
         let confirmed = confirm_selected_profile(selected, accepted).map_err(|error| {
             A2aLabError::invalid(
                 "profile",

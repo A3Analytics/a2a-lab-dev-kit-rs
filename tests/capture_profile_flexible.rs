@@ -31,6 +31,22 @@ fn flexible_auto_prefers_mjpeg_and_highest_matching_resolution() {
 }
 
 #[test]
+fn flexible_skips_4k_when_1080p_is_advertised() {
+    let advertised = [
+        profile(CaptureFormat::Mjpeg, 3840, 2160, 30),
+        profile(CaptureFormat::Mjpeg, 1920, 1080, 30),
+    ];
+    let selected = select_capture_profile_flexible(
+        CaptureFormatPreference::Auto,
+        CaptureRate::output_default(),
+        &advertised,
+    )
+    .unwrap();
+    assert_eq!(selected.mode().width(), 1920);
+    assert_eq!(selected.mode().height(), 1080);
+}
+
+#[test]
 fn flexible_reports_unsuitable_when_no_profile_meets_output_rate() {
     let advertised = [profile(CaptureFormat::Mjpeg, 640, 480, 1)];
     assert_eq!(
