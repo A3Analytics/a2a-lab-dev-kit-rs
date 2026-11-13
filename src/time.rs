@@ -43,6 +43,19 @@ impl UtcTimestamp {
         self.0.as_microsecond()
     }
 
+    /// Reconstructs UTC from Unix epoch microseconds.
+    pub fn from_unix_microseconds(micros: i64) -> Result<Self, A2aLabError> {
+        Timestamp::from_microsecond(micros).map_or_else(
+            |_| {
+                Err(A2aLabError::invalid(
+                    "timestamp",
+                    "microseconds out of range",
+                ))
+            },
+            |timestamp| Ok(Self(timestamp)),
+        )
+    }
+
     /// Adds `delta_us` microseconds, saturating at the representable range.
     #[must_use]
     pub fn saturating_add_micros(self, delta_us: i64) -> Self {

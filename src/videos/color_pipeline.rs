@@ -5,14 +5,49 @@
 //! sample; this module does not open a camera or write a recording.
 
 use std::collections::VecDeque;
+use std::time::Instant;
+
+use tracing::warn;
 
 use crate::error::A2aLabError;
+use crate::id::VideoSourceId;
 use crate::videos::mjpeg_decode::DecodedPicture;
 use crate::videos::{
     AllIdrEncoder, CaptureFormat, CapturedColorFrame, ColorProperties, FreshFrameGate, I420Picture,
-    JpegDerivativeLimits, MjpegDecodeLimits, MjpegDecodeTarget, OwnedI420, PackedYuy2,
-    decode_mjpeg, frame_h264_picture, jpeg_derivative, yuy2_to_i420,
+    JpegDerivativeLimits, MjpegDecodeLimits, MjpegDecodeTarget, OUTPUT_5FPS_PERIOD_NS, OwnedI420,
+    PackedYuy2, decode_mjpeg, frame_h264_picture, jpeg_derivative, yuy2_to_i420,
 };
+
+const COLOR_ENCODE_LOG_TARGET: &str = "a2a_lab_dev_kit::videos::color_encode";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EncodeLatencyProbe {
+    WallClock,
+    Injected(u64),
+}
+
+struct SlowEncodeContext {
+    sequence: u64,
+    source_id: VideoSourceId,
+    monotonic_ns: Option<u64>,
+    width: u32,
+    height: u32,
+    format: CaptureFormat,
+}
+
+impl SlowEncodeContext {
+    fn capture(frame: &CapturedColorFrame) -> Self {
+        let identity = frame.identity();
+        Self {
+            sequence: identity.sequence(),
+            source_id: identity.source_id().clone(),
+            monotonic_ns: frame.timing().clock().monotonic_ns(),
+            width: frame.width(),
+            height: frame.height(),
+            format: frame.format(),
+        }
+    }
+}
 
 /// Counts for one capture-to-sample pipeline.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -117,6 +152,23 @@ impl ColorEncodedFrame {
     pub fn jpeg(&self) -> Option<&[u8]> {
         self.jpeg.as_deref()
     }
+
+    #[cfg(test)]
+    pub(crate) fn test_fixture(
+        original: CapturedColorFrame,
+        sample: Vec<u8>,
+        initialization: Vec<u8>,
+        keyframe: bool,
+        jpeg: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            original,
+            sample,
+            initialization,
+            keyframe,
+            jpeg,
+        }
+    }
 }
 
 struct OpenEncoder {
@@ -139,6 +191,8 @@ pub struct ColorEncodePipeline {
     source_lost: bool,
     faulted: bool,
     cancelled: bool,
+    slow_encode_threshold_ns: u64,
+    encode_latency_probe: EncodeLatencyProbe,
 }
 
 impl ColorEncodePipeline {
@@ -166,7 +220,27 @@ impl ColorEncodePipeline {
             source_lost: false,
             faulted: false,
             cancelled: false,
+            slow_encode_threshold_ns: OUTPUT_5FPS_PERIOD_NS,
+            encode_latency_probe: EncodeLatencyProbe::WallClock,
         })
+    }
+
+    /// Injects encode latency for the next successful selected encode only.
+    #[doc(hidden)]
+    pub fn inject_encode_elapsed_ns(&mut self, elapsed_ns: u64) {
+        self.encode_latency_probe = EncodeLatencyProbe::Injected(elapsed_ns);
+    }
+
+    /// Restores wall-clock encode latency measurement.
+    #[doc(hidden)]
+    pub fn clear_encode_latency_injection(&mut self) {
+        self.encode_latency_probe = EncodeLatencyProbe::WallClock;
+    }
+
+    /// Replaces the slow-encode threshold used for warning emission.
+    #[doc(hidden)]
+    pub fn set_slow_encode_threshold_ns(&mut self, threshold_ns: u64) {
+        self.slow_encode_threshold_ns = threshold_ns;
     }
 
     /// Drop and error counts.
@@ -261,6 +335,22 @@ impl ColorEncodePipeline {
         &mut self,
         frame: CapturedColorFrame,
     ) -> Result<Option<ColorEncodedFrame>, A2aLabError> {
+        let context = SlowEncodeContext::capture(&frame);
+        let started = Instant::now();
+        let encoded = self.encode_selected_work(frame)?;
+        let measured_ns = encode_duration_ns(started.elapsed());
+        let elapsed_ns = self.resolve_encode_elapsed_ns(measured_ns);
+        if encoded.is_some() {
+            self.maybe_warn_slow_encode(&context, elapsed_ns);
+            self.encode_latency_probe = EncodeLatencyProbe::WallClock;
+        }
+        Ok(encoded)
+    }
+
+    fn encode_selected_work(
+        &mut self,
+        frame: CapturedColorFrame,
+    ) -> Result<Option<ColorEncodedFrame>, A2aLabError> {
         let Some(picture) = self.convert(&frame)? else {
             return Ok(None);
         };
@@ -303,6 +393,32 @@ impl ColorEncodePipeline {
             keyframe: framed.keyframe(),
             jpeg,
         }))
+    }
+
+    const fn resolve_encode_elapsed_ns(&self, measured_ns: u64) -> u64 {
+        match self.encode_latency_probe {
+            EncodeLatencyProbe::WallClock => measured_ns,
+            EncodeLatencyProbe::Injected(elapsed_ns) => elapsed_ns,
+        }
+    }
+
+    fn maybe_warn_slow_encode(&self, context: &SlowEncodeContext, elapsed_ns: u64) {
+        if elapsed_ns < self.slow_encode_threshold_ns {
+            return;
+        }
+        warn!(
+            target: COLOR_ENCODE_LOG_TARGET,
+            elapsed_ns,
+            threshold_ns = self.slow_encode_threshold_ns,
+            output_period_ns = OUTPUT_5FPS_PERIOD_NS,
+            sequence = context.sequence,
+            source = context.source_id.as_str(),
+            monotonic_ns = context.monotonic_ns,
+            width = context.width,
+            height = context.height,
+            format = ?context.format,
+            "slow color encode may miss live output cadence",
+        );
     }
 
     fn convert(&mut self, frame: &CapturedColorFrame) -> Result<Option<OwnedI420>, A2aLabError> {
@@ -384,4 +500,8 @@ impl ColorEncodePipeline {
             jpeg_derivative(frame, quality, JpegDerivativeLimits::new(8 * 1024 * 1024)?)?;
         Ok(Some(derivative.jpeg().to_vec()))
     }
+}
+
+fn encode_duration_ns(elapsed: std::time::Duration) -> u64 {
+    u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX)
 }

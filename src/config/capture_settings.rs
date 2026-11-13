@@ -10,8 +10,8 @@ use serde_json::Value;
 use crate::error::A2aLabError;
 
 use super::{
-    ConfigDuration, SaveIntervalDuration, VideoConfig, VideoDvrConfig, VideoInputFormat,
-    VideoSourceConfig,
+    CameraIdView, CameraSelector, ConfigDuration, SaveIntervalDuration, VideoConfig,
+    VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
 };
 
 /// Default live output cadence when the file omits `videos.fps`.
@@ -52,7 +52,8 @@ pub struct VideoCaptureSourceView {
     pub id: String,
     pub display_name: String,
     pub format: String,
-    pub device_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_id: Option<CameraIdView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +105,19 @@ impl VideoCaptureSettings {
         self.live_output_fps
     }
 
+    /// Live output spacing in nanoseconds.
+    #[must_use]
+    pub fn live_period_ns(&self) -> u64 {
+        1_000_000_000u64 / u64::from(self.live_output_fps.max(1))
+    }
+
+    /// DVR save spacing in nanoseconds.
+    #[must_use]
+    pub fn dvr_period_ns(&self) -> u64 {
+        self.dvr_save_interval()
+            .map_or(self.live_period_ns(), SaveIntervalDuration::as_nanos)
+    }
+
     /// Active DVR save cadence when one is configured.
     #[must_use]
     pub const fn dvr_save_interval(&self) -> Option<SaveIntervalDuration> {
@@ -133,7 +147,7 @@ impl VideoCaptureSettings {
                     id: source.id.as_str().to_owned(),
                     display_name: source.display_name().to_owned(),
                     format: format_input(source.format),
-                    device_index: source.device_index,
+                    camera_id: source.camera_id.as_ref().map(CameraSelector::as_view),
                     width: source.width,
                     height: source.height,
                     capture_rate: source.capture_rate,
@@ -289,7 +303,7 @@ mod tests {
                 name: Some("Bench".to_owned()),
                 description: None,
                 format: VideoInputFormat::Mjpeg,
-                device_index: 2,
+                camera_id: Some(CameraSelector::Index(2)),
                 width: Some(1280),
                 height: Some(720),
                 capture_rate: Some(30),
@@ -314,7 +328,7 @@ mod tests {
         assert_eq!(source.id, "bench");
         assert_eq!(source.display_name, "Bench");
         assert_eq!(source.format, "mjpeg");
-        assert_eq!(source.device_index, 2);
+        assert_eq!(source.camera_id, Some(CameraIdView::Index(2)));
         assert_eq!(source.width, Some(1280));
         assert_eq!(source.height, Some(720));
         assert_eq!(source.capture_rate, Some(30));

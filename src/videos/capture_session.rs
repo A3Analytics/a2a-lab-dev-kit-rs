@@ -40,6 +40,18 @@ impl RawCameraSample {
             bytes,
         }
     }
+
+    /// Row stride in bytes.
+    #[must_use]
+    pub const fn stride(&self) -> u32 {
+        self.stride
+    }
+
+    /// Raw buffer bytes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
 }
 
 /// Device boundary used by negotiation. Hardware types stay behind this trait.

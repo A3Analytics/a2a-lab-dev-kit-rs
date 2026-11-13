@@ -4,9 +4,9 @@
 
 use a2a_lab_dev_kit::videos::SENSOR_30FPS_PERIOD_NS;
 use a2a_lab_dev_kit::{
-    A2aLabService, A2aServer, ConfigDuration, MemoryLogs, MemoryMetrics, MemoryTasks,
-    SaveIntervalDuration, VideoCaptureSettings, VideoCaptureSettingsHandle, VideoConfig,
-    VideoDvrConfig, VideoInputFormat, VideoSourceConfig, VideoSourceId, bind_local,
+    A2aLabService, A2aServer, CameraSelector, ConfigDuration, MemoryLogs, MemoryMetrics,
+    MemoryTasks, SaveIntervalDuration, VideoCaptureSettings, VideoCaptureSettingsHandle,
+    VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig, VideoSourceId, bind_local,
 };
 use serde_json::json;
 
@@ -48,6 +48,7 @@ async fn settings_route_serves_sources_and_applies_live_fps_only() {
     assert_eq!(read.status(), 200);
     let body: serde_json::Value = read.json().await.unwrap();
     assert_eq!(body["sources"][0]["id"], "bench");
+    assert_eq!(body["sources"][0]["camera_id"], 4);
     assert_eq!(body["configured_videos_fps"], 5);
     assert_eq!(body["live_output_fps"], 5);
     assert_eq!(body["dvr_retention_secs"], 3_600);
@@ -126,7 +127,7 @@ fn settings_handle() -> VideoCaptureSettingsHandle {
             name: Some("Bench".to_owned()),
             description: None,
             format: VideoInputFormat::Mjpeg,
-            device_index: 4,
+            camera_id: Some(CameraSelector::Index(4)),
             width: Some(640),
             height: Some(480),
             capture_rate: Some(30),

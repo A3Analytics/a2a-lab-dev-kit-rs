@@ -183,6 +183,16 @@ impl A2aServer {
         self
     }
 
+    /// Supported integration boundary for declarative capture settings.
+    #[cfg(feature = "web-ui")]
+    #[must_use]
+    pub fn with_capture_settings(
+        self,
+        settings: super::capture_settings::VideoCaptureSettingsHandle,
+    ) -> Self {
+        self.with_video_capture_settings(settings)
+    }
+
     /// Serves the Agent Card, HTTP+JSON routes, JSON-RPC `POST /`, and gRPC.
     ///
     /// `listener` defaults to `127.0.0.1:31000` when it is `None`. gRPC binds

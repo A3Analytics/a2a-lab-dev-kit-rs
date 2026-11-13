@@ -6,8 +6,9 @@ use serde_json::Value;
 
 use crate::error::A2aLabError;
 use crate::id::VideoSourceId;
-use crate::videos::{CaptureFormat, CaptureFormatPreference};
+use crate::videos::{CaptureFormat, CaptureFormatPreference, CaptureProfileRequest, CaptureRate};
 
+use super::camera_selector::{CameraSelector, parse_source_camera};
 use super::duration::{ConfigDuration, SaveIntervalDuration};
 use super::semantic_indexing::{SemanticStreamSchedule, parse_schedule};
 
@@ -67,10 +68,10 @@ pub struct VideoSourceConfig {
     pub name: Option<String>,
     /// Present only when the file supplied a description.
     pub description: Option<String>,
-    /// Requested camera input.
+    /// Requested camera input. Omitted in the file resolves to [`VideoInputFormat::Auto`].
     pub format: VideoInputFormat,
-    /// Local capture-library index, including zero.
-    pub device_index: u32,
+    /// Declarative camera selector. Absent chooses the documented default camera.
+    pub camera_id: Option<CameraSelector>,
     /// Explicit frame width. Required for non-legacy source ids.
     pub width: Option<u32>,
     /// Explicit frame height. Required for non-legacy source ids.
@@ -94,6 +95,30 @@ impl VideoSourceConfig {
         self.description
             .as_deref()
             .unwrap_or_else(|| self.display_name())
+    }
+
+    /// Legacy capture-library index when the selector is index-based.
+    #[must_use]
+    pub const fn device_index(&self) -> Option<u32> {
+        match self.camera_id {
+            Some(CameraSelector::Index(index)) => Some(index),
+            _ => None,
+        }
+    }
+
+    /// Profile request for opening this source. Input format is raw capture only.
+    pub fn capture_profile_request(
+        &self,
+        output_fps: u32,
+    ) -> Result<CaptureProfileRequest, A2aLabError> {
+        let capture_rate = self.capture_rate.map(CaptureRate::fps).transpose()?;
+        CaptureProfileRequest::new(
+            self.format.capture_preference(),
+            self.width,
+            self.height,
+            CaptureRate::fps(output_fps.max(1))?,
+            capture_rate,
+        )
     }
 }
 
@@ -141,6 +166,7 @@ const SOURCE_KEYS_V1: &[&str] = &[
     "name",
     "description",
     "format",
+    "camera_id",
     "device_index",
     "width",
     "height",
@@ -151,6 +177,7 @@ const SOURCE_KEYS_V2: &[&str] = &[
     "name",
     "description",
     "format",
+    "camera_id",
     "device_index",
     "width",
     "height",
@@ -186,10 +213,15 @@ fn parse_sources(
                 "duplicate source id",
             ));
         }
-        if !devices.insert(source.device_index) {
+        if let Some(index) = source
+            .camera_id
+            .as_ref()
+            .and_then(CameraSelector::index_for_dedup)
+            && !devices.insert(index)
+        {
             return Err(A2aLabError::invalid(
-                "videos.sources.device_index",
-                "duplicate device index",
+                "videos.sources.camera_id",
+                "duplicate camera index",
             ));
         }
         sources.push(source);
@@ -218,15 +250,7 @@ fn parse_source(
     let name = optional_text(map.get("name"), "videos.sources.name")?;
     let description = optional_text(map.get("description"), "videos.sources.description")?;
     let format = parse_format(map.get("format"))?;
-    let device_index = match map.get("device_index") {
-        Some(value) => super::parse_u32("videos.sources.device_index", value)?,
-        None => {
-            return Err(A2aLabError::invalid(
-                "videos.sources.device_index",
-                "required field is missing",
-            ));
-        }
-    };
+    let camera_id = parse_source_camera(map)?;
     let width = parse_optional_positive_u32(map.get("width"), "videos.sources.width")?;
     let height = parse_optional_positive_u32(map.get("height"), "videos.sources.height")?;
     let capture_rate =
@@ -241,7 +265,7 @@ fn parse_source(
         name,
         description,
         format,
-        device_index,
+        camera_id,
         width,
         height,
         capture_rate,
@@ -323,10 +347,7 @@ fn optional_model(
 
 fn parse_format(value: Option<&Value>) -> Result<VideoInputFormat, A2aLabError> {
     let Some(value) = value else {
-        return Err(A2aLabError::invalid(
-            "videos.sources.format",
-            "required field is missing",
-        ));
+        return Ok(VideoInputFormat::Auto);
     };
     let Value::String(text) = value else {
         return Err(A2aLabError::invalid(

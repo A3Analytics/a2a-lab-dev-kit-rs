@@ -2,6 +2,9 @@
 
 #![cfg(all(feature = "yuv", feature = "openh264"))]
 
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
 use a2a_lab_dev_kit::videos::{
     CaptureClock, CaptureIdentity, CaptureTiming, CapturedColorFrame, ColorEncodePipeline,
     ColorMatrix, ColorProperties, ColorRange, OUTPUT_5FPS_PERIOD_NS, decode_luma,
@@ -9,6 +12,8 @@ use a2a_lab_dev_kit::videos::{
 use a2a_lab_dev_kit::{UtcTimestamp, VideoSourceId};
 use image::codecs::jpeg::JpegEncoder;
 use image::{ExtendedColorType, ImageBuffer, ImageEncoder, Rgb};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 fn color(matrix: ColorMatrix, range: ColorRange) -> ColorProperties {
     ColorProperties::new(matrix, range)
@@ -93,6 +98,38 @@ fn annex_b(initialization: &[u8], sample: &[u8]) -> Vec<u8> {
         index += length;
     }
     annex_b
+}
+
+#[derive(Clone, Default)]
+struct WarnCapture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for WarnCapture {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("capture").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn install_warn_capture() -> (WarnCapture, tracing::Dispatch) {
+    let capture = WarnCapture::default();
+    let writer = capture.clone();
+    let filter = EnvFilter::try_new("a2a_lab_dev_kit::videos::color_encode=warn").expect("filter");
+    let layer = tracing_subscriber::fmt::layer()
+        .json()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .with_filter(filter)
+        .boxed();
+    let subscriber = tracing_subscriber::registry().with(layer);
+    (capture, tracing::Dispatch::new(subscriber))
+}
+
+fn warn_text(capture: &WarnCapture) -> String {
+    String::from_utf8(capture.0.lock().expect("capture").clone()).expect("utf8")
 }
 
 fn mean(samples: &[u8]) -> f32 {
@@ -195,6 +232,63 @@ fn loss_fault_reconnect_and_cancel_are_counted() {
         .expect("cancelled");
     assert!(pipeline.counters().cancelled() >= 1);
     assert_eq!(pipeline.counters().encoded(), encoded_before_cancel);
+}
+
+#[test]
+fn injected_slow_encode_emits_structured_warning() {
+    let limited = color(ColorMatrix::Bt601, ColorRange::Limited);
+    let (capture, dispatch) = install_warn_capture();
+    tracing::dispatcher::with_default(&dispatch, || {
+        let mut pipeline = ColorEncodePipeline::at_5fps(1_000_000, 4, None).expect("pipeline");
+        pipeline.inject_encode_elapsed_ns(OUTPUT_5FPS_PERIOD_NS);
+        pipeline
+            .encode_frame(yuy2_frame(7, 42, 40, limited))
+            .expect("encode");
+    });
+    let text = warn_text(&capture);
+    assert!(text.contains("slow color encode may miss live output cadence"));
+    assert!(text.contains(&format!("\"elapsed_ns\":{OUTPUT_5FPS_PERIOD_NS}")));
+    assert!(text.contains(&format!("\"threshold_ns\":{OUTPUT_5FPS_PERIOD_NS}")));
+    assert!(text.contains("\"sequence\":7"));
+    assert!(text.contains("\"monotonic_ns\":42"));
+}
+
+#[test]
+fn fast_injected_encode_does_not_emit_slow_warning() {
+    let limited = color(ColorMatrix::Bt601, ColorRange::Limited);
+    let (capture, dispatch) = install_warn_capture();
+    tracing::dispatcher::with_default(&dispatch, || {
+        let mut pipeline = ColorEncodePipeline::at_5fps(1_000_000, 4, None).expect("pipeline");
+        pipeline.inject_encode_elapsed_ns(OUTPUT_5FPS_PERIOD_NS - 1);
+        pipeline
+            .encode_frame(yuy2_frame(8, 84, 40, limited))
+            .expect("encode");
+    });
+    assert!(warn_text(&capture).is_empty());
+}
+
+#[test]
+fn slow_encode_threshold_boundary_is_deterministic() {
+    let limited = color(ColorMatrix::Bt601, ColorRange::Limited);
+    let (capture, dispatch) = install_warn_capture();
+    let threshold = 50_000_000_u64;
+    tracing::dispatcher::with_default(&dispatch, || {
+        let mut pipeline = ColorEncodePipeline::at_5fps(1_000_000, 4, None).expect("pipeline");
+        pipeline.set_slow_encode_threshold_ns(threshold);
+        pipeline.inject_encode_elapsed_ns(threshold.saturating_sub(1));
+        pipeline
+            .encode_frame(yuy2_frame(9, 126, 40, limited))
+            .expect("under threshold");
+        assert!(warn_text(&capture).is_empty());
+        pipeline.inject_encode_elapsed_ns(threshold);
+        pipeline
+            .encode_frame(yuy2_frame(10, 168, 40, limited))
+            .expect("at threshold");
+    });
+    let text = warn_text(&capture);
+    assert!(text.contains(&format!("\"elapsed_ns\":{threshold}")));
+    assert!(!text.contains("\"sequence\":9"));
+    assert!(text.contains("\"sequence\":10"));
 }
 
 #[test]

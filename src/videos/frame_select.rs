@@ -400,6 +400,13 @@ impl LiveDvrCadenceSelector {
         Ok(())
     }
 
+    /// Stops both gates and rejects unselected candidates.
+    pub fn shutdown(&mut self) -> Vec<RejectedFrame> {
+        let mut rejected = self.live.shutdown();
+        rejected.extend(self.dvr.shutdown());
+        rejected
+    }
+
     /// Consider one captured frame. Returns conversion dispatches only for
     /// frames selected by at least one destination.
     pub fn push(&mut self, frame: CapturedColorFrame) -> Result<Vec<CadenceDispatch>, A2aLabError> {

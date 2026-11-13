@@ -755,12 +755,11 @@ fn live_segments_in_window(
         if sample.captured_at() >= window.end() {
             break;
         }
-        // The newest sample has no measured duration. A placeholder length
-        // leaves a timeline hole, and the player will not cross it.
-        if index + 1 == samples.len() {
-            continue;
-        }
-        let period = live_sample_period_us(samples, index);
+        let period = if index + 1 == samples.len() {
+            DEFAULT_LIVE_SAMPLE_PERIOD_US
+        } else {
+            live_sample_period_us(samples, index)
+        };
         let end = sample
             .captured_at()
             .saturating_add_micros(i64::try_from(period).unwrap_or(i64::MAX));

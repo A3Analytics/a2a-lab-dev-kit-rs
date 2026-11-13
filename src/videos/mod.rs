@@ -4,10 +4,13 @@
 //! capture snapshot and is distinct from delivery [`VideoCodec`]. This crate
 //! does not open cameras and does not persist recordings.
 
+mod camera_enumerator;
+mod camera_resolve;
 mod capture;
 mod capture_profile;
 mod capture_runner;
 mod capture_session;
+mod capture_still;
 mod catalog;
 mod cmaf;
 mod codec;
@@ -15,35 +18,59 @@ mod codec;
 mod color_convert;
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 mod color_pipeline;
+#[cfg(all(feature = "yuv", feature = "openh264", feature = "web-ui"))]
+mod declarative_runtime;
 mod digest;
+mod discovered_camera;
 mod dvr;
 mod dvr_store;
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+mod dvr_video_provider;
 mod epoch_hls;
 mod frame_decision;
 mod frame_select;
 #[cfg(feature = "openh264")]
 mod h264_encode;
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+mod h264_live_catalog;
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+mod h264_live_epoch;
 mod h264_sample;
 pub(crate) mod http;
 mod index_provenance;
 #[cfg(feature = "yuv")]
+mod jpeg_cadence;
+#[cfg(feature = "yuv")]
 mod jpeg_derivative;
 mod live;
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+mod live_color_encode;
 mod local_media;
 mod media_asset;
 #[cfg(feature = "yuv")]
 mod mjpeg_decode;
+mod mjpeg_transport;
 mod model;
 mod model_space;
+mod native_capture_drain;
 #[cfg(feature = "nokhwa")]
 mod nokhwa_device;
+#[cfg(feature = "nokhwa")]
+mod nokhwa_enumerator;
+#[cfg(feature = "nokhwa")]
+mod nokhwa_frame;
 mod packager;
 mod provider;
 mod saved_frame;
 mod semantic_indexing;
 mod semantic_search;
+mod session_color_capture;
+mod sqlite_dvr;
 mod timeline;
+mod warm_still_cache;
 
+pub use camera_enumerator::CameraEnumerator;
+pub use camera_resolve::resolve_camera_selector;
 pub use capture::{
     CaptureCapabilities, CaptureClock, CaptureFormat, CaptureIdentity, CaptureMode, CaptureTiming,
     CapturedColorFrame, ColorCaptureSource, ColorMatrix, ColorProperties, ColorRange,
@@ -62,6 +89,7 @@ pub use capture_runner::{
     LatestFrameReplacement, LatestFrameStore, ReplacedLatestFrame, SENSOR_30FPS_PERIOD_NS,
 };
 pub use capture_session::{CaptureSession, ColorCamera, RawCameraSample, captured_frame};
+pub use capture_still::{captured_frame_jpeg, is_bounded_jpeg, jpeg_dimensions};
 pub use catalog::{FinitePlaybackSession, LivePlaybackSession, VideoCatalog};
 pub use codec::VideoCodec;
 #[cfg(feature = "yuv")]
@@ -71,13 +99,21 @@ pub use color_convert::{
 };
 #[cfg(all(feature = "yuv", feature = "openh264"))]
 pub use color_pipeline::{ColorEncodeCounters, ColorEncodePipeline, ColorEncodedFrame};
+#[cfg(all(feature = "yuv", feature = "openh264", feature = "web-ui"))]
+pub use declarative_runtime::{
+    DEFAULT_MAX_FRAME_BYTES, DeclarativeVideoRuntime, DvrReady, VideoRuntimeConfig,
+    VideoRuntimeInjections, VideoRuntimeShutdown,
+};
 pub use digest::Sha256Digest;
+pub use discovered_camera::{CameraDiscoverySnapshot, DiscoveredCamera, UnsupportedCameraNode};
 pub use dvr::{DvrEnqueueStatus, DvrPersistenceQueue, DvrQueuedSample};
 pub use dvr_store::{
     DvrDiscontinuity, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage, DvrMediaPayload,
     DvrMediaSegment, DvrMediaStore, DvrMediaTrack, DvrPictureProperties, DvrRetentionBounds,
     H264TrackRelation, ReadDvrMediaWindowRequest, h264_track_relation,
 };
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+pub use dvr_video_provider::{DvrVideoMaintenance, DvrVideoProvider, VIDEO_DVR_CLEANUP_INTERVAL};
 pub use epoch_hls::{
     EpochHlsInit, EpochHlsSegment, EpochHlsSession, EpochPlaylistKind, FiniteH264Clip,
     export_finite_h264_epochs, live_h264_edge_anchor, load_epoch_hls_asset, load_live_hls_asset,
@@ -120,12 +156,18 @@ pub use frame_select::{
 pub use h264_encode::{
     AllIdrEncoder, EncodedAccessUnit, I420Picture, OPENH264_NOTICE, decode_luma,
 };
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+pub use h264_live_catalog::{LiveH264Catalog, SourceLiveH264Store};
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+pub use h264_live_epoch::H264LiveEpochWriter;
 pub use h264_sample::{H264PictureSample, frame_h264_picture};
 pub use http::{apply_media_security_headers, is_gated_media_path, router, router_for_lab};
 pub use index_provenance::{
     FrameDescriptionProvenance, FrameEmbeddingVector, FrameRoiTransform,
     FrameVectorIndexAttachment, TextEmbeddingProvenance,
 };
+#[cfg(feature = "yuv")]
+pub use jpeg_cadence::JpegCadenceSelector;
 #[cfg(feature = "yuv")]
 pub use jpeg_derivative::{
     JpegDerivative, JpegDerivativeCache, JpegDerivativeLimits, MAX_JPEG_QUALITY, MIN_JPEG_QUALITY,
@@ -135,6 +177,8 @@ pub use live::{
     H264LiveAppendStats, H264LiveEpoch, H264LiveSample, H264LiveSnapshot, H264LiveStore,
     H264LiveStoreLimits,
 };
+#[cfg(all(feature = "yuv", feature = "openh264"))]
+pub use live_color_encode::{LiveColorEncodePump, LiveEncodeTick, PublishedH264};
 pub use local_media::LocalMediaAssetProvider;
 pub use media_asset::{
     ClipAssetRequest, LiveAssetRequest, MediaAssetProvider, ResolvedMediaAsset,
@@ -156,8 +200,14 @@ pub use model::{
 pub use model_space::{
     EmbeddingMetric, ModelSpaceIdentity, ProvenanceGeneration, VectorNormalization,
 };
+pub use native_capture_drain::NativeCaptureDrain;
 #[cfg(feature = "nokhwa")]
-pub use nokhwa_device::{NokhwaCamera, profiles_from_nokhwa};
+pub use nokhwa_device::{
+    AUTO_PROBE_FOURCCS, AUTO_PROBE_LADDER, NokhwaCamera, nokhwa_profiles_for_index,
+    normalize_raw_camera_sample, profiles_from_nokhwa, with_nokhwa_open_lock,
+};
+#[cfg(feature = "nokhwa")]
+pub use nokhwa_enumerator::NokhwaEnumerator;
 pub use packager::{
     DEFAULT_PLAYBACK_WINDOW_US, DvrMediaPackager, DvrPackagerConfig, HLS_INIT_RELATIVE_PATH,
     HLS_PLAYLIST_RELATIVE_PATH, HLS_TRICK_8X_PLAYLIST_RELATIVE_PATH, PackagedHlsSegment,
@@ -189,7 +239,12 @@ pub use semantic_search::{
     TckMalformedSemanticSearchRequests, authorized_assessments_for_frame, fake_semantic_hit,
     semantic_search_unavailable,
 };
+pub use session_color_capture::SessionColorCapture;
+pub use sqlite_dvr::{
+    DEFAULT_DISK_VIDEO_RETENTION_SECS, DvrCommittedFrame, DvrPersistHook, SqliteChunkDvrStore,
+};
 pub use timeline::{
     FollowVideoRequest, GetVideoTimelineRequest, VIDEO_LIVE_PATH_PREFIX, VideoFollow,
     VideoLiveStream, VideoTimeline, video_live_path,
 };
+pub use warm_still_cache::{WarmStill, WarmStillCache};

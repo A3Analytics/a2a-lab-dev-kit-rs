@@ -10,6 +10,15 @@ rust-version = "1.98.1"
 description = "Rust dev kit for lab logs, metrics, and tasks over A2A and MCP"
 publish = false
 
+[profile.dev.package.openh264]
+opt-level = 3
+
+[profile.dev.package.yuv]
+opt-level = 3
+
+[profile.dev.package.image]
+opt-level = 3
+
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 cognitive_complexity = "warn"
@@ -105,6 +114,10 @@ rmcp = { version = "3.5.0", features = [
 schemars = "1.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+] }
 thiserror = "2.0.21"
 tower-layer = "0.3"
 tower-service = "0.3"

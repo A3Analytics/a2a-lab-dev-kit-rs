@@ -218,3 +218,70 @@ fn nokhwa_maps_mjpeg_and_yuyv_and_rejects_other_layouts() {
     assert_eq!(mapped[1].mode().format(), CaptureFormat::Yuy2);
     assert_eq!(mapped[1].capture_rate().numerator(), 5);
 }
+
+#[cfg(feature = "nokhwa")]
+mod nokhwa_hardening {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    use a2a_lab_dev_kit::videos::{
+        AUTO_PROBE_FOURCCS, AUTO_PROBE_LADDER, CaptureFormat, normalize_raw_camera_sample,
+        with_nokhwa_open_lock,
+    };
+    use nokhwa::utils::FrameFormat;
+
+    #[test]
+    fn auto_probe_ladder_is_mjpeg_then_yuyv_and_descending_resolutions() {
+        assert_eq!(AUTO_PROBE_FOURCCS, [FrameFormat::MJPEG, FrameFormat::YUYV]);
+        assert_eq!(AUTO_PROBE_LADDER.len(), 3);
+        assert!(AUTO_PROBE_LADDER[0].0 >= AUTO_PROBE_LADDER[1].0);
+    }
+
+    #[test]
+    fn open_lock_allows_one_holder_at_a_time() {
+        static PEAK: AtomicUsize = AtomicUsize::new(0);
+        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                thread::spawn(|| {
+                    with_nokhwa_open_lock(|| {
+                        let current = ACTIVE.fetch_add(1, Ordering::SeqCst) + 1;
+                        PEAK.fetch_max(current, Ordering::SeqCst);
+                        thread::sleep(Duration::from_millis(8));
+                        ACTIVE.fetch_sub(1, Ordering::SeqCst);
+                    });
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().expect("join");
+        }
+        assert_eq!(PEAK.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn normalize_raw_sample_trims_mjpeg_and_packs_yuy2_stride() {
+        let jpeg = vec![
+            0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11,
+            0x00, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0xFF, 0xD9, 0xAA,
+        ];
+        let exact_len = jpeg.len() - 1;
+        let mjpeg = normalize_raw_camera_sample(CaptureFormat::Mjpeg, 1, 1, jpeg).expect("mjpeg");
+        assert_eq!(mjpeg.bytes().len(), exact_len);
+
+        let row = 8usize;
+        let height = 2u32;
+        let mut yuy2 = Vec::new();
+        for marker in [11_u8, 22_u8] {
+            yuy2.extend(std::iter::repeat_n(marker, row));
+            yuy2.extend([0, 0]);
+        }
+        let yuy2 = normalize_raw_camera_sample(CaptureFormat::Yuy2, 4, height, yuy2).expect("yuy2");
+        assert_eq!(yuy2.stride(), u32::try_from(row).unwrap());
+        let expected: Vec<u8> = std::iter::repeat_n(11_u8, row)
+            .chain(std::iter::repeat_n(22_u8, row))
+            .collect();
+        assert_eq!(yuy2.bytes(), expected.as_slice());
+    }
+}

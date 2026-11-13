@@ -22,11 +22,18 @@ pub(crate) struct CaptureSettingsView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+enum CameraIdRow {
+    Index(u32),
+    Text(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct SourceRow {
     id: String,
     display_name: String,
     format: String,
-    device_index: u32,
+    camera_id: Option<CameraIdRow>,
     width: Option<u32>,
     height: Option<u32>,
     capture_rate: Option<u32>,
@@ -111,7 +118,7 @@ pub fn SettingsView(ui: Signal<SettingsUi>, visible: bool) -> Element {
                         tr {
                             th { scope: "col", "Source" }
                             th { scope: "col", "Format" }
-                            th { scope: "col", "Device" }
+                            th { scope: "col", "Camera" }
                             th { scope: "col", "Width" }
                             th { scope: "col", "Height" }
                             th { scope: "col", "Capture rate" }
@@ -124,7 +131,13 @@ pub fn SettingsView(ui: Signal<SettingsUi>, visible: bool) -> Element {
                                 id: "video-source-{index}",
                                 td { "{source.display_name} ({source.id})" }
                                 td { "{source.format}" }
-                                td { "{source.device_index}" }
+                                td {
+                                    match source.camera_id.as_ref() {
+                                        Some(CameraIdRow::Index(index)) => rsx! { "{index}" },
+                                        Some(CameraIdRow::Text(text)) => rsx! { "{text}" },
+                                        None => rsx! { "default" },
+                                    }
+                                }
                                 td {
                                     if let Some(width) = source.width {
                                         "{width}"

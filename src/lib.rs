@@ -46,16 +46,17 @@ pub use catalog::{
     ListBindingsRequest, OpcUaIdentityKind, ProtocolKind, SecurityMode, SemanticId, SemanticKind,
 };
 pub use config::{
-    A2A_LAB_CONFIG_SCHEMA_VERSION, A2A_LAB_CONFIG_SCHEMA_VERSION_V2, A2aLabConfig, ChatConfig,
-    ChatProvider, ConfigDuration, CredentialReference, DEFAULT_LIVE_OUTPUT_FPS,
-    DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
-    DecisionCoveragePolicy, EmbeddingSpaceConfig, LoadedLabConfig, LogOutputFormat, LoggingConfig,
-    OpenTelemetryLoggingConfig, SaveIntervalDuration, SemanticDecisionLimits,
-    SemanticDecisionsConfig, SemanticDescriptionConfig, SemanticEmbeddingsConfig,
-    SemanticIndexingConfig, SemanticIndexingLimits, SemanticIndexingSearchLimits,
-    SemanticRoiLimits, SemanticSchedule, SemanticStorageLimits, SemanticStreamSchedule,
-    SemanticWorkerLimits, VideoCaptureSettings, VideoCaptureSettingsView, VideoCaptureSourceView,
-    VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
+    A2A_LAB_CONFIG_SCHEMA_VERSION, A2A_LAB_CONFIG_SCHEMA_VERSION_V2, A2aLabConfig, CameraIdView,
+    CameraSelector, ChatConfig, ChatProvider, ConfigDuration, CredentialReference,
+    DEFAULT_LIVE_OUTPUT_FPS, DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL,
+    DEFAULT_SEMANTIC_DESCRIPTION_BACKEND, DecisionCoveragePolicy, EmbeddingSpaceConfig,
+    LoadedLabConfig, LogOutputFormat, LoggingConfig, OpenTelemetryLoggingConfig,
+    SaveIntervalDuration, SemanticDecisionLimits, SemanticDecisionsConfig,
+    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
+    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
+    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits, VideoCaptureSettings,
+    VideoCaptureSettingsView, VideoCaptureSourceView, VideoConfig, VideoDvrConfig,
+    VideoInputFormat, VideoSourceConfig,
 };
 pub use error::{A2aLabError, VideoAvailability};
 pub use id::{
@@ -102,14 +103,15 @@ pub use tasks::{
 pub use time::{TimeRange, UtcTimestamp};
 pub use videos::{
     AppendFrameDecisionRequest, AppendFrameDecisionResult, ClipAssetRequest,
-    DEFAULT_BEDROCK_DESCRIPTION_MODEL, DEFAULT_JEV_MODEL_REVISION, DEFAULT_MJPEG_BOUNDARY,
-    DEFAULT_OPENAI_DESCRIPTION_MODEL, DEFAULT_PLAYBACK_WINDOW_US, DEFAULT_SEMANTIC_CANDIDATES,
-    DEFAULT_SEMANTIC_TOP_K, DecisionEvaluationCoverage, DecisionEvidenceAvailability,
-    DecisionEvidenceItem, DecisionEvidenceKind, DecisionHistoryPolicy, DecisionOutcome,
-    DecisionSearchFilter, DecisionSubject, DecisionThresholdPolicy, DecisionUnknownReason,
+    DEFAULT_BEDROCK_DESCRIPTION_MODEL, DEFAULT_DISK_VIDEO_RETENTION_SECS,
+    DEFAULT_JEV_MODEL_REVISION, DEFAULT_MJPEG_BOUNDARY, DEFAULT_OPENAI_DESCRIPTION_MODEL,
+    DEFAULT_PLAYBACK_WINDOW_US, DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_TOP_K,
+    DecisionEvaluationCoverage, DecisionEvidenceAvailability, DecisionEvidenceItem,
+    DecisionEvidenceKind, DecisionHistoryPolicy, DecisionOutcome, DecisionSearchFilter,
+    DecisionSubject, DecisionThresholdPolicy, DecisionUnknownReason, DvrCommittedFrame,
     DvrDiscontinuity, DvrEnqueueStatus, DvrFrameAtRequest, DvrFrameAtResult, DvrMediaCoverage,
     DvrMediaPackager, DvrMediaPayload, DvrMediaSegment, DvrMediaStore, DvrMediaTrack,
-    DvrPackagerConfig, DvrPersistenceQueue, DvrPictureProperties, DvrQueuedSample,
+    DvrPackagerConfig, DvrPersistHook, DvrPersistenceQueue, DvrPictureProperties, DvrQueuedSample,
     DvrRetentionBounds, EmbeddingMetric, EpochHlsInit, EpochHlsSegment, EpochHlsSession,
     EpochPlaylistKind, FakeDescriptionBehavior, FakeEmbeddingBehavior, FakeFrameDecisionEvaluator,
     FakeFrameDecisionLedgerProvider, FakeFrameDescriptionProvider, FakeJevBehavior,
@@ -150,7 +152,7 @@ pub use videos::{
     SemanticIndexingFreshness, SemanticIndexingStateCounts, SemanticProvenanceSelector,
     SemanticRetrievalScore, SemanticSearchCapabilities, SemanticSearchLimits,
     SemanticSearchOperation, SemanticSearchQuery, SemanticSearchSchemaRefs, SemanticSearchScope,
-    SemanticVideoSearchProvider, Sha256Digest, SharedMediaAssetProvider,
+    SemanticVideoSearchProvider, Sha256Digest, SharedMediaAssetProvider, SqliteChunkDvrStore,
     TRICK_8X_UNAVAILABLE_INSUFFICIENT_KEYFRAMES, TRICK_8X_UNAVAILABLE_NO_REDUCTION,
     TckMalformedFrameDecisionRequests, TckMalformedSemanticSearchRequests,
     TckMalformedVideoRequests, TextEmbeddingKey, TextEmbeddingLimits, TextEmbeddingProvenance,
@@ -168,6 +170,12 @@ pub use videos::{
     reject_decision_provenance, reject_forbidden_decision_input, router, router_for_lab,
     semantic_search_unavailable, unsupported_predicate_result, validate_description_batch,
     validate_embedding_batch, validate_evaluation_batch, video_clip_path, video_live_path,
+};
+#[cfg(all(feature = "yuv", feature = "openh264", feature = "web-ui"))]
+pub use videos::{
+    DEFAULT_MAX_FRAME_BYTES, DeclarativeVideoRuntime, DvrReady, DvrVideoMaintenance,
+    DvrVideoProvider, VIDEO_DVR_CLEANUP_INTERVAL, VideoRuntimeConfig, VideoRuntimeInjections,
+    VideoRuntimeShutdown,
 };
 
 /// Returns the crate version.

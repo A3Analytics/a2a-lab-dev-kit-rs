@@ -333,6 +333,14 @@ fn codec_sample_entry(track: &DvrMediaTrack) -> Result<Vec<u8>, A2aLabError> {
     }
 }
 
+/// Declared pixel size from Annex B initialization, defaulting when SPS is absent.
+#[must_use]
+pub fn codec_init_picture_size(init: &[u8]) -> (u32, u32) {
+    coded_dimensions(init).map_or((640, 480), |(width, height)| {
+        (u32::from(width), u32::from(height))
+    })
+}
+
 fn coded_dimensions(init: &[u8]) -> Option<(u16, u16)> {
     let nals = annex_b_nals(init).ok()?;
     let sps = nals
