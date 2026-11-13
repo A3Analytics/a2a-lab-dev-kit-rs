@@ -81,7 +81,7 @@ impl<C: ColorCamera> ColorCaptureSource for SessionColorCapture<C> {
         let monotonic_ns = identity.sequence().saturating_mul(sensor_period_ns);
         let timing = CaptureTiming::new(captured_at, CaptureClock::monotonic(monotonic_ns));
         let negotiated = selected.mode().format();
-        let color = color_properties(self.input_preference);
+        let color = color_properties(negotiated);
         let frame = self.session.read(identity, timing, color)?;
         if !format_matches(self.input_preference, negotiated) {
             return Err(A2aLabError::invalid(
@@ -113,14 +113,10 @@ fn fps_period_ns(rate: CaptureRate) -> u64 {
         .saturating_div(fps.max(1))
 }
 
-fn color_properties(preference: CaptureFormatPreference) -> ColorProperties {
-    match preference {
-        CaptureFormatPreference::Yuy2 => {
-            ColorProperties::new(ColorMatrix::Bt601, ColorRange::Limited)
-        }
-        CaptureFormatPreference::Auto | CaptureFormatPreference::Mjpeg => {
-            ColorProperties::new(ColorMatrix::Unknown, ColorRange::Unknown)
-        }
+fn color_properties(negotiated: CaptureFormat) -> ColorProperties {
+    match negotiated {
+        CaptureFormat::Yuy2 => ColorProperties::new(ColorMatrix::Bt601, ColorRange::Limited),
+        CaptureFormat::Mjpeg => ColorProperties::new(ColorMatrix::Unknown, ColorRange::Unknown),
     }
 }
 
@@ -129,5 +125,24 @@ fn format_matches(preference: CaptureFormatPreference, negotiated: CaptureFormat
         CaptureFormatPreference::Mjpeg => negotiated == CaptureFormat::Mjpeg,
         CaptureFormatPreference::Yuy2 => negotiated == CaptureFormat::Yuy2,
         CaptureFormatPreference::Auto => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negotiated_yuy2_supplies_encoder_color_metadata() {
+        let color = color_properties(CaptureFormat::Yuy2);
+        assert_eq!(color.matrix(), ColorMatrix::Bt601);
+        assert_eq!(color.range(), ColorRange::Limited);
+    }
+
+    #[test]
+    fn negotiated_mjpeg_keeps_unspecified_color_metadata() {
+        let color = color_properties(CaptureFormat::Mjpeg);
+        assert_eq!(color.matrix(), ColorMatrix::Unknown);
+        assert_eq!(color.range(), ColorRange::Unknown);
     }
 }

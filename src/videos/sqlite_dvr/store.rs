@@ -76,7 +76,7 @@ impl SqliteChunkDvrStore {
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
-            .max_connections(4)
+            .max_connections(1)
             .connect_with(options)
             .await
             .map_err(db_error)?;

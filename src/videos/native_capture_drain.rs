@@ -36,19 +36,20 @@ impl<C: ColorCamera> NativeCaptureDrain<C> {
         }
     }
 
-    /// Every frame offered during up to `max_pulls` drain attempts.
+    /// Drains up to `max_pulls`, discards intermediate frames, and returns only the newest.
     pub fn drain_handoffs(&mut self, max_pulls: u32) -> Vec<CapturedColorFrame> {
-        let mut out = Vec::new();
+        let mut newest = None;
         for _ in 0..max_pulls {
             match self.runner.drain_once_handoff() {
-                Some(frame) => {
-                    self.offer_still(&frame);
-                    out.push(frame);
-                }
+                Some(frame) => newest = Some(frame),
                 None => break,
             }
         }
-        out
+        let Some(frame) = newest else {
+            return Vec::new();
+        };
+        self.offer_still(&frame);
+        vec![frame]
     }
 
     /// Pulls frames until the source has no frame ready or `max_pulls` is reached.

@@ -9,8 +9,8 @@ use tokio::sync::watch;
 
 use crate::a2a::VideoCaptureSettingsHandle;
 use crate::config::{
-    ConfigDuration, DEFAULT_LIVE_OUTPUT_FPS, SaveIntervalDuration, VideoCaptureSettings,
-    VideoSourceConfig,
+    CameraSelector, ConfigDuration, DEFAULT_LIVE_OUTPUT_FPS, SaveIntervalDuration,
+    VideoCaptureSettings, VideoSourceConfig,
 };
 use crate::error::A2aLabError;
 use crate::memory::MemoryVideos;
@@ -78,7 +78,14 @@ impl DeclarativeVideoRuntime {
         ));
         let disk_tx = spawn_disk_writer(dvr.clone());
 
-        let snapshot = if injections.skips_native_discovery() {
+        let explicit_indexes = config
+            .video
+            .sources
+            .iter()
+            .all(|source| matches!(source.camera_id, Some(CameraSelector::Index(_))));
+        let snapshot = if explicit_indexes {
+            CameraDiscoverySnapshot::from_parts(Vec::new(), Vec::new())
+        } else if injections.skips_native_discovery() {
             if let Some(enumerator) = injections.enumerator() {
                 enumerator.discover()?
             } else {
@@ -208,6 +215,12 @@ fn resolve_source_camera(
     }
     #[cfg(feature = "nokhwa")]
     {
+        if let Some(CameraSelector::Index(index)) = source.camera_id {
+            if claimed.insert(index) {
+                return WorkerCamera::NativeIndex(index);
+            }
+            return WorkerCamera::Absent;
+        }
         let Ok(discovered) = resolve_camera_selector(source.camera_id.as_ref(), snapshot, claimed)
         else {
             return WorkerCamera::Absent;
