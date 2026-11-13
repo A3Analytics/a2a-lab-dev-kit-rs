@@ -1,11 +1,12 @@
 //! SQLite-backed recoverable minute-chunk DVR store.
 
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use sqlx::{SqlitePool, Transaction};
+use sqlx::{Row, SqlitePool, Transaction};
 use tokio::task;
 
 use crate::error::A2aLabError;
@@ -108,10 +109,88 @@ impl SqliteChunkDvrStore {
         Ok(())
     }
 
-    /// Shared SQLite pool for OT-2 semantic tables.
+    /// Media metadata pool. Semantic tables belong in [`crate::videos::SemanticSqliteStore`].
     #[must_use]
-    pub fn pool(&self) -> &SqlitePool {
+    pub fn media_pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    /// Ready media keys, oldest first, for semantic reconciliation.
+    pub async fn list_ready_media_keys(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(String, String, i64)>, A2aLabError> {
+        let rows = sqlx::query(
+            "SELECT source_id, track_id, start_us
+             FROM (
+                SELECT source_id, track_id, start_us FROM dvr_frames WHERE payload_ready = 1
+                UNION
+                SELECT source_id, track_id, start_us FROM dvr_segments WHERE payload_ready = 1
+             )
+             ORDER BY source_id, track_id, start_us
+             LIMIT ?1",
+        )
+        .bind(limit)
+        .fetch_all(self.media_pool())
+        .await
+        .map_err(db_error)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get("source_id").map_err(db_error)?,
+                    row.try_get("track_id").map_err(db_error)?,
+                    row.try_get("start_us").map_err(db_error)?,
+                ))
+            })
+            .collect()
+    }
+
+    /// Subset of `keys` that still have a ready media row.
+    pub async fn retained_media_keys(
+        &self,
+        keys: &[(String, String, i64)],
+    ) -> Result<std::collections::HashSet<(String, String, i64)>, A2aLabError> {
+        if keys.is_empty() {
+            return Ok(std::collections::HashSet::new());
+        }
+        let mut predicate = String::new();
+        for index in 0..keys.len() {
+            if index > 0 {
+                predicate.push_str(" OR ");
+            }
+            let base = index * 3;
+            let _ = write!(
+                predicate,
+                "(source_id = ?{} AND track_id = ?{} AND start_us = ?{})",
+                base + 1,
+                base + 2,
+                base + 3
+            );
+        }
+        let sql = format!(
+            "SELECT source_id, track_id, start_us FROM dvr_frames
+             WHERE payload_ready = 1 AND ({predicate})
+             UNION
+             SELECT source_id, track_id, start_us FROM dvr_segments
+             WHERE payload_ready = 1 AND ({predicate})"
+        );
+        let mut query = sqlx::query(&sql);
+        for (source_id, track_id, start_us) in keys {
+            query = query.bind(source_id).bind(track_id).bind(start_us);
+        }
+        for (source_id, track_id, start_us) in keys {
+            query = query.bind(source_id).bind(track_id).bind(start_us);
+        }
+        let rows = query.fetch_all(self.media_pool()).await.map_err(db_error)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get("source_id").map_err(db_error)?,
+                    row.try_get("track_id").map_err(db_error)?,
+                    row.try_get("start_us").map_err(db_error)?,
+                ))
+            })
+            .collect()
     }
 
     /// Payload root directory.
@@ -383,5 +462,3 @@ async fn insert_frame_tx(
     .map_err(db_error)?;
     Ok(())
 }
-
-use sqlx::Row;

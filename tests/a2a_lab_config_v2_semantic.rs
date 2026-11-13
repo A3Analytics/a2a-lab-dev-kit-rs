@@ -53,10 +53,10 @@ fn fixture_v2_parses_independent_roles() {
         DEFAULT_BEDROCK_DESCRIPTION_MODEL
     );
     assert_ne!(semantic.description.model(), "claude-chat-only");
-    assert_eq!(
-        semantic.embeddings.as_ref().unwrap().provider(),
-        "operator-embedding"
-    );
+    let embeddings = semantic.embeddings.as_ref().unwrap();
+    assert_eq!(embeddings.provider(), "bedrock");
+    assert_eq!(embeddings.model(), "cohere.embed-english-v3");
+    assert_eq!(embeddings.space().dimensions, 1024);
     assert_eq!(semantic.decisions.provider(), "jev");
     assert_eq!(semantic.decisions.model(), DEFAULT_JEV_MODEL_REVISION);
     assert_ne!(
@@ -76,6 +76,10 @@ fn fixture_v2_resolves_relative_vector_path_like_doc5() {
     let loaded = LoadedLabConfig::load(&config_path).unwrap();
     let expected = nested.join("state/semantic-index");
     assert_eq!(loaded.semantic_vector_index_path, Some(expected.clone()));
+    assert_eq!(
+        loaded.semantic_sqlite_path,
+        Some(nested.join("state/semantic.sqlite"))
+    );
     assert!(!expected.exists());
     let _ = std::fs::remove_dir_all(root);
 }

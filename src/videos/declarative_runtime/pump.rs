@@ -24,7 +24,9 @@ use super::dyn_camera::DynColorCamera;
 #[cfg(feature = "nokhwa")]
 use crate::videos::NokhwaCamera;
 
-const HANDOFF_BUDGET: u32 = 32;
+/// One blocking camera read per pump tick. A larger budget waits out that many
+/// sensor frames and then publishes only the last, which leaves playback gaps.
+const HANDOFF_BUDGET: u32 = 1;
 
 enum CaptureWorker {
     Injected(NativeCaptureDrain<DynColorCamera>),
@@ -62,14 +64,6 @@ impl CaptureWorker {
             Self::Injected(drain) => drain.shutdown(),
             #[cfg(feature = "nokhwa")]
             Self::Native(drain) => drain.shutdown(),
-        }
-    }
-
-    fn wait_polling(&mut self, duration: Duration) {
-        match self {
-            Self::Injected(drain) => drain.wait_polling(duration),
-            #[cfg(feature = "nokhwa")]
-            Self::Native(drain) => drain.wait_polling(duration),
         }
     }
 }
@@ -232,10 +226,7 @@ fn pump_loop(
             let _ = runtime.block_on(provider.live().set_live_available(source_id, true));
         }
         if let Some(rest) = budget.checked_sub(started.elapsed()) {
-            driver
-                .as_mut()
-                .unwrap()
-                .wait_polling(rest.min(Duration::from_millis(50)));
+            thread::sleep(rest.min(Duration::from_millis(50)));
         }
         if tick.stopped() || *stop.borrow() {
             break;

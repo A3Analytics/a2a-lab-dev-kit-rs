@@ -4,6 +4,7 @@ mod failure;
 mod fakes;
 mod frame_description;
 mod text_embedding;
+mod worker;
 
 pub use failure::SemanticIndexingFailure;
 pub use fakes::{
@@ -19,4 +20,8 @@ pub use frame_description::{
 pub use text_embedding::{
     KeyedTextEmbedding, TextEmbeddingKey, TextEmbeddingLimits, TextEmbeddingProvider,
     TextEmbeddingProviderConfig, TextEmbeddingRequest, validate_embedding_batch,
+};
+pub use worker::{
+    SemanticIndexingStage, assemble_stream_schedules, attach_stream_schedules,
+    frame_description_limits, indexing_claim_batch_size, text_embedding_limits,
 };

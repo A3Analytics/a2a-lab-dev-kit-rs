@@ -165,7 +165,7 @@ fn epoch_changes_when_initialization_changes() {
     pump.reconnect();
     let _ = feed_sensor(&mut pump, 40);
     let snapshot = store.snapshot().expect("snapshot");
-    assert!(snapshot.epochs().len() >= 1);
+    assert!(!snapshot.epochs().is_empty());
     assert!(!snapshot.samples().is_empty());
 }
 

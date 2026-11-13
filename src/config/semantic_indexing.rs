@@ -306,6 +306,7 @@ impl Default for SemanticRoiLimits {
 /// On-disk vector index budgets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticStorageLimits {
+    pub sqlite_path: String,
     pub vector_index_path: String,
     pub max_disk_bytes: u64,
 }
@@ -527,6 +528,12 @@ impl SemanticRoiLimits {
 
 impl SemanticStorageLimits {
     fn check_finite(&self) -> Result<(), A2aLabError> {
+        if self.sqlite_path.chars().all(char::is_whitespace) {
+            return Err(A2aLabError::invalid(
+                "semantic_indexing.limits.storage.sqlite_path",
+                "must contain non-whitespace text",
+            ));
+        }
         if self.vector_index_path.chars().all(char::is_whitespace) {
             return Err(A2aLabError::invalid(
                 "semantic_indexing.limits.storage.vector_index_path",
@@ -993,8 +1000,14 @@ fn parse_storage_limits(value: Option<&Value>) -> Result<SemanticStorageLimits, 
     reject_unknown_keys(
         map,
         "semantic_indexing.limits.storage",
-        &["vector_index_path", "max_disk_bytes"],
+        &["sqlite_path", "vector_index_path", "max_disk_bytes"],
     )?;
+    let sqlite_path = match map.get("sqlite_path") {
+        Some(value) => {
+            required_nonempty_string(Some(value), "semantic_indexing.limits.storage.sqlite_path")?
+        }
+        None => "semantic.sqlite".to_owned(),
+    };
     let vector_index_path = required_nonempty_string(
         map.get("vector_index_path"),
         "semantic_indexing.limits.storage.vector_index_path",
@@ -1009,6 +1022,7 @@ fn parse_storage_limits(value: Option<&Value>) -> Result<SemanticStorageLimits, 
         }
     };
     Ok(SemanticStorageLimits {
+        sqlite_path,
         vector_index_path,
         max_disk_bytes,
     })

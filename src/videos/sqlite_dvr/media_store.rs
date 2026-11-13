@@ -34,7 +34,7 @@ impl DvrMediaStore for SqliteChunkDvrStore {
              )",
         )
         .bind(source_id.as_str())
-        .fetch_one(self.pool())
+        .fetch_one(self.media_pool())
         .await
         .map_err(db_error)?;
         let newest: i64 = sqlx::query_scalar(
@@ -45,7 +45,7 @@ impl DvrMediaStore for SqliteChunkDvrStore {
              )",
         )
         .bind(source_id.as_str())
-        .fetch_one(self.pool())
+        .fetch_one(self.media_pool())
         .await
         .map_err(db_error)?;
         DvrRetentionBounds::new(
@@ -92,14 +92,14 @@ impl DvrMediaStore for SqliteChunkDvrStore {
              GROUP BY track_id, codec, codec_init",
         )
         .bind(source_id.as_str())
-        .fetch_all(self.pool())
+        .fetch_all(self.media_pool())
         .await
         .map_err(db_error)?;
         let mut tracks: Vec<DvrMediaTrack> = rows
             .into_iter()
             .map(|row| track_from_row(&row))
             .collect::<Result<_, _>>()?;
-        tracks.extend(h264_epoch::list_h264_epoch_tracks(self.pool(), source_id).await?);
+        tracks.extend(h264_epoch::list_h264_epoch_tracks(self.media_pool(), source_id).await?);
         tracks.sort_by_key(|track| track.bounds().start());
         Ok(tracks)
     }
@@ -134,7 +134,7 @@ impl DvrMediaStore for SqliteChunkDvrStore {
         .bind(window.end().as_micros())
         .bind(limit + 1)
         .bind(offset)
-        .fetch_all(self.pool())
+        .fetch_all(self.media_pool())
         .await
         .map_err(db_error)?;
         let mut items = Vec::new();
@@ -199,7 +199,7 @@ impl SqliteChunkDvrStore {
         .bind(limit + 1)
         .bind(offset)
         .bind(request.track_id().as_str())
-        .fetch_all(self.pool())
+        .fetch_all(self.media_pool())
         .await
         .map_err(db_error)?;
         let mut items = Vec::new();
@@ -222,7 +222,7 @@ impl SqliteChunkDvrStore {
              )",
         )
         .bind(source_id.as_str())
-        .fetch_one(self.pool())
+        .fetch_one(self.media_pool())
         .await
         .map_err(db_error)?;
         if count == 0 {
@@ -239,7 +239,7 @@ impl SqliteChunkDvrStore {
             "SELECT frame_period_us FROM dvr_tracks WHERE source_id = ?1 LIMIT 1",
         )
         .bind(source_id.as_str())
-        .fetch_one(self.pool())
+        .fetch_one(self.media_pool())
         .await
         .map_err(db_error)?;
         Ok(u64::try_from(period.max(1)).unwrap_or(1))
@@ -256,14 +256,14 @@ impl SqliteChunkDvrStore {
              ORDER BY start_us",
         )
         .bind(source_id.as_str())
-        .fetch(self.pool());
+        .fetch(self.media_pool());
         let mut frames = sqlx::query(
             "SELECT start_us FROM dvr_frames
              WHERE source_id = ?1 AND payload_ready = 1
              ORDER BY start_us",
         )
         .bind(source_id.as_str())
-        .fetch(self.pool());
+        .fetch(self.media_pool());
         let mut segment = next_start(&mut segments).await?;
         let mut frame = next_start(&mut frames).await?;
         loop {
@@ -306,7 +306,7 @@ impl SqliteChunkDvrStore {
         .bind(source_id.as_str())
         .bind(track_id.as_str())
         .bind(at)
-        .fetch_optional(self.pool())
+        .fetch_optional(self.media_pool())
         .await
         .map_err(db_error)
     }

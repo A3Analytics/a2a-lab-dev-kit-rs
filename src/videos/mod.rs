@@ -64,6 +64,7 @@ mod provider;
 mod saved_frame;
 mod semantic_indexing;
 mod semantic_search;
+mod semantic_store;
 mod session_color_capture;
 mod sqlite_dvr;
 mod timeline;
@@ -221,9 +222,11 @@ pub use semantic_indexing::{
     FakeEmbeddingBehavior, FakeFrameDescriptionProvider, FakeTextEmbeddingProvider,
     FrameDescriptionBackend, FrameDescriptionKey, FrameDescriptionLimits, FrameDescriptionProvider,
     FrameDescriptionProviderConfig, FrameDescriptionRequest, KeyedFrameDescription,
-    KeyedTextEmbedding, SemanticIndexingFailure, TextEmbeddingKey, TextEmbeddingLimits,
-    TextEmbeddingProvider, TextEmbeddingProviderConfig, TextEmbeddingRequest,
-    validate_description_batch, validate_embedding_batch,
+    KeyedTextEmbedding, SemanticIndexingFailure, SemanticIndexingStage, TextEmbeddingKey,
+    TextEmbeddingLimits, TextEmbeddingProvider, TextEmbeddingProviderConfig, TextEmbeddingRequest,
+    assemble_stream_schedules, attach_stream_schedules, frame_description_limits,
+    indexing_claim_batch_size, text_embedding_limits, validate_description_batch,
+    validate_embedding_batch,
 };
 pub use semantic_search::{
     DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS, DEFAULT_SEMANTIC_TOP_K,
@@ -239,6 +242,7 @@ pub use semantic_search::{
     TckMalformedSemanticSearchRequests, authorized_assessments_for_frame, fake_semantic_hit,
     semantic_search_unavailable,
 };
+pub use semantic_store::SemanticSqliteStore;
 pub use session_color_capture::SessionColorCapture;
 pub use sqlite_dvr::{
     DEFAULT_DISK_VIDEO_RETENTION_SECS, DvrCommittedFrame, DvrPersistHook, SqliteChunkDvrStore,

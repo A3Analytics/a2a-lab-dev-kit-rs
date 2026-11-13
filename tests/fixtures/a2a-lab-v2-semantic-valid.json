@@ -14,7 +14,7 @@
           "description": "5s",
           "description_model": "global.openai.gpt-5.6-luna",
           "embeddings": "1m",
-          "embedding_model": "amazon.titan-embed-text-v2:0"
+          "embedding_model": "cohere.embed-english-v3"
         }
       },
       {
@@ -25,7 +25,7 @@
           "description": "1.5s",
           "description_model": "global.openai.gpt-4.1-mini",
           "embeddings": "5s",
-          "embedding_model": "amazon.titan-embed-text-v2:0"
+          "embedding_model": "cohere.embed-english-v3"
         }
       }
     ]
@@ -39,10 +39,10 @@
       }
     },
     "embeddings": {
-      "provider": "operator-embedding",
-      "model": "operator-text-embed-v1",
+      "provider": "bedrock",
+      "model": "cohere.embed-english-v3",
       "space": {
-        "dimensions": 384,
+        "dimensions": 1024,
         "normalization": "l2_unit",
         "metric": "cosine"
       },
@@ -73,6 +73,7 @@
         "query_window": "2h"
       },
       "storage": {
+        "sqlite_path": "./state/semantic.sqlite",
         "vector_index_path": "./state/semantic-index",
         "max_disk_bytes": 1073741824
       },

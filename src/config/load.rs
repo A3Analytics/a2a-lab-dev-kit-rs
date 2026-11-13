@@ -15,6 +15,8 @@ pub struct LoadedLabConfig {
     pub dvr_storage_path: Option<PathBuf>,
     /// `semantic_indexing.limits.storage.vector_index_path` resolved from the file directory.
     pub semantic_vector_index_path: Option<PathBuf>,
+    /// `semantic_indexing.limits.storage.sqlite_path` resolved from the file directory.
+    pub semantic_sqlite_path: Option<PathBuf>,
 }
 
 impl LoadedLabConfig {
@@ -38,10 +40,15 @@ impl LoadedLabConfig {
         let semantic_vector_index_path = config.semantic_indexing.as_ref().map(|semantic| {
             resolve_relative_path(path, &semantic.limits.storage.vector_index_path)
         });
+        let semantic_sqlite_path = config
+            .semantic_indexing
+            .as_ref()
+            .map(|semantic| resolve_relative_path(path, &semantic.limits.storage.sqlite_path));
         Ok(Self {
             config,
             dvr_storage_path,
             semantic_vector_index_path,
+            semantic_sqlite_path,
         })
     }
 }

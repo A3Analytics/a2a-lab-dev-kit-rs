@@ -1,7 +1,6 @@
 //! Capacity-one runner polled from live capture threads.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use crate::error::A2aLabError;
 use crate::videos::capture_still::{captured_frame_jpeg, is_bounded_jpeg};
@@ -102,15 +101,6 @@ impl<C: ColorCamera> NativeCaptureDrain<C> {
         let _ = self.runner.source_mut().session_mut().stop();
         let _ = self.runner.shutdown();
         self.still_cache.invalidate(&self.source_id);
-    }
-
-    /// Drains while waiting so the sensor stays current without unbounded retention.
-    pub fn wait_polling(&mut self, duration: Duration) {
-        let deadline = Instant::now() + duration;
-        while Instant::now() < deadline {
-            self.drain_pending(8);
-            std::thread::sleep(Duration::from_millis(1));
-        }
     }
 
     fn offer_still(&self, frame: &CapturedColorFrame) {

@@ -3,7 +3,7 @@ id: doc-27
 title: Declarative video runtime and SQLite DVR plan
 type: specification
 audience: technical
-created_date: '2026-11-12 22:07'
+created_date: "2026-11-12 22:07"
 ---
 
 # Declarative video runtime and SQLite DVR plan
@@ -29,9 +29,10 @@ supported `MJPEG` and `YUYV` profiles without operating-system conditionals.
 
 `SqliteChunkDvrStore` is a non-optional devkit dependency backed by `sqlx`
 SQLite. It persists recoverable CRC32 minute chunks, immutable H.264 epochs,
-startup tail recovery, and retention cleanup, and exposes its `SqlitePool`.
-`DvrPersistHook` is a dedicated one-trait seam for post-commit consumers such
-as OT-2 semantic and Jev tables.
+startup tail recovery, and retention cleanup in `index.sqlite`. Media callers
+use `media_pool()`. Semantic manifests, jobs, embeddings, and decisions live
+in a second file opened by `SemanticSqliteStore`. `DvrPersistHook` runs after
+the media transaction commits and must not share that connection.
 
 ## Module and quality constraints
 
@@ -61,4 +62,3 @@ cutover, and module deletion in dependency order.
 - DK-8: TASK-145
 - DK-9: TASK-146
 - DK-10: TASK-147
-

@@ -55,7 +55,7 @@ async fn open_exposes_pool_and_schema() {
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN
          ('dvr_frames', 'dvr_chunks', 'dvr_h264_epochs')",
     )
-    .fetch_one(store.pool())
+    .fetch_one(store.media_pool())
     .await
     .unwrap();
     assert_eq!(tables, 3);
@@ -140,7 +140,7 @@ async fn h264_epochs_stay_distinct_and_queryable() {
     let epochs: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM dvr_h264_epochs WHERE source_id = ?1")
             .bind(source.as_str())
-            .fetch_one(store.pool())
+            .fetch_one(store.media_pool())
             .await
             .unwrap();
     assert_eq!(epochs, 2);
@@ -148,7 +148,7 @@ async fn h264_epochs_stay_distinct_and_queryable() {
     assert_eq!(tracks.len(), 2);
     let update = sqlx::query("UPDATE dvr_h264_epochs SET width = 1 WHERE source_id = ?1")
         .bind(source.as_str())
-        .execute(store.pool())
+        .execute(store.media_pool())
         .await
         .unwrap();
     assert!(update.rows_affected() > 0);
@@ -156,7 +156,7 @@ async fn h264_epochs_stay_distinct_and_queryable() {
         "SELECT COUNT(DISTINCT codec_init) FROM dvr_h264_epochs WHERE source_id = ?1",
     )
     .bind(source.as_str())
-    .fetch_one(store.pool())
+    .fetch_one(store.media_pool())
     .await
     .unwrap();
     assert_eq!(distinct_init, 2);
@@ -198,7 +198,7 @@ async fn retention_drops_chunks_but_keeps_referenced_epochs() {
     let epochs: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM dvr_h264_epochs WHERE source_id = ?1")
             .bind(source.as_str())
-            .fetch_one(store.pool())
+            .fetch_one(store.media_pool())
             .await
             .unwrap();
     assert_eq!(epochs, 1);
@@ -206,7 +206,7 @@ async fn retention_drops_chunks_but_keeps_referenced_epochs() {
         "SELECT COUNT(*) FROM dvr_frames WHERE source_id = ?1 AND payload_ready = 1",
     )
     .bind(source.as_str())
-    .fetch_one(store.pool())
+    .fetch_one(store.media_pool())
     .await
     .unwrap();
     assert_eq!(frames, 1);
@@ -253,7 +253,7 @@ async fn hook_failures_do_not_rollback_commits() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dvr_frames WHERE source_id = ?1")
         .bind(source.as_str())
-        .fetch_one(store.pool())
+        .fetch_one(store.media_pool())
         .await
         .unwrap();
     assert_eq!(count, 1);
