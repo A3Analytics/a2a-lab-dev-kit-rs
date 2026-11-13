@@ -22,7 +22,13 @@ thread_local! {
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
     static OBJECT_URL: RefCell<Option<String>> = const { RefCell::new(None) };
     static SESSION_EPOCH: Cell<u32> = const { Cell::new(0) };
-    static CLOCK_ANCHOR: Cell<Option<(f64, i64)>> = const { Cell::new(None) };
+    static CLOCK_ANCHORS: RefCell<Vec<SegmentClock>> = const { RefCell::new(Vec::new()) };
+}
+
+struct SegmentClock {
+    media_start: f64,
+    media_end: f64,
+    captured_us: i64,
 }
 
 fn bump_session_epoch() -> u32 {
@@ -73,7 +79,7 @@ pub fn is_active() -> bool {
 
 pub fn teardown() {
     ACTIVE.with(|slot| slot.set(false));
-    CLOCK_ANCHOR.with(|slot| slot.set(None));
+    CLOCK_ANCHORS.with(|slot| slot.borrow_mut().clear());
     clear_hls_guard();
     if let Some(url) = OBJECT_URL.with(|slot| slot.borrow_mut().take()) {
         let _ = web_sys::Url::revoke_object_url(&url);
@@ -92,12 +98,28 @@ pub fn teardown() {
 }
 
 pub fn current_frame_time(video: &HtmlVideoElement) -> Option<String> {
-    let (media_secs, captured_us) = CLOCK_ANCHOR.with(Cell::get)?;
+    CLOCK_ANCHORS.with(|slot| {
+        let captured_us = frame_time_us(&slot.borrow(), video.current_time())?;
+        Some(crate::videos::track::format_utc(captured_us))
+    })
+}
+
+fn frame_time_us(anchors: &[SegmentClock], media_secs: f64) -> Option<i64> {
+    let segment = anchors
+        .iter()
+        .rev()
+        .find(|segment| {
+            media_secs >= segment.media_start - 0.05 && media_secs < segment.media_end + 0.05
+        })
+        .or_else(|| {
+            anchors
+                .iter()
+                .rev()
+                .find(|segment| segment.media_start <= media_secs + 0.05)
+        })?;
     #[allow(clippy::cast_possible_truncation)]
-    let elapsed_us = ((video.current_time() - media_secs) * 1_000_000.0) as i64;
-    Some(crate::videos::track::format_utc(
-        captured_us.saturating_add(elapsed_us),
-    ))
+    let elapsed_us = ((media_secs - segment.media_start) * 1_000_000.0) as i64;
+    Some(segment.captured_us.saturating_add(elapsed_us))
 }
 
 pub fn prepare_player() {
@@ -392,9 +414,6 @@ async fn append_segments(
         if segment.discontinuity_before {
             playback::notify_gap_skipped(generation);
         }
-        if let Some(stamp) = segment.program_date_time.as_deref() {
-            playback::notify_frame(generation, stamp);
-        }
     }
     Ok(())
 }
@@ -417,7 +436,13 @@ fn update_clock_anchor(source_buffer: &SourceBuffer, segment: &crate::videos::hl
         return;
     };
     let start = end - segment.duration_secs.max(0.0);
-    CLOCK_ANCHOR.with(|slot| slot.set(Some((start, captured_us))));
+    CLOCK_ANCHORS.with(|slot| {
+        slot.borrow_mut().push(SegmentClock {
+            media_start: start,
+            media_end: end,
+            captured_us,
+        });
+    });
 }
 
 async fn refresh_live(
@@ -549,6 +574,9 @@ fn seek_to_playlist_start(
 }
 
 fn skip_forward_if_gapped(generation: u32, video: &HtmlVideoElement, buffer: &SourceBuffer) {
+    if video.seeking() {
+        return;
+    }
     let t = video.current_time();
     let Ok(ranges) = buffer.buffered() else {
         return;
