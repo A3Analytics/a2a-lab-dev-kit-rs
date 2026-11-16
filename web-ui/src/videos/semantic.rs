@@ -1016,6 +1016,10 @@ mod tests {
             hits[0].browse_href().as_deref(),
             Some("/ui/videos?source_id=cam-a&at=2024-01-01T00%3A00%3A01Z&autoplay=false")
         );
+        let command = search_command("cam-a", None, "red", &pick);
+        assert!(command.pointer("/params/limits/score_floor").is_none());
+        assert!(!command.to_string().contains("score_floor"));
+        assert!(!command.to_string().contains("ranking"));
         assert_eq!(hits[0].description_model, "global.openai.gpt-5.6-luna");
         let mut blocked = fixture_hit();
         blocked

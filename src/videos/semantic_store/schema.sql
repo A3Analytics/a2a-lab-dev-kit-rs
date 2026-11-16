@@ -222,3 +222,32 @@ CREATE TABLE IF NOT EXISTS frame_decision_evaluation_job_runtime (
     PRIMARY KEY (job_id),
     FOREIGN KEY (job_id) REFERENCES frame_decision_evaluation_jobs (job_id) ON DELETE CASCADE
 );
+
+-- FTS5 lexical index. Post-migration PRAGMA user_version is 1
+-- (`SemanticSqliteStore::USER_VERSION`). unicode61 tokenizes English lab text.
+CREATE VIRTUAL TABLE IF NOT EXISTS semantic_frame_descriptions_fts USING fts5(
+    frame_id UNINDEXED,
+    description_text,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS semantic_frame_descriptions_fts_ai
+AFTER INSERT ON semantic_frame_descriptions
+BEGIN
+    INSERT INTO semantic_frame_descriptions_fts(frame_id, description_text)
+    VALUES (new.frame_id, new.description_text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_frame_descriptions_fts_ad
+AFTER DELETE ON semantic_frame_descriptions
+BEGIN
+    DELETE FROM semantic_frame_descriptions_fts WHERE frame_id = old.frame_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_frame_descriptions_fts_au
+AFTER UPDATE OF description_text ON semantic_frame_descriptions
+BEGIN
+    DELETE FROM semantic_frame_descriptions_fts WHERE frame_id = old.frame_id;
+    INSERT INTO semantic_frame_descriptions_fts(frame_id, description_text)
+    VALUES (new.frame_id, new.description_text);
+END;

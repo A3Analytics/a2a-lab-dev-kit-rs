@@ -258,6 +258,76 @@ impl SemanticChunkDvrStore {
         Ok(ManifestSearchCandidateScan { records, truncated })
     }
 
+    /// BM25 FTS candidate scan using the same identity predicates as vector search.
+    pub async fn scan_semantic_lexical_candidates(
+        &self,
+        source_id: &str,
+        range_start_us: i64,
+        range_end_us: i64,
+        filter: &ManifestSearchCandidateFilter,
+        match_query: &str,
+        scan_limit: u32,
+        offset: u32,
+    ) -> Result<ManifestSearchCandidateScan, A2aLabError> {
+        if scan_limit == 0 {
+            return Err(A2aLabError::invalid(
+                "candidate_limit",
+                "must be greater than zero",
+            ));
+        }
+        let space = &filter.model_space;
+        let generation = i64::try_from(filter.description_generation).unwrap_or(i64::MAX);
+        let fetch_limit = i64::from(scan_limit.saturating_add(1));
+        let rows = sqlx::query(
+            "SELECT rev.frame_id, rev.store_namespace, rev.source_id, rev.track_id, rev.start_us,
+                    rev.end_us, rev.payload_sha256, rev.payload_crc32, rev.capture_group,
+                    rev.retained_state, rev.search_current, rev.revision_seq,
+                    rev.description_checkpoint, rev.embedding_checkpoint
+             FROM semantic_frame_descriptions_fts fts
+             INNER JOIN semantic_frame_revisions rev ON rev.frame_id = fts.frame_id
+             INNER JOIN semantic_frame_descriptions desc ON desc.frame_id = rev.frame_id
+             INNER JOIN semantic_frame_embeddings emb ON emb.frame_id = rev.frame_id
+             WHERE fts.description_text MATCH ?1
+               AND rev.source_id = ?2
+               AND rev.start_us >= ?3
+               AND rev.start_us < ?4
+               AND rev.search_current = 1
+               AND rev.retained_state = 'retained'
+               AND desc.description_generation = ?5
+               AND emb.embedding_provider = ?6
+               AND emb.embedding_model = ?7
+               AND emb.dimensions = ?8
+               AND emb.normalization = ?9
+               AND emb.metric = ?10
+               AND emb.embedding_vector IS NOT NULL
+               AND length(emb.embedding_vector) > 0
+             ORDER BY bm25(semantic_frame_descriptions_fts), rev.start_us DESC, rev.frame_id DESC
+             LIMIT ?11 OFFSET ?12",
+        )
+        .bind(match_query)
+        .bind(source_id)
+        .bind(range_start_us)
+        .bind(range_end_us)
+        .bind(generation)
+        .bind(space.provider())
+        .bind(space.model())
+        .bind(i64::from(space.dimensions()))
+        .bind(normalization_label(space.normalization()))
+        .bind(metric_label(space.metric()))
+        .bind(fetch_limit)
+        .bind(i64::from(offset))
+        .fetch_all(self.semantic_pool())
+        .await
+        .map_err(db_error)?;
+        let scan_usize = usize::try_from(scan_limit).unwrap_or(usize::MAX);
+        let truncated = rows.len() > scan_usize;
+        let mut records = Vec::new();
+        for row in rows.iter().take(scan_usize) {
+            records.push(self.record_from_row(row).await?);
+        }
+        Ok(ManifestSearchCandidateScan { records, truncated })
+    }
+
     /// Refreshes candidate media status from retained DVR bytes before ranking.
     pub async fn reconcile_search_media_availability(
         &self,
