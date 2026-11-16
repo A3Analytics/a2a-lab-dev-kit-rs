@@ -8,16 +8,18 @@ use a2a_lab_dev_kit::{
     A2aLabCommand, A2aLabResult, A2aLabService, A2aServer, DecisionEvaluationCoverage,
     DecisionEvidenceItem, DecisionIdempotencyKey, DecisionOutcome, DecisionSubject,
     DvrStoreNamespace, DvrTrackId, EmbeddingMetric, FakeFrameDecisionLedgerProvider,
-    FakeSemanticVideoSearchProvider, FrameDecisionEvaluatorLimits,
+    FakeSemanticHit, FakeSemanticVideoSearchProvider, FrameDecisionEvaluatorLimits,
     FrameDecisionEvaluatorProviderConfig, FrameDecisionRecord, FrameDescriptionProvenance,
     FrameRoiTransform, FrameVectorIndexAttachment, GetSemanticSearchCapabilitiesRequest,
     GetVideoTimelineRequest, JevEvaluationId, JevEvaluationProvenance, JevProducerIdentity,
     JevStructuredOutput, LabPredicate, MJPEG_MEDIA_TYPE, MemoryLogs, MemoryMetrics, MemoryTasks,
     MemoryVideos, ModelSpaceIdentity, PipetteChannelSubject, ProvenanceGeneration, SavedFrameRef,
+    SemanticFrameHit, SemanticFrameIndexState, SemanticFrameMediaAvailability,
     SemanticFramePlaybackNeighbors, SemanticIndexingCoverage, SemanticIndexingFreshness,
-    SemanticIndexingStateCounts, SemanticProvenanceSelector, SemanticSearchScope,
-    SemanticVideoSearchProvider, Sha256Digest, TextEmbeddingProvenance, TimeRange, UtcTimestamp,
-    VideoProvider, VideoSource, VideoSourceId, bind_local, fake_semantic_hit,
+    SemanticIndexingStateCounts, SemanticProvenanceSelector, SemanticRetrievalScore,
+    SemanticSearchScope, SemanticVideoSearchProvider, Sha256Digest, TextEmbeddingProvenance,
+    TimeRange, UtcTimestamp, VideoProvider, VideoSource, VideoSourceId, bind_local,
+    fake_semantic_hit,
 };
 use a2a_lab_dev_kit::{FrameDecisionLedgerProvider, FrameEmbeddingVector, VectorNormalization};
 
@@ -127,6 +129,14 @@ async fn browser_videos_semantic_search_result_states() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn browser_videos_semantic_hits_open_browse_deep_links() {
+    let base = linked_hit_lab().await;
+    tokio::task::spawn_blocking(move || linked_hit_flow(&base))
+        .await
+        .unwrap();
+}
+
 const SEMANTIC_SEARCH_LOADING_HELD: &str = r"document.getElementById('video-search-result-state')?.dataset.state === 'loading'
   && document.getElementById('video-semantic-search-loading')
   && document.getElementById('video-semantic-status')?.dataset.loading === 'true'
@@ -206,6 +216,13 @@ async fn semantic_lab() -> String {
         "2024-01-01T00:00:07Z",
     ] {
         insert_frame(&videos, "cam-a", at).await;
+    }
+    for at in [
+        "2024-01-01T00:00:00Z",
+        "2024-01-01T00:00:01Z",
+        "2024-01-01T00:00:02Z",
+    ] {
+        insert_frame(&videos, "cam-b", at).await;
     }
     let semantic = paged_semantic_provider();
     let decisions = decision_provider(&frame_payload()).unwrap();
@@ -406,6 +423,35 @@ fn semantic_flow(base: &str) {
     );
     page.click("video-semantic-previous");
     page.wait_until("document.getElementById('video-semantic-hit-0')");
+    page.wait_until("document.getElementById('video-semantic-detail')");
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-0')?.tagName"),
+        serde_json::json!("A"),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-0')?.getAttribute('href')"),
+        serde_json::json!("/ui/videos?source_id=cam-a&at=2024-01-01T00%3A00%3A01Z&autoplay=false"),
+    );
+    assert_eq!(
+        page.eval(
+            r#"document.querySelector('#video-semantic-hits [data-source="cam-b"]')?.getAttribute('href')"#,
+        ),
+        serde_json::json!(
+            "/ui/videos?source_id=cam-b&at=2024-01-01T00%3A00%3A01Z&autoplay=false"
+        ),
+    );
+    assert_eq!(
+        page.eval("document.querySelector('#video-semantic-hit-0 time')?.tagName"),
+        serde_json::json!("TIME"),
+    );
+    assert_eq!(
+        page.eval("document.querySelector('#video-semantic-hit-0 time a')"),
+        serde_json::json!(null),
+    );
+    assert_eq!(
+        page.eval("document.querySelector('#video-semantic-hit-0 time')?.closest('a')?.id"),
+        serde_json::json!("video-semantic-hit-0"),
+    );
     page.wait_until("document.querySelector('[data-chip=\"search\"]')");
     page.eval(
         r"(() => {
@@ -418,8 +464,6 @@ fn semantic_flow(base: &str) {
             return start.value === '2024-01-01T00:00:00' && end.value === '2024-01-01T00:00:10';
         })()",
     );
-    page.click("video-semantic-hit-0");
-    page.wait_until("document.getElementById('video-semantic-detail')");
     let html = page
         .eval("(() => document.getElementById('video-semantic-detail')?.innerHTML ?? '')()")
         .as_str()
@@ -440,6 +484,10 @@ fn semantic_flow(base: &str) {
     assert_eq!(index_state, "ready");
     page.wait_until(
         "document.querySelector('#video-decision-row-0')?.dataset.outcome === 'present'",
+    );
+    assert_eq!(
+        page.eval("document.querySelector('#video-decision-row-0 a')"),
+        serde_json::json!(null),
     );
     let decision_outcome = page
         .eval("(() => document.querySelector('#video-decision-row-0')?.dataset.outcome ?? '')()")
@@ -491,8 +539,6 @@ fn semantic_overflow_flow(base: &str) {
         Some(&serde_json::json!(true)),
         "narrow viewport overflow report: {narrow}"
     );
-    page.click("video-semantic-hit-0");
-    page.wait_until("document.getElementById('video-semantic-detail')");
     let selected = page.eval(SEMANTIC_OVERFLOW_CHECK);
     assert_eq!(
         selected.get("pass"),
@@ -515,7 +561,6 @@ fn semantic_result_states_flow(base: &str) {
     page.click_selector("#video-semantic-submit");
     page.wait_until("document.querySelector('#video-semantic-hits .video-semantic-hit')");
     page.wait_until("document.getElementById('video-semantic-pagination')");
-    page.click("video-semantic-hit-0");
     page.wait_until("document.getElementById('video-semantic-detail')");
 
     page.eval("window.__holdNextSemanticSearch()");
@@ -525,6 +570,18 @@ fn semantic_result_states_flow(base: &str) {
     assert_eq!(
         page.eval("document.getElementById('video-search-result-state')?.dataset.state"),
         serde_json::json!("loading"),
+    );
+    assert_eq!(
+        page.eval(
+            "document.querySelectorAll('#video-semantic-search-loading .strand-loader').length"
+        ),
+        serde_json::json!(1),
+    );
+    assert_eq!(
+        page.eval(
+            "document.querySelectorAll('#video-search-result-state .loading-surface').length"
+        ),
+        serde_json::json!(1),
     );
     assert_eq!(
         page.eval("document.getElementById('video-semantic-hits')?.hidden"),
@@ -585,6 +642,204 @@ fn semantic_result_states_flow(base: &str) {
         page.eval("document.getElementById('video-semantic-hits')?.hidden"),
         serde_json::json!(true),
     );
+}
+
+const BROWSE_CAM_A: &str = "!document.getElementById('video-browse-panel')?.hidden && document.getElementById('video-source')?.value === 'cam-a' && decodeURIComponent(location.search).includes('source_id=cam-a') && decodeURIComponent(location.search).includes('autoplay=false')";
+const BROWSE_CAM_B: &str = "!document.getElementById('video-browse-panel')?.hidden && document.getElementById('video-source')?.value === 'cam-b' && decodeURIComponent(location.search).includes('source_id=cam-b') && decodeURIComponent(location.search).includes('autoplay=false')";
+const SEARCH_HITS: &str = "document.querySelector('#video-search-panel:not([hidden]) #video-semantic-hits .video-semantic-hit')";
+
+fn linked_hit_flow(base: &str) {
+    let mut page = Browser::open(&format!("{base}/ui/"));
+    page.wait_until(CONNECTED);
+    page.show("#videos");
+    page.click("video-search-tab");
+    page.wait_until(
+        "document.getElementById('video-semantic-capability')?.dataset.state === 'ready'",
+    );
+    page.set_value("video-semantic-query", "pipette");
+    page.click_selector("#video-semantic-submit");
+    page.wait_until(SEARCH_HITS);
+    page.wait_until("document.getElementById('video-semantic-detail')");
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-0')?.getAttribute('href')"),
+        serde_json::json!("/ui/videos?source_id=cam-a&at=2024-01-01T00%3A00%3A01Z&autoplay=false"),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-1')?.getAttribute('href')"),
+        serde_json::json!("/ui/videos?source_id=cam-b&at=2024-01-01T00%3A00%3A01Z&autoplay=false"),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-2')?.tagName"),
+        serde_json::json!("BUTTON"),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-2')?.getAttribute('href')"),
+        serde_json::json!(null),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-hit-2')?.disabled"),
+        serde_json::json!(true),
+    );
+    assert_hit_timestamps_share_row_href(&mut page);
+    let html = page
+        .eval("(() => document.getElementById('video-semantic-detail')?.innerHTML ?? '')()")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    assert!(html.contains("Search metadata (Luna)"));
+    assert!(html.contains("Frame decisions (Jev)"));
+
+    page.click("video-semantic-hit-2");
+    assert_eq!(
+        page.eval("location.pathname.endsWith('/videos/search')"),
+        serde_json::json!(true),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-browse-panel')?.hidden"),
+        serde_json::json!(true),
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-source')?.value"),
+        serde_json::json!("cam-a"),
+    );
+
+    page.click("video-semantic-hit-0");
+    page.wait_until(BROWSE_CAM_A);
+    let same_source_search = page
+        .eval("decodeURIComponent(location.search)")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+
+    page.click("video-search-tab");
+    page.wait_until(SEARCH_HITS);
+    page.click("video-semantic-hit-1");
+    page.wait_until(BROWSE_CAM_B);
+
+    let mut direct = Browser::open(&format!(
+        "{base}/ui/videos?source_id=cam-a&at=2024-01-01T00%3A00%3A01Z&autoplay=false"
+    ));
+    direct.wait_until(CONNECTED);
+    direct.wait_until(BROWSE_CAM_A);
+    assert_eq!(
+        direct.eval("decodeURIComponent(location.search)"),
+        serde_json::json!(same_source_search),
+    );
+}
+
+fn assert_hit_timestamps_share_row_href(page: &mut Browser) {
+    assert_eq!(
+        page.eval("document.querySelector('#video-semantic-hit-0 time')?.tagName"),
+        serde_json::json!("TIME"),
+    );
+    assert_eq!(
+        page.eval("document.querySelector('#video-semantic-hit-0 time a')"),
+        serde_json::json!(null),
+    );
+    assert_eq!(
+        page.eval("document.querySelector('#video-semantic-hit-0 time')?.closest('a')?.id"),
+        serde_json::json!("video-semantic-hit-0"),
+    );
+    page.wait_until("document.querySelector('#video-decision-row-0')");
+    assert_eq!(
+        page.eval("document.querySelector('#video-decision-row-0 a')"),
+        serde_json::json!(null),
+    );
+}
+
+async fn linked_hit_lab() -> String {
+    let videos = filled_videos().await;
+    insert_source(&videos, "cam-b", "Camera B").await;
+    for at in [
+        "2024-01-01T00:00:00Z",
+        "2024-01-01T00:00:01Z",
+        "2024-01-01T00:00:02Z",
+    ] {
+        insert_frame(&videos, "cam-b", at).await;
+    }
+    let semantic = linked_semantic_provider();
+    let decisions = decision_provider(&frame_payload()).unwrap();
+    serve(
+        A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+            .with_videos(videos)
+            .with_semantic_search(semantic)
+            .with_frame_decisions(decisions)
+            .share(),
+    )
+    .await
+}
+
+fn linked_semantic_provider() -> Arc<dyn SemanticVideoSearchProvider> {
+    let mut provider = FakeSemanticVideoSearchProvider::available();
+    let attachment = attachment(1, b"A pipette tip is visible on channel one.");
+    let cam_a = frame_at("2024-01-01T00:00:01Z");
+    provider.insert_hit(
+        fake_semantic_hit(
+            cam_a.clone(),
+            attachment.clone(),
+            "A pipette tip is visible on channel one.",
+            0.92,
+            neighbors(&cam_a),
+        )
+        .unwrap(),
+    );
+    let cam_b = frame_for("cam-b", "2024-01-01T00:00:01Z");
+    provider.insert_hit(
+        fake_semantic_hit(
+            cam_b.clone(),
+            attachment.clone(),
+            "A pipette tip is visible on the external camera.",
+            0.91,
+            neighbors(&cam_b),
+        )
+        .unwrap(),
+    );
+    let blocked = frame_at("2024-01-01T00:00:02Z");
+    provider.insert_hit(blocked_semantic_hit(
+        blocked,
+        attachment,
+        "A pipette tip is expired from retained playback.",
+    ));
+    provider.set_coverage(SemanticIndexingCoverage::new(
+        scope(),
+        model_space(1),
+        SemanticIndexingStateCounts::new(0, 2, 0, 1),
+        SemanticIndexingFreshness::new(
+            None,
+            Some(UtcTimestamp::parse("2024-01-01T00:00:02Z").unwrap()),
+            None,
+        ),
+        true,
+    ));
+    provider.set_active_provenance(selector(1));
+    Arc::new(provider)
+}
+
+fn blocked_semantic_hit(
+    frame: SavedFrameRef,
+    attachment: FrameVectorIndexAttachment,
+    description: &str,
+) -> FakeSemanticHit {
+    let playback = neighbors(&frame);
+    let retrieval = SemanticRetrievalScore::new(0.5, attachment.model_space().metric()).unwrap();
+    let hit = SemanticFrameHit::new(
+        frame,
+        description,
+        &attachment,
+        retrieval,
+        SemanticFrameIndexState::Expired,
+        SemanticFrameMediaAvailability::Unavailable {
+            reason: "retention_expired".to_owned(),
+        },
+        playback,
+        None,
+    )
+    .unwrap();
+    FakeSemanticHit {
+        hit,
+        attachment,
+        description_text: description.to_owned(),
+    }
 }
 
 async fn filled_videos() -> MemoryVideos {

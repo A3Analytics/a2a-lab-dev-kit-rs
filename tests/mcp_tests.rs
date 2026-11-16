@@ -84,9 +84,13 @@ async fn assert_lab_tools(client: &impl ToolClient) {
     assert_eq!(
         names,
         [
+            "append_frame_decision",
             "follow_video",
             "get_current_image",
+            "get_frame_decision_capabilities",
             "get_image",
+            "get_semantic_indexing_coverage",
+            "get_semantic_search_capabilities",
             "get_task_status",
             "get_video_clip",
             "get_video_frame_at",
@@ -99,7 +103,9 @@ async fn assert_lab_tools(client: &impl ToolClient) {
             "list_video_sources",
             "query_logs",
             "query_metric",
+            "read_frame_decision_history",
             "search_images",
+            "search_semantic_frames",
             "start_task",
         ]
     );

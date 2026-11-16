@@ -200,7 +200,13 @@ pub fn package_h264_live_snapshot(
 ) -> Result<EpochHlsSession, A2aLabError> {
     let retention = live_retention_bounds(snapshot)?;
     let window = live_anchor_window(anchor, playback_window_us, &retention)?;
-    let selected = live_segments_in_window(snapshot, window)?;
+    let mut selected = live_segments_in_window(snapshot, window)?;
+    if kind == EpochPlaylistKind::Live
+        && let Some(latest) = snapshot.samples().last()
+    {
+        let edge = latest.captured_at();
+        selected.retain(|segment| segment.range().start() != edge);
+    }
     if selected.is_empty() {
         return Err(A2aLabError::no_recording(
             "live playback window contains no samples",

@@ -1,11 +1,17 @@
 //! Bounded semantic indexing provider contracts (description and text embeddings).
 
+mod description_worker;
+mod embedding_worker;
 mod failure;
 mod fakes;
 mod frame_description;
+mod providers;
+mod queue;
 mod text_embedding;
 mod worker;
 
+pub use description_worker::DescriptionStageWorker;
+pub use embedding_worker::EmbeddingStageWorker;
 pub use failure::SemanticIndexingFailure;
 pub use fakes::{
     FakeDescriptionBehavior, FakeEmbeddingBehavior, FakeFrameDescriptionProvider,
@@ -17,6 +23,8 @@ pub use frame_description::{
     FrameDescriptionProviderConfig, FrameDescriptionRequest, KeyedFrameDescription,
     validate_description_batch,
 };
+pub use providers::deterministic_indexing_providers;
+pub use queue::{IndexingWorkerBatchReport, IndexingWorkerFaults, SemanticIndexingProviders};
 pub use text_embedding::{
     KeyedTextEmbedding, TextEmbeddingKey, TextEmbeddingLimits, TextEmbeddingProvider,
     TextEmbeddingProviderConfig, TextEmbeddingRequest, validate_embedding_batch,

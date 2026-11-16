@@ -471,7 +471,7 @@ const VISUAL: &str = r"( () => {
   }).map((node) => node.textContent.trim()).filter((title) => ['Agent', 'Logs', 'Metrics', 'Tasks', 'Images', 'Videos', 'Chat'].includes(title));
   const heading = document.getElementById('video-view-heading')?.textContent.trim() === 'Videos';
   const body = getComputedStyle(document.body);
-  const browser = document.getElementById('video-browser');
+  const browser = document.getElementById('video-browse-panel') || document.getElementById('video-browser');
   const details = document.getElementById('video-details');
   if (details) details.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   const alert = document.getElementById('video-alert');

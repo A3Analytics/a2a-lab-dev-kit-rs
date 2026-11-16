@@ -4,6 +4,8 @@ use dioxus::prelude::*;
 use web_sys::AbortController;
 
 use super::speed_control::{lock_live_speed, sync_live_speed};
+use super::timeline_refresh::fetch_timeline;
+use super::video_tabs::browse_streaming_allowed;
 use super::{
     Band, COMMANDS, CommandFlight, DRAG, Drag, SUPPRESS_CLICK, VideoUi, bound, launch_clip,
     launch_meta,
@@ -78,12 +80,20 @@ pub(super) fn reselect_range() {
     }
 }
 
-pub(super) fn commit_at(at_us: i64) {
+pub(super) fn commit_at(at_us: i64, autoplay: bool) {
     super::arm_browse_stream_for_timeline();
-    super::fetch_timeline(move |_| play_at(at_us));
+    if current_track().is_some() {
+        play_at(at_us, autoplay);
+        return;
+    }
+    fetch_timeline(move |_| play_at(at_us, autoplay));
 }
 
-fn play_at(at_us: i64) {
+fn play_at(at_us: i64, autoplay: bool) {
+    super::arm_browse_stream_for_timeline();
+    if !browse_streaming_allowed() {
+        return;
+    }
     let Some(track) = current_track() else {
         return;
     };
@@ -100,7 +110,10 @@ fn play_at(at_us: i64) {
             return;
         };
         remember(&mut next, selection);
-        request_session(&mut next, session);
+        if !autoplay {
+            next.reader.frame_time = track::format_utc(at_us);
+        }
+        request_session(&mut next, session, autoplay);
         ui.set(next);
         return;
     }
@@ -108,18 +121,18 @@ fn play_at(at_us: i64) {
         return;
     };
     ui.set(next);
-    commit_selection(session, Some(at_us));
+    commit_selection(session, Some(at_us), autoplay);
 }
 
 pub(super) fn replay_retained_start() {
-    super::fetch_timeline(move |_| {
+    fetch_timeline(move |_| {
         let Some(track) = current_track() else {
             return;
         };
         let Some(window) = track::initial_window(&track) else {
             return;
         };
-        commit_selection(window, Some(window.start_us));
+        commit_selection(window, Some(window.start_us), true);
     });
 }
 
@@ -132,10 +145,10 @@ pub(super) fn commit_established() {
     let Some(window) = track::establish(&track, current, newest) else {
         return;
     };
-    commit_selection(window, Some(window.start_us));
+    commit_selection(window, Some(window.start_us), true);
 }
 
-fn commit_selection(selection: Window, anchor: Option<i64>) {
+fn commit_selection(selection: Window, anchor: Option<i64>, autoplay: bool) {
     let Some(track) = current_track() else {
         return;
     };
@@ -150,7 +163,10 @@ fn commit_selection(selection: Window, anchor: Option<i64>) {
     };
     let mut next = ui.peek().clone();
     remember(&mut next, selection);
-    request_session(&mut next, session);
+    if !autoplay {
+        next.reader.frame_time = track::format_utc(anchor);
+    }
+    request_session(&mut next, session, autoplay);
     ui.set(next);
 }
 
@@ -163,18 +179,25 @@ pub(super) fn replay_session() {
         return;
     };
     let mut next = ui.peek().clone();
-    request_session(&mut next, session);
+    request_session(&mut next, session, true);
     ui.set(next);
 }
 
-fn request_session(next: &mut VideoUi, session: Window) {
+fn request_session(next: &mut VideoUi, session: Window, autoplay: bool) {
+    if !browse_streaming_allowed() {
+        return;
+    }
     next.session = Some(session);
     let start = track::format_utc(session.start_us);
     let end = track::format_utc(session.end_us);
     playback::abort();
     abort_commands();
-    playback::set_paused(false);
-    playback::play_element();
+    playback::set_paused(!autoplay);
+    if autoplay {
+        playback::play_element();
+    } else {
+        playback::pause_element();
+    }
     let ticket = match next.reader.select_range(&start, &end) {
         Ok(ticket) => ticket,
         Err(_) => {
@@ -182,6 +205,10 @@ fn request_session(next: &mut VideoUi, session: Window) {
             return;
         }
     };
+    if !autoplay {
+        next.reader.frame_time = start;
+        let _ = next.reader.pause();
+    }
     launch_clip(ticket);
 }
 
@@ -308,7 +335,7 @@ pub(super) fn timeline_up(event: Event<PointerData>) {
     SUPPRESS_CLICK.with(|cell| cell.set(true));
     let x = event.data().client_coordinates().x;
     let at_us = held_at(x).unwrap_or(drag.at_us);
-    commit_at(at_us);
+    commit_at(at_us, true);
 }
 
 fn held_at(x: f64) -> Option<i64> {
@@ -482,7 +509,7 @@ pub(super) fn timeline_click(event: Event<MouseData>) {
     let Some(at_us) = us_at(event.data().client_coordinates().x) else {
         return;
     };
-    commit_at(at_us);
+    commit_at(at_us, true);
 }
 
 pub(super) fn commit_typed_range() {
@@ -522,7 +549,7 @@ fn commit_typed_bounds(start: &str, end: &str) {
         return;
     }
     ui.set(next);
-    commit_selection(selection, Some(selection.start_us));
+    commit_selection(selection, Some(selection.start_us), true);
 }
 
 fn remember(next: &mut VideoUi, window: Window) {

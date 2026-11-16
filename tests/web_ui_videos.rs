@@ -47,6 +47,29 @@ async fn browser_videos_sends_bearer_only_in_headers() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn browser_videos_playhead_timestamp_links_retained_frame() {
+    let filled = playhead_link_lab().await;
+    let empty = empty_lab().await;
+    tokio::task::spawn_blocking(move || playhead_link_flow(&filled, &empty))
+        .await
+        .unwrap();
+}
+
+async fn playhead_link_lab() -> String {
+    let videos = MemoryVideos::new();
+    insert_source(&videos, "cam-a", "Camera A").await;
+    for at in [
+        "2024-01-01T00:00:00Z",
+        "2024-01-01T00:00:01Z",
+        "2024-01-01T00:00:02Z",
+    ] {
+        insert_frame(&videos, "cam-a", at).await;
+    }
+    insert_source(&videos, "cam-c", "Camera C").await;
+    serve(videos, false).await
+}
+
 async fn filled_lab() -> (String, MemoryVideos) {
     let videos = MemoryVideos::new();
     insert_source(&videos, "cam-a", "Camera A").await;
@@ -191,6 +214,71 @@ fn flow(filled: &str, empty: &str, videos: &MemoryVideos, handle: &tokio::runtim
     assert_empty(empty);
 }
 
+fn playhead_link_flow(filled: &str, empty: &str) {
+    let mut page = Browser::open(&format!("{filled}/ui/"));
+    page.wait_until(CONNECTED);
+    page.show("#videos");
+    page.wait_until(
+        "document.getElementById('video-interval-0') && document.getElementById('video-source') instanceof HTMLSelectElement",
+    );
+    play_coverage(&mut page);
+    let captured_at = assert_playhead_href_matches_encode(&mut page);
+    page.click("video-timeline-now");
+    page.wait_until(&format!(
+        "!document.getElementById('video-browse-panel')?.hidden && document.getElementById('video-source')?.value === 'cam-a' && decodeURIComponent(location.search).includes('source_id=cam-a') && decodeURIComponent(location.search).includes({captured}) && !document.getElementById('video-player')?.hidden && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'connecting' || document.getElementById('video-status')?.dataset.state === 'stopped')",
+        captured = serde_json::to_string(&captured_at).unwrap_or_default()
+    ));
+    choose_video_source(&mut page, "cam-c");
+    page.wait_until(
+        "document.getElementById('video-source')?.value === 'cam-c' && document.getElementById('video-timeline')?.dataset.empty === 'true' && document.getElementById('video-timeline-now')",
+    );
+    assert_timeline_now_is_plain(&mut page);
+
+    let mut empty_page = Browser::open(&format!("{empty}/ui/"));
+    empty_page.wait_until(CONNECTED);
+    empty_page.show("#videos");
+    empty_page.wait_until(
+        "document.getElementById('video-source-status')?.textContent.includes('No video sources') && document.getElementById('video-timeline-now')",
+    );
+    assert_timeline_now_is_plain(&mut empty_page);
+}
+
+fn assert_playhead_href_matches_encode(page: &mut Browser) -> String {
+    page.wait_until(
+        "document.getElementById('video-timeline-now')?.tagName === 'A' && (document.getElementById('video-status')?.dataset.frameTime || '').includes('2024-01-01T00:00:0')",
+    );
+    let linked = page.eval(
+        r"(() => {
+            const source = document.getElementById('video-source')?.value || '';
+            const at = document.getElementById('video-status')?.dataset.frameTime || '';
+            const stamp = document.getElementById('video-timeline-now');
+            const expected = '/ui/videos?source_id=' + encodeURIComponent(source) + '&at=' + encodeURIComponent(at) + '&autoplay=true';
+            return {
+                source,
+                at,
+                tag: stamp?.tagName || '',
+                href: stamp?.getAttribute('href') || '',
+                expected,
+                match: stamp?.getAttribute('href') === expected
+            };
+        })()",
+    );
+    assert_eq!(linked["tag"], serde_json::json!("A"), "{linked}");
+    assert_eq!(linked["match"], serde_json::json!(true), "{linked}");
+    linked["at"].as_str().unwrap_or_default().to_owned()
+}
+
+fn assert_timeline_now_is_plain(page: &mut Browser) {
+    assert_eq!(
+        page.eval("document.getElementById('video-timeline-now')?.tagName"),
+        serde_json::json!("P")
+    );
+    assert_eq!(
+        page.eval("document.getElementById('video-timeline-now')?.getAttribute('href')"),
+        serde_json::json!(null)
+    );
+}
+
 fn bearer_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until(CONNECTED);
@@ -246,7 +334,7 @@ fn assert_shell(page: &mut Browser) {
     assert!((width - 240.0).abs() < 8.0, "{width}");
     assert_eq!(
         page.eval("document.querySelectorAll('#video-view [role=tab]').length"),
-        serde_json::json!(0)
+        serde_json::json!(2)
     );
     assert_eq!(
         page.eval("document.querySelectorAll('#video-player').length"),

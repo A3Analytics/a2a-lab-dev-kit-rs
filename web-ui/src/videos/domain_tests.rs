@@ -247,6 +247,7 @@ fn stable_codes_drive_retry_and_reselection_without_message_text() {
     );
     assert!(reader.can_retry());
     let retried = reader.retry().unwrap();
+    assert_eq!(reader.playback, Playback::Connecting);
     assert!(matches!(retried.kind, Kind::Clip { .. }));
     assert_eq!(reader.source_id, "cam");
     assert!(!reader.fail_media(clip.generation, &media_error("clip_expired", "stale")));

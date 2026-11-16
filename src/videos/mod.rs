@@ -62,6 +62,7 @@ mod nokhwa_frame;
 mod packager;
 mod provider;
 mod saved_frame;
+mod semantic_dvr;
 mod semantic_indexing;
 mod semantic_search;
 mod semantic_store;
@@ -217,20 +218,32 @@ pub use packager::{
 };
 pub use provider::VideoProvider;
 pub use saved_frame::{SavedFrameRef, derive_frame_id};
+pub use semantic_dvr::{
+    DEFAULT_RECONCILE_BATCH, INDEXING_PRIORITY_BACKFILL, INDEXING_PRIORITY_LIVE,
+    IndexingCheckpoint, IndexingJobRecord, IndexingJobState, IndexingReconcileReport,
+    IndexingWorkerLane, IndexingWorkerQueueStats, ListManifestFramesRequest, ManifestPageRequest,
+    ManifestRetainedState, ManifestSearchCandidateFilter, ManifestSearchCandidateScan,
+    MediaPayloadStatus, RegisterManifestOutcome, SaveFaults, SemanticChunkDvrStore,
+    SemanticFrameManifestRecord, StageEligibilityRecord, StoredFrameDescription,
+    StoredFrameEmbedding, indexing_job_id, interval_bucket_start, stage_eligibility_job_id,
+};
 pub use semantic_indexing::{
-    DEFAULT_BEDROCK_DESCRIPTION_MODEL, DEFAULT_OPENAI_DESCRIPTION_MODEL, FakeDescriptionBehavior,
-    FakeEmbeddingBehavior, FakeFrameDescriptionProvider, FakeTextEmbeddingProvider,
-    FrameDescriptionBackend, FrameDescriptionKey, FrameDescriptionLimits, FrameDescriptionProvider,
-    FrameDescriptionProviderConfig, FrameDescriptionRequest, KeyedFrameDescription,
-    KeyedTextEmbedding, SemanticIndexingFailure, SemanticIndexingStage, TextEmbeddingKey,
-    TextEmbeddingLimits, TextEmbeddingProvider, TextEmbeddingProviderConfig, TextEmbeddingRequest,
-    assemble_stream_schedules, attach_stream_schedules, frame_description_limits,
-    indexing_claim_batch_size, text_embedding_limits, validate_description_batch,
-    validate_embedding_batch,
+    DEFAULT_BEDROCK_DESCRIPTION_MODEL, DEFAULT_OPENAI_DESCRIPTION_MODEL, DescriptionStageWorker,
+    EmbeddingStageWorker, FakeDescriptionBehavior, FakeEmbeddingBehavior,
+    FakeFrameDescriptionProvider, FakeTextEmbeddingProvider, FrameDescriptionBackend,
+    FrameDescriptionKey, FrameDescriptionLimits, FrameDescriptionProvider,
+    FrameDescriptionProviderConfig, FrameDescriptionRequest, IndexingWorkerBatchReport,
+    IndexingWorkerFaults, KeyedFrameDescription, KeyedTextEmbedding, SemanticIndexingFailure,
+    SemanticIndexingProviders, SemanticIndexingStage, TextEmbeddingKey, TextEmbeddingLimits,
+    TextEmbeddingProvider, TextEmbeddingProviderConfig, TextEmbeddingRequest,
+    assemble_stream_schedules, attach_stream_schedules, deterministic_indexing_providers,
+    frame_description_limits, indexing_claim_batch_size, text_embedding_limits,
+    validate_description_batch, validate_embedding_batch,
 };
 pub use semantic_search::{
-    DEFAULT_SEMANTIC_CANDIDATES, DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS, DEFAULT_SEMANTIC_TOP_K,
-    DecisionHistoryPolicy, DecisionSearchFilter, FakeSemanticHit, FakeSemanticVideoSearchProvider,
+    ChunkDvrSemanticSearchProvider, DEFAULT_SEMANTIC_CANDIDATES,
+    DEFAULT_SEMANTIC_HIT_ASSESSMENT_ROWS, DEFAULT_SEMANTIC_TOP_K, DecisionHistoryPolicy,
+    DecisionSearchFilter, FakeSemanticHit, FakeSemanticVideoSearchProvider,
     GetSemanticIndexingCoverageRequest, GetSemanticSearchCapabilitiesRequest,
     MAX_SEMANTIC_CANDIDATES, MAX_SEMANTIC_HIT_ASSESSMENT_ROWS, MAX_SEMANTIC_NEIGHBOR_FRAMES,
     MAX_SEMANTIC_TOP_K, SearchSemanticFramesRequest, SemanticFrameHit, SemanticFrameHitAssessments,
@@ -246,6 +259,7 @@ pub use semantic_store::SemanticSqliteStore;
 pub use session_color_capture::SessionColorCapture;
 pub use sqlite_dvr::{
     DEFAULT_DISK_VIDEO_RETENTION_SECS, DvrCommittedFrame, DvrPersistHook, SqliteChunkDvrStore,
+    chunk_relpath, minute_start_us,
 };
 pub use timeline::{
     FollowVideoRequest, GetVideoTimelineRequest, VIDEO_LIVE_PATH_PREFIX, VideoFollow,

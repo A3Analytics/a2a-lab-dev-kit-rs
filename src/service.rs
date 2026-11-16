@@ -31,6 +31,9 @@ use crate::tasks::{
     TaskRun, TaskState,
 };
 use crate::time::UtcTimestamp;
+mod semantic_ops;
+mod video_delivery;
+
 use crate::videos::{
     AppendFrameDecisionRequest, AppendFrameDecisionResult, FollowVideoRequest,
     FrameDecisionCapabilities, FrameDecisionHistoryResult, FrameDecisionLedgerProvider,
@@ -40,8 +43,7 @@ use crate::videos::{
     ReadFrameDecisionHistoryRequest, ResolvedMediaAsset, SearchSemanticFramesRequest,
     SemanticFrameSearchResult, SemanticIndexingCoverage, SemanticSearchCapabilities,
     SemanticVideoSearchProvider, VideoClip, VideoClipStream, VideoFollow, VideoLiveStream,
-    VideoProvider, VideoSource, VideoTimeline, authorized_assessments_for_frame,
-    frame_decision_unavailable, semantic_search_unavailable,
+    VideoProvider, VideoSource, VideoTimeline,
 };
 
 /// Future returned by [`A2aLabApi`].
@@ -714,19 +716,6 @@ where
         self.store_snapshot(A2aLabResult::GetVideoClip(clip)).await
     }
 
-    /// Opens a bounded JPEG frame stream for a previously prepared clip.
-    pub async fn open_video_clip(&self, id: &VideoClipId) -> Result<VideoClipStream, A2aLabError> {
-        self.videos.open_video_clip(id).await
-    }
-
-    /// Packages the finite retained body for one prepared clip handle.
-    pub async fn export_finite_video_clip(
-        &self,
-        id: &VideoClipId,
-    ) -> Result<PackagedMediaAsset, A2aLabError> {
-        self.videos.export_finite_video_clip(id).await
-    }
-
     async fn get_video_timeline(
         &self,
         request: GetVideoTimelineRequest,
@@ -741,161 +730,15 @@ where
         self.store_snapshot(A2aLabResult::FollowVideo(follow)).await
     }
 
-    fn frame_decisions(&self) -> Result<&Arc<dyn FrameDecisionLedgerProvider>, A2aLabError> {
-        self.frame_decisions
-            .as_ref()
-            .ok_or_else(frame_decision_unavailable)
-    }
-
-    async fn get_frame_decision_capabilities(
-        &self,
-        request: GetFrameDecisionCapabilitiesRequest,
-    ) -> Result<TaskSnapshot, A2aLabError> {
-        let capabilities = self
-            .frame_decisions()?
-            .get_frame_decision_capabilities(request)
-            .await?;
-        self.store_snapshot(A2aLabResult::GetFrameDecisionCapabilities(capabilities))
-            .await
-    }
-
-    async fn append_frame_decision(
-        &self,
-        request: AppendFrameDecisionRequest,
-    ) -> Result<TaskSnapshot, A2aLabError> {
-        request.check()?;
-        let result = self
-            .frame_decisions()?
-            .append_frame_decision(request)
-            .await?;
-        self.store_snapshot(A2aLabResult::AppendFrameDecision(result))
-            .await
-    }
-
-    async fn read_frame_decision_history(
-        &self,
-        request: ReadFrameDecisionHistoryRequest,
-    ) -> Result<TaskSnapshot, A2aLabError> {
-        request.check()?;
-        let result = self
-            .frame_decisions()?
-            .read_frame_decision_history(request)
-            .await?;
-        self.store_snapshot(A2aLabResult::ReadFrameDecisionHistory(result))
-            .await
-    }
-
-    async fn attach_search_assessments(
-        &self,
-        request: &SearchSemanticFramesRequest,
-        result: SemanticFrameSearchResult,
-    ) -> Result<SemanticFrameSearchResult, A2aLabError> {
-        let Some(ledger) = self.frame_decisions.as_ref() else {
-            return Ok(result);
-        };
-        let max_rows = request.limits().max_assessment_rows_per_hit();
-        let mut items = result.hits().items().to_vec();
-        for hit in &mut items {
-            if hit.authorized_assessments().is_some() {
-                continue;
-            }
-            let assessments =
-                authorized_assessments_for_frame(ledger.as_ref(), hit.frame(), max_rows).await?;
-            *hit = hit.clone().with_authorized_assessments(Some(assessments))?;
-        }
-        Ok(SemanticFrameSearchResult::new(
-            Page::new(items, result.hits().next_cursor().map(str::to_owned)),
-            result.incomplete_indexing(),
-            result.candidate_budget_exhausted(),
-        ))
-    }
-
-    async fn run_semantic_search(
-        &self,
-        command: A2aLabCommand,
-    ) -> Result<TaskSnapshot, A2aLabError> {
-        match command {
-            A2aLabCommand::GetSemanticSearchCapabilities(_) => {
-                let capabilities = match self.semantic_search.as_ref() {
-                    Some(provider) => {
-                        SemanticSearchCapabilities::registered(provider.active_provenance().ok())
-                    }
-                    None => SemanticSearchCapabilities::unregistered(),
-                };
-                self.store_snapshot(A2aLabResult::GetSemanticSearchCapabilities(capabilities))
-                    .await
-            }
-            A2aLabCommand::SearchSemanticFrames(request) => {
-                request.check()?;
-                let result = self
-                    .semantic_search
-                    .as_ref()
-                    .ok_or_else(semantic_search_unavailable)?
-                    .search_semantic_frames(request.clone())
-                    .await?;
-                let result = self.attach_search_assessments(&request, result).await?;
-                self.store_snapshot(A2aLabResult::SearchSemanticFrames(result))
-                    .await
-            }
-            A2aLabCommand::GetSemanticIndexingCoverage(request) => {
-                let result = self
-                    .semantic_search
-                    .as_ref()
-                    .ok_or_else(semantic_search_unavailable)?
-                    .get_semantic_indexing_coverage(request)
-                    .await?;
-                self.store_snapshot(A2aLabResult::GetSemanticIndexingCoverage(result))
-                    .await
-            }
-            _ => Err(A2aLabError::protocol("unexpected semantic search command")),
-        }
-    }
-
-    /// Opens the JPEG frame stream for a previously prepared live-follow handle.
-    pub async fn open_video_follow(
-        &self,
-        id: &VideoFollowId,
-    ) -> Result<VideoLiveStream, A2aLabError> {
-        self.videos.open_video_follow(id).await
-    }
-
-    /// Resolves one authenticated H.264 clip asset. MJPEG clips return not-found.
-    pub async fn resolve_clip_playback_asset(
-        &self,
-        id: &VideoClipId,
-        relative_path: Option<&str>,
-    ) -> Result<ResolvedMediaAsset, A2aLabError> {
-        self.videos
-            .resolve_clip_playback_asset(id, relative_path)
-            .await
-    }
-
-    /// Resolves one authenticated live session asset or MJPEG stream.
-    pub async fn resolve_live_playback_asset(
-        &self,
-        id: &VideoFollowId,
-        relative_path: Option<&str>,
-    ) -> Result<ResolvedMediaAsset, A2aLabError> {
-        self.videos
-            .resolve_live_playback_asset(id, relative_path)
-            .await
-    }
-
-    /// Re-anchors a prepared live session to a retained instant.
-    pub async fn rebase_video_follow(
-        &self,
-        id: &VideoFollowId,
-        anchor: UtcTimestamp,
-    ) -> Result<VideoFollow, A2aLabError> {
-        self.videos.rebase_video_follow(id, anchor).await
-    }
-
     fn accepted_image(&self, image: Image) -> Result<Image, A2aLabError> {
         self.image_transport.check_payload(image.data())?;
         Ok(image)
     }
 
-    async fn store_snapshot(&self, result: A2aLabResult) -> Result<TaskSnapshot, A2aLabError> {
+    pub(super) async fn store_snapshot(
+        &self,
+        result: A2aLabResult,
+    ) -> Result<TaskSnapshot, A2aLabError> {
         let id = self.allocate("task");
         let stored = StoredTask {
             context_id: context_id(&id),

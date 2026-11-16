@@ -314,6 +314,8 @@ fn assert_focus_order(page: &mut Browser) {
             "(() => [...document.querySelectorAll('#video-browser button, #video-browser select, #video-browser input, #video-browser [tabindex=\"0\"]')].filter((el) => !el.disabled && el.getClientRects().length > 0).map((el) => el.id))()"
         ),
         serde_json::json!([
+            "video-browse-tab",
+            "video-search-tab",
             "video-source",
             "video-local-time",
             "video-range-start",

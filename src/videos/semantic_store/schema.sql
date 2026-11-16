@@ -101,14 +101,29 @@ CREATE TABLE IF NOT EXISTS semantic_indexing_worker_meta (
     meta_value TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS semantic_indexing_stage_schedules (
+CREATE TABLE IF NOT EXISTS semantic_stage_eligibility (
     source_id TEXT NOT NULL,
     track_id TEXT NOT NULL,
     stage TEXT NOT NULL,
+    bucket_start_us INTEGER NOT NULL,
     interval_us INTEGER,
-    next_due_us INTEGER,
-    last_selected_start_us INTEGER,
-    PRIMARY KEY (source_id, track_id, stage)
+    winner_frame_id TEXT NOT NULL,
+    winner_start_us INTEGER NOT NULL,
+    enqueue_priority INTEGER NOT NULL,
+    created_at_us INTEGER NOT NULL,
+    updated_at_us INTEGER NOT NULL,
+    PRIMARY KEY (source_id, track_id, stage, bucket_start_us),
+    FOREIGN KEY (winner_frame_id) REFERENCES semantic_frame_revisions (frame_id)
+);
+
+CREATE INDEX IF NOT EXISTS semantic_stage_eligibility_winner
+    ON semantic_stage_eligibility (winner_frame_id);
+
+CREATE TABLE IF NOT EXISTS semantic_reconcile_cursors (
+    source_id TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    last_start_us INTEGER NOT NULL,
+    PRIMARY KEY (source_id, track_id)
 );
 
 CREATE TABLE IF NOT EXISTS semantic_embedding_config_identity (

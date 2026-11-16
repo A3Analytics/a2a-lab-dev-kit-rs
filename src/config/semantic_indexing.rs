@@ -51,13 +51,27 @@ impl SemanticStreamSchedule {
     /// Creates the default every-saved-frame policy for one stream.
     #[must_use]
     pub fn every_saved_frame(stream: impl Into<String>) -> Self {
+        Self::with_stages(
+            stream,
+            SemanticSchedule::EverySavedFrame,
+            SemanticSchedule::EverySavedFrame,
+        )
+    }
+
+    /// Creates one stream schedule with independent stage policies.
+    #[must_use]
+    pub fn with_stages(
+        stream: impl Into<String>,
+        description: SemanticSchedule,
+        embeddings: SemanticSchedule,
+    ) -> Self {
         Self {
             stream: stream.into(),
-            description: SemanticSchedule::EverySavedFrame,
-            embeddings: SemanticSchedule::EverySavedFrame,
+            description,
+            embeddings,
             description_model: None,
             embedding_model: None,
-            embedding_configured: false,
+            embedding_configured: !matches!(embeddings, SemanticSchedule::EverySavedFrame),
         }
     }
 
@@ -77,6 +91,15 @@ impl SemanticStreamSchedule {
     #[must_use]
     pub const fn embeddings(&self) -> SemanticSchedule {
         self.embeddings
+    }
+
+    /// Stage schedule for `description` or `embeddings`.
+    #[must_use]
+    pub fn schedule_for_stage(&self, stage: &str) -> SemanticSchedule {
+        match stage {
+            "embeddings" => self.embeddings,
+            _ => self.description,
+        }
     }
 
     /// Optional source-specific description model.
@@ -435,8 +458,69 @@ impl SemanticIndexingConfig {
         SemanticProvenanceSelector::new(model_space, description_generation)
     }
 
+    /// Rejects per-source embedding models that would leave the shared identity.
+    pub fn reject_source_embedding_overrides(
+        &self,
+        videos: Option<&super::VideoConfig>,
+    ) -> Result<(), A2aLabError> {
+        let Some(videos) = videos else {
+            return Ok(());
+        };
+        if self.embeddings.is_none()
+            && videos.sources.iter().any(|source| {
+                source
+                    .semantic_indexing
+                    .as_ref()
+                    .is_some_and(SemanticStreamSchedule::embedding_configured)
+            })
+        {
+            return Err(A2aLabError::invalid(
+                "videos.sources.semantic_indexing.embeddings",
+                "embedding settings are not supported in description_only mode",
+            ));
+        }
+        let Some(embeddings) = self.embeddings.as_ref() else {
+            return Ok(());
+        };
+        let identity = embeddings.model_space_identity()?;
+        for source in &videos.sources {
+            let Some(schedule) = source.semantic_indexing.as_ref() else {
+                continue;
+            };
+            if let Some(model) = schedule.embedding_model()
+                && model != identity.model()
+            {
+                return Err(A2aLabError::invalid(
+                    "videos.sources.semantic_indexing.embedding_model",
+                    "must match semantic_indexing.embeddings.model",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Rejects schedule-level embedding overrides after source schedules attach.
+    pub fn validate_shared_embedding_identity(&self) -> Result<(), A2aLabError> {
+        let Some(embeddings) = self.embeddings.as_ref() else {
+            return Ok(());
+        };
+        let identity = embeddings.model_space_identity()?;
+        for schedule in &self.schedules {
+            if let Some(model) = schedule.embedding_model()
+                && model != identity.model()
+            {
+                return Err(A2aLabError::invalid(
+                    "videos.sources.semantic_indexing.embedding_model",
+                    "must match semantic_indexing.embeddings.model",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Rejects forbidden decision paths and non-Jev providers before runtime wiring.
     pub fn validate_before_startup(&self) -> Result<(), A2aLabError> {
+        self.validate_shared_embedding_identity()?;
         if self.decisions.provider != JEV_EVALUATOR_PROVIDER_ID {
             return Err(A2aLabError::invalid(
                 "semantic_indexing.decisions.provider",
@@ -1288,7 +1372,7 @@ mod tests {
     #[test]
     fn source_schedule_parses_independent_finite_stage_intervals() {
         let document = format!(
-            r#"{{"schema_version":2,"videos":{{"sources":[{{"id":"camera","format":"mjpeg","device_index":12,"semantic_indexing":{{"description":"1.5s","description_model":"global.openai.gpt-5.6-luna","embeddings":"1m","embedding_model":"amazon.titan-embed-text-v2:0"}}}}]}}{}"#,
+            r#"{{"schema_version":2,"videos":{{"sources":[{{"id":"camera","format":"mjpeg","device_index":12,"semantic_indexing":{{"description":"1.5s","description_model":"global.openai.gpt-5.6-luna","embeddings":"1m","embedding_model":"m"}}}}]}}{}"#,
             minimal_v2_suffix()
         );
         let config = A2aLabConfig::parse(&document).unwrap();
@@ -1299,10 +1383,7 @@ mod tests {
             schedule.description_model(),
             Some("global.openai.gpt-5.6-luna")
         );
-        assert_eq!(
-            schedule.embedding_model(),
-            Some("amazon.titan-embed-text-v2:0")
-        );
+        assert_eq!(schedule.embedding_model(), Some("m"));
         assert_eq!(
             schedule.description(),
             SemanticSchedule::Interval { micros: 1_500_000 }
@@ -1310,6 +1391,20 @@ mod tests {
         assert_eq!(
             schedule.embeddings(),
             SemanticSchedule::Interval { micros: 60_000_000 }
+        );
+    }
+
+    #[test]
+    fn source_embedding_model_must_match_shared_identity() {
+        let document = format!(
+            r#"{{"schema_version":2,"videos":{{"sources":[{{"id":"camera","format":"mjpeg","device_index":12,"semantic_indexing":{{"embeddings":"5s","embedding_model":"other-model"}}}}]}}{}"#,
+            minimal_v2_suffix()
+        );
+        let error = A2aLabConfig::parse(&document).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("videos.sources.semantic_indexing.embedding_model")
         );
     }
 

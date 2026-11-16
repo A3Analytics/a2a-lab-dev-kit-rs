@@ -1,4 +1,4 @@
-//! DvrVideoProvider routing over live H.264 and SQLite DVR (TASK-146).
+//! `DvrVideoProvider` routing over live H.264 and SQLite DVR (TASK-146).
 
 #![cfg(all(feature = "yuv", feature = "openh264"))]
 

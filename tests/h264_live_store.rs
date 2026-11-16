@@ -182,7 +182,9 @@ fn live_refresh_keeps_segment_identity_and_timeline() {
             )
             .expect("sample");
     }
-    let first = package_window(&store);
+    let snapshot = store.snapshot().expect("snapshot");
+    let anchor = live_h264_edge_anchor(&snapshot).expect("anchor");
+    let first = package_h264_live_at(&snapshot, anchor, 600_000).expect("playlist");
     let kept = origin.saturating_add_micros(1_200_000).as_micros();
     let kept_uri = format!("seg-0-{kept}.m4s");
     assert!(first.playlist().contains(&kept_uri));
@@ -210,7 +212,7 @@ fn live_refresh_keeps_segment_identity_and_timeline() {
             .playlist()
             .contains(&format!("seg-0-{}.m4s", origin.as_micros()))
     );
-    assert!(second.timeline_origin_us() > first.timeline_origin_us());
+    assert_eq!(first.timeline_origin_us(), kept);
     second.pin_timeline_origin(first.timeline_origin_us());
 
     let snapshot = store.snapshot().expect("snapshot");

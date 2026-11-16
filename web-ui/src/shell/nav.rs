@@ -11,6 +11,7 @@ use wasm_bindgen::closure::Closure;
 use web_sys::{Event, HtmlElement, KeyboardEvent};
 
 use crate::inventory::Primitive;
+use crate::videos::browse_link;
 
 type DomListener = Closure<dyn FnMut(Event)>;
 type EscapeListener = Closure<dyn FnMut(KeyboardEvent)>;
@@ -77,6 +78,7 @@ thread_local! {
     static RUNTIME: RefCell<Option<Rc<Runtime>>> = const { RefCell::new(None) };
     static SCOPE: RefCell<Option<ScopeId>> = const { RefCell::new(None) };
     static ROUTE: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    static LAST_OPEN_HREF: RefCell<String> = const { RefCell::new(String::new()) };
     static MENU: RefCell<Option<Signal<bool>>> = const { RefCell::new(None) };
     static MOBILE: RefCell<Option<Signal<bool>>> = const { RefCell::new(None) };
     static POPSTATE_LISTENER: RefCell<Option<DomListener>> = const { RefCell::new(None) };
@@ -123,11 +125,21 @@ pub fn replace_legacy_hash() {
 
 pub fn open(href: &str) {
     let key = normalize(href).to_owned();
-    let url = location_for(&key);
+    let url = location_for_open(&key, href);
+    LAST_OPEN_HREF.with(|slot| *slot.borrow_mut() = url.clone());
     if let Some(history) = web_sys::window().and_then(|window| window.history().ok()) {
         let _ = history.push_state_with_url(&JsValue::NULL, "", Some(&url));
     }
     publish(key);
+}
+
+pub fn last_open_query() -> String {
+    LAST_OPEN_HREF.with(|slot| {
+        browse_link::query_of(slot.borrow().as_str())
+            .unwrap_or_default()
+            .trim_start_matches('?')
+            .to_owned()
+    })
 }
 
 pub fn current_route() -> String {
@@ -135,6 +147,13 @@ pub fn current_route() -> String {
         .and_then(|window| window.location().pathname().ok())
         .map(|path| normalize(&path).to_owned())
         .unwrap_or_default()
+}
+
+pub fn published_route() -> String {
+    ROUTE
+        .with(|slot| slot.borrow().map(|route| route.peek().clone()))
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(current_route)
 }
 
 pub fn video_panel_for(path: &str) -> VideoPanel {
@@ -292,11 +311,22 @@ fn listen_navigation() {
 
 fn publish(next: String) {
     run(move || {
+        let previous = ROUTE
+            .with(|slot| slot.borrow().map(|route| route.peek().clone()))
+            .unwrap_or_else(current_route);
+        let leaving_videos =
+            route_for(&previous).view == "view-videos" && route_for(&next).view != "view-videos";
+        let apply_browse = browse_link::videos_panel(&next) == browse_link::VideosPanel::Browse;
         ROUTE.with(|slot| {
             if let Some(mut route) = *slot.borrow() {
                 route.set(next);
             }
         });
+        if leaving_videos {
+            super::videos::leave_on_navigate();
+        } else if apply_browse {
+            super::videos::apply_browse_deep_link();
+        }
         MENU.with(|slot| {
             if let Some(mut menu) = *slot.borrow()
                 && is_mobile()
@@ -308,9 +338,7 @@ fn publish(next: String) {
 }
 
 fn normalize(value: &str) -> &str {
-    let trimmed = value.trim().trim_start_matches('#').trim_matches('/');
-    let trimmed = trimmed.strip_prefix("ui/").unwrap_or(trimmed);
-    if trimmed == "ui" { "" } else { trimmed }
+    browse_link::route_path(value)
 }
 
 fn location_for(key: &str) -> String {
@@ -319,6 +347,30 @@ fn location_for(key: &str) -> String {
     } else {
         format!("/ui/{key}")
     }
+}
+
+fn location_for_open(key: &str, href: &str) -> String {
+    let path = location_for(key);
+    let query = browse_link::query_of(href)
+        .map(str::to_owned)
+        .filter(|query| !query.is_empty())
+        .or_else(|| preserved_browse_query(key));
+    match query {
+        Some(query) => format!("{path}?{query}"),
+        None => path,
+    }
+}
+
+fn preserved_browse_query(key: &str) -> Option<String> {
+    if browse_link::videos_panel(key) != browse_link::VideosPanel::Browse {
+        return None;
+    }
+    web_sys::window()?
+        .location()
+        .search()
+        .ok()
+        .map(|search| search.trim_start_matches('?').to_owned())
+        .filter(|query| !query.is_empty())
 }
 
 fn listen_escape() {

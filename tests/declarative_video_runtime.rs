@@ -69,7 +69,7 @@ impl ColorCamera for SequenceCamera {
         &mut self,
         selected: &SelectedCaptureProfile,
     ) -> Result<SelectedCaptureProfile, a2a_lab_dev_kit::A2aLabError> {
-        Ok(selected.clone())
+        Ok(*selected)
     }
 
     fn raw_frame(&mut self) -> Result<RawCameraSample, a2a_lab_dev_kit::A2aLabError> {

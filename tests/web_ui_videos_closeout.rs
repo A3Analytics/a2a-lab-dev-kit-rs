@@ -181,8 +181,9 @@ fn assert_abort(page: &mut Browser) {
     let before = generation(page);
     page.show("#logs");
     page.wait_until(&format!(
-        "document.getElementById('video-view')?.dataset.gen !== '{before}' && document.getElementById('video-status')?.dataset.state === 'stopped'"
+        "document.getElementById('video-view')?.dataset.gen !== '{before}'"
     ));
+    page.wait_until("document.getElementById('video-status')?.dataset.state === 'stopped'");
     page.show("#videos");
     let after = generation(page);
     assert_case(

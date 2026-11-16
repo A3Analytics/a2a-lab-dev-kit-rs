@@ -282,11 +282,14 @@
   border-radius: var(--radius);
   box-shadow: none;
   background: var(--card);
+  color: inherit;
   text-align: start;
+  text-decoration: none;
   font-weight: 400;
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
 .video-semantic-hit[aria-selected="true"] {
@@ -588,6 +591,14 @@
   pointer-events: none;
 }
 
+a.video-timeline-now {
+  pointer-events: auto;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+  cursor: pointer;
+}
+
 .video-empty,
 .video-loading {
   position: absolute;
@@ -849,6 +860,10 @@
 }
 
 @media (max-width: 47.99rem) {
+  #video-browse-panel {
+    flex-direction: column;
+  }
+
   #video-search-browser {
     flex-direction: column;
     overflow: auto;

@@ -111,7 +111,11 @@ fn Shell() -> Element {
             last_path.set(current);
             return;
         }
-        let focus = last_path.peek().as_str() != current;
+        let previous = last_path.peek().clone();
+        let focus = previous.as_str() != current;
+        if nav::route_for(&previous).view == "view-videos" && route.view != "view-videos" {
+            video_ui::leave_on_navigate();
+        }
         last_path.set(current);
         nav::apply_islands(focus);
     });

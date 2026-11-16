@@ -74,6 +74,19 @@ impl SemanticIndexingFailure {
         }
     }
 
+    /// Retryable provider and deadline failures keep bounded backoff.
+    #[must_use]
+    pub const fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            Self::LimitExceeded { .. }
+                | Self::DeadlineExceeded
+                | Self::Cancelled
+                | Self::ProviderUnavailable { .. }
+                | Self::PartialResponse { .. }
+        )
+    }
+
     /// Maps to a lab error for adapters that do not surface this enum directly.
     #[must_use]
     pub fn into_lab_error(self) -> A2aLabError {

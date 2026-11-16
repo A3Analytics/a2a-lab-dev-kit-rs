@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+pub(crate) mod browse_link;
 pub(crate) mod hls;
 pub(crate) mod mjpeg;
 pub(crate) mod track;
@@ -248,6 +249,9 @@ impl Reader {
     }
 
     pub fn accept_follow(&mut self, ticket: &Ticket, follow: LiveHandle) -> bool {
+        if matches!(self.playback, Playback::Stopped) {
+            return false;
+        }
         if !self.matches(ticket) || follow.source_id != self.source_id {
             return false;
         }
@@ -264,6 +268,9 @@ impl Reader {
     }
 
     pub fn accept_clip(&mut self, ticket: &Ticket, clip: ClipHandle) -> bool {
+        if matches!(self.playback, Playback::Stopped) {
+            return false;
+        }
         if !self.matches(ticket) || clip.source_id != self.source_id {
             return false;
         }
@@ -435,6 +442,7 @@ impl Reader {
         self.fault.clear();
         self.validation.clear();
         self.failure = None;
+        prepare_media(self, Playback::Connecting);
         Some(self.issue(kind))
     }
 

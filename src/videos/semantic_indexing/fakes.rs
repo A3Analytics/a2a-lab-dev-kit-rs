@@ -249,7 +249,10 @@ impl TextEmbeddingProvider for FakeTextEmbeddingProvider {
             FakeEmbeddingBehavior::Ok => requests
                 .iter()
                 .map(|request| {
-                    let values = deterministic_vector(self.config().model_space().dimensions());
+                    let values = deterministic_text_vector(
+                        request.text(),
+                        self.config().model_space().dimensions(),
+                    );
                     KeyedTextEmbedding::new(
                         self.config(),
                         request.key().clone(),
@@ -263,11 +266,44 @@ impl TextEmbeddingProvider for FakeTextEmbeddingProvider {
 }
 
 fn deterministic_vector(dimensions: u32) -> Vec<f32> {
+    deterministic_text_vector("", dimensions)
+}
+
+fn deterministic_text_vector(text: &str, dimensions: u32) -> Vec<f32> {
     let count = usize::try_from(dimensions).unwrap_or(0);
     let mut values = vec![0.0_f32; count];
     if count == 0 {
         return values;
     }
-    values[0] = 1.0;
+    let digest = Sha256Digest::hash_bytes(text.as_bytes());
+    let hex = digest.hex().as_bytes();
+    for (index, slot) in values.iter_mut().enumerate() {
+        let offset = (index * 2) % hex.len().saturating_sub(1).max(1);
+        let hi = hex.get(offset).copied().unwrap_or(b'0');
+        let lo = hex.get(offset + 1).copied().unwrap_or(b'0');
+        let byte = hex_pair(hi, lo);
+        *slot = (f32::from(byte) + 1.0) / 256.0;
+    }
+    let norm_sq: f32 = values.iter().map(|value| value * value).sum();
+    let norm = norm_sq.sqrt();
+    if norm > 0.0 {
+        for value in &mut values {
+            *value /= norm;
+        }
+    } else {
+        values[0] = 1.0;
+    }
     values
+}
+
+fn hex_pair(hi: u8, lo: u8) -> u8 {
+    (hex_nibble(hi) << 4) | hex_nibble(lo)
+}
+
+fn hex_nibble(value: u8) -> u8 {
+    match value {
+        b'0'..=b'9' => value - b'0',
+        b'a'..=b'f' => value - b'a' + 10,
+        _ => 0,
+    }
 }

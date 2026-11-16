@@ -83,6 +83,20 @@ impl SearchHit {
     pub fn media_blocked(&self) -> bool {
         self.media_state == "unavailable" || self.index_state == "expired"
     }
+
+    pub fn can_open_retained_frame(&self) -> bool {
+        self.index_state == "ready"
+            && self.media_state == "ready"
+            && !self.source_id.is_empty()
+            && self.captured_us > 0
+    }
+
+    pub fn browse_href(&self) -> Option<String> {
+        if !self.can_open_retained_frame() {
+            return None;
+        }
+        super::browse_link::encode_frame_href(&self.source_id, &self.captured_at, false)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -598,6 +612,11 @@ fn parse_hit(value: &Value, secret: Option<&str>) -> Result<SearchHit, Fault> {
     };
     let (decisions, authorized_assessments) =
         parse_hit_assessments(object.get("authorized_assessments"), secret);
+    let source_id = frame_object
+        .get("source_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     Ok(SearchHit {
         frame_id: required(frame_object, "frame_id")?,
         captured_at: codec::redact(&captured_at, secret),
@@ -606,7 +625,7 @@ fn parse_hit(value: &Value, secret: Option<&str>) -> Result<SearchHit, Fault> {
         description_provider: sanitize_operator_text(&required(desc_prov, "provider")?),
         description_model: sanitize_operator_text(&required(desc_prov, "resolved_model")?),
         retrieval_score: codec::redact(&score, secret),
-        source_id: String::new(),
+        source_id: codec::redact(&source_id, secret),
         source_label: String::new(),
         index_state: sanitize_state(&index_state),
         media_state: sanitize_state(&media_state),
@@ -992,7 +1011,34 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert!(!hits[0].description.contains('/'));
         assert!(hits[0].frame_ref.get("store").is_none());
+        assert_eq!(hits[0].source_id, "cam-a");
+        assert_eq!(
+            hits[0].browse_href().as_deref(),
+            Some("/ui/videos?source_id=cam-a&at=2024-01-01T00%3A00%3A01Z&autoplay=false")
+        );
         assert_eq!(hits[0].description_model, "global.openai.gpt-5.6-luna");
+        let mut blocked = fixture_hit();
+        blocked
+            .as_object_mut()
+            .unwrap()
+            .insert("index".to_owned(), json!("expired"));
+        blocked.as_object_mut().unwrap().insert(
+            "media_availability".to_owned(),
+            json!({"unavailable": {"reason": "retention_expired"}}),
+        );
+        let (blocked_hits, _) = interpret_search(
+            &reply(json!({
+                "operation": "search_semantic_frames",
+                "result": {
+                    "incomplete_indexing": false,
+                    "hits": { "items": [blocked] }
+                }
+            })),
+            None,
+        )
+        .unwrap();
+        assert!(blocked_hits[0].media_blocked());
+        assert!(blocked_hits[0].browse_href().is_none());
     }
 
     #[test]

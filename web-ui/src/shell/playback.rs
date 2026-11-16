@@ -227,7 +227,7 @@ pub fn take_ignore_pause() -> bool {
         if n == 0 {
             return false;
         }
-        cell.set(0);
+        cell.set(n.saturating_sub(1));
         true
     })
 }

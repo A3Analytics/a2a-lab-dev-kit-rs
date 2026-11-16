@@ -133,21 +133,8 @@ impl A2aLabConfig {
             ),
             _ => None,
         };
-        if semantic_indexing
-            .as_ref()
-            .is_some_and(|semantic| semantic.embeddings.is_none())
-            && let Some(videos) = &videos
-            && videos.sources.iter().any(|source| {
-                source
-                    .semantic_indexing
-                    .as_ref()
-                    .is_some_and(semantic_indexing::SemanticStreamSchedule::embedding_configured)
-            })
-        {
-            return Err(A2aLabError::invalid(
-                "videos.sources.semantic_indexing.embeddings",
-                "embedding settings are not supported in description_only mode",
-            ));
+        if let Some(semantic) = semantic_indexing.as_ref() {
+            semantic.reject_source_embedding_overrides(videos.as_ref())?;
         }
         let logging = logging::parse_logging(map.get("logging"))?;
         Ok(Self {
@@ -388,11 +375,11 @@ mod tests {
 
     #[test]
     fn rejects_unknown_envelope_field() {
-        let error =
-            A2aLabConfig::parse(r#"{"schema_version":1,"semantic_indexing":{}}"#).unwrap_err();
+        let error = A2aLabConfig::parse(r#"{"schema_version":1,"retired_envelope_field":true}"#)
+            .unwrap_err();
         match error {
             A2aLabError::Invalid { field, message } => {
-                assert_eq!(field, "semantic_indexing");
+                assert_eq!(field, "input");
                 assert_eq!(message, "unknown field");
             }
             other => panic!("unexpected {other:?}"),
@@ -403,7 +390,7 @@ mod tests {
     fn rejects_missing_and_invalid_schema_version() {
         assert!(A2aLabConfig::parse(r"{}").is_err());
         assert!(A2aLabConfig::parse(r#"{"schema_version":"1"}"#).is_err());
-        assert!(A2aLabConfig::parse(r#"{"schema_version":2}"#).is_err());
+        assert!(A2aLabConfig::parse(r#"{"schema_version":3}"#).is_err());
         assert!(A2aLabConfig::parse(r#"{"schema_version":1.5}"#).is_err());
     }
 

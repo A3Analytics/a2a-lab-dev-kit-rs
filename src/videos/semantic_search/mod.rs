@@ -2,12 +2,14 @@
 
 mod api;
 mod assessments;
+mod chunk_provider;
 mod decision_filter;
 mod fakes;
 mod limits;
 mod provenance;
 mod provider;
 mod query;
+mod ranking;
 mod request;
 mod result;
 
@@ -17,6 +19,7 @@ pub use api::{
 };
 
 pub use assessments::{SemanticFrameHitAssessments, authorized_assessments_for_frame};
+pub use chunk_provider::ChunkDvrSemanticSearchProvider;
 pub use decision_filter::{DecisionHistoryPolicy, DecisionSearchFilter};
 pub use fakes::{FakeSemanticHit, FakeSemanticVideoSearchProvider, fake_semantic_hit};
 pub use limits::{

@@ -32,14 +32,60 @@ fn share(videos: MemoryVideos) -> Arc<dyn A2aLabApi> {
         .share()
 }
 
-async fn listen(lab: Arc<dyn A2aLabApi>) -> String {
-    let assets = Arc::new(LocalMediaAssetProvider::new(Arc::clone(&lab)));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .unwrap()
+}
+
+fn listen(lab: Arc<dyn A2aLabApi>) -> String {
+    let assets = Arc::new(LocalMediaAssetProvider::new(lab));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, router(assets)).await.unwrap();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("media listen runtime")
+            .block_on(async move {
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                axum::serve(listener, router(assets)).await.unwrap();
+            });
     });
+    wait_until_serving(address);
     format!("http://{address}")
+}
+
+fn wait_until_serving(address: std::net::SocketAddr) {
+    use std::io::{Read, Write};
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Ok(mut stream) =
+            std::net::TcpStream::connect_timeout(&address, Duration::from_millis(100))
+        {
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+            let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+            if stream
+                .write_all(
+                    b"GET /media/video-live/probe HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+                )
+                .is_ok()
+            {
+                let mut buf = [0u8; 12];
+                if stream.read(&mut buf).is_ok_and(|n| n > 0) {
+                    return;
+                }
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "media gateway did not serve on {address}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 async fn prepare_encoded_live(
@@ -94,19 +140,20 @@ async fn prepare_encoded_live(
         .set_live_available(&source_id("enc"), true)
         .await
         .unwrap();
+    let base = listen(share(videos.clone()));
     let follow = videos
         .follow_video(FollowVideoRequest::new(source_id("enc")))
         .await
         .unwrap();
-    (listen(share(videos.clone())).await, follow)
+    (base, follow)
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn encoded_live_root_serves_bounded_event_playlist_at_live_edge() {
     let videos = MemoryVideos::new();
     let (base, follow) = prepare_encoded_live(&videos, VideoCodec::H264, H264_INIT, "h264").await;
     assert_eq!(follow.codec(), VideoCodec::H264);
-    let playlist = reqwest::Client::new()
+    let playlist = http_client()
         .get(format!("{base}{}", follow.path()))
         .send()
         .await
@@ -118,7 +165,7 @@ async fn encoded_live_root_serves_bounded_event_playlist_at_live_edge() {
     assert!(!body.contains("#EXT-X-ENDLIST"));
     assert!(!body.contains("h264"));
     assert!(!body.contains("enc"));
-    let init = reqwest::Client::new()
+    let init = http_client()
         .get(format!("{base}{}{HLS_INIT_RELATIVE_PATH}", follow.path()))
         .send()
         .await
@@ -126,7 +173,7 @@ async fn encoded_live_root_serves_bounded_event_playlist_at_live_edge() {
     assert_eq!(init.status(), 200);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn live_playlist_refresh_advances_window_and_marks_gaps() {
     let videos = MemoryVideos::new();
     videos
@@ -177,13 +224,13 @@ async fn live_playlist_refresh_advances_window_and_marks_gaps() {
         .set_live_available(&source_id("enc"), true)
         .await
         .unwrap();
+    let lab = share(videos.clone());
+    let base = listen(lab);
     let follow = videos
         .follow_video(FollowVideoRequest::new(source_id("enc")))
         .await
         .unwrap();
-    let lab = share(videos.clone());
-    let base = listen(lab).await;
-    let first = reqwest::Client::new()
+    let first = http_client()
         .get(format!(
             "{base}{}{HLS_PLAYLIST_RELATIVE_PATH}",
             follow.path()
@@ -206,7 +253,7 @@ async fn live_playlist_refresh_advances_window_and_marks_gaps() {
         )
         .await
         .unwrap();
-    let second = reqwest::Client::new()
+    let second = http_client()
         .get(format!(
             "{base}{}{HLS_PLAYLIST_RELATIVE_PATH}",
             follow.path()
@@ -221,7 +268,7 @@ async fn live_playlist_refresh_advances_window_and_marks_gaps() {
     assert!(second.contains("seg-"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn live_rebase_and_retention_movement_keep_opaque_windows() {
     let videos = MemoryVideos::new();
     let track = DvrTrackId::new("h265").unwrap();
@@ -272,6 +319,8 @@ async fn live_rebase_and_retention_movement_keep_opaque_windows() {
         .set_live_available(&source_id("enc"), true)
         .await
         .unwrap();
+    let lab = share(videos.clone());
+    let base = listen(Arc::clone(&lab));
     let follow = videos
         .follow_video(FollowVideoRequest::at(
             source_id("enc"),
@@ -280,14 +329,12 @@ async fn live_rebase_and_retention_movement_keep_opaque_windows() {
         .await
         .unwrap();
     assert_eq!(follow.codec(), VideoCodec::H265);
-    let lab = share(videos.clone());
     let rebased = lab
         .rebase_video_follow(follow.id(), timestamp("2024-01-01T01:00:01Z"))
         .await
         .unwrap();
     assert_eq!(rebased.id(), follow.id());
-    let base = listen(lab).await;
-    let playlist = reqwest::Client::new()
+    let playlist = http_client()
         .get(format!(
             "{base}{}{HLS_PLAYLIST_RELATIVE_PATH}",
             follow.path()
@@ -303,7 +350,7 @@ async fn live_rebase_and_retention_movement_keep_opaque_windows() {
         .forget_before(&source_id("enc"), timestamp("2024-01-01T00:30:00Z"))
         .await
         .unwrap();
-    let after_retention = reqwest::Client::new()
+    let after_retention = http_client()
         .get(format!(
             "{base}{}{HLS_PLAYLIST_RELATIVE_PATH}",
             follow.path()
@@ -317,7 +364,7 @@ async fn live_rebase_and_retention_movement_keep_opaque_windows() {
     assert!(!after_retention.contains("2024-01-01T00:00:00"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn live_sessions_expire_and_release_on_unavailable() {
     let videos = MemoryVideos::with_session_ttl(Duration::from_secs(60), Duration::from_millis(1));
     let (_base, follow) = prepare_encoded_live(&videos, VideoCodec::H264, H264_INIT, "h264").await;
@@ -339,7 +386,7 @@ async fn live_sessions_expire_and_release_on_unavailable() {
         unavailable.err().map(|error| error.code()),
         Some("live_unavailable")
     );
-    let gateway = reqwest::Client::new()
+    let gateway = http_client()
         .get(format!("{base}{}", follow.path()))
         .send()
         .await
@@ -347,7 +394,7 @@ async fn live_sessions_expire_and_release_on_unavailable() {
     assert_eq!(gateway.status(), 503);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn mjpeg_live_follow_still_streams_with_gateway_security() {
     let videos = MemoryVideos::new();
     videos
@@ -361,21 +408,21 @@ async fn mjpeg_live_follow_still_streams_with_gateway_security() {
         .set_live_available(&source_id("cam"), true)
         .await
         .unwrap();
+    let lab = share(videos.clone());
+    let base = listen(lab);
     let follow = videos
         .follow_video(FollowVideoRequest::new(source_id("cam")))
         .await
         .unwrap();
     assert_eq!(follow.codec(), VideoCodec::Mjpeg);
-    let lab = share(videos.clone());
-    let base = listen(lab).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{base}{}", follow.path()))
         .send()
         .await
         .unwrap();
     assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
     drop(response);
-    let again = reqwest::Client::new()
+    let again = http_client()
         .get(format!("{base}{}", follow.path()))
         .send()
         .await

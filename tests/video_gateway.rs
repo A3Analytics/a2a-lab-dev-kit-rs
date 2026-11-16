@@ -42,17 +42,35 @@ fn share(videos: MemoryVideos) -> Arc<dyn A2aLabApi> {
         .share()
 }
 
-async fn listen(assets: Arc<dyn MediaAssetProvider>) -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .unwrap()
+}
+
+fn listen(assets: Arc<dyn MediaAssetProvider>) -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, router(assets)).await.unwrap();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("media listen runtime")
+            .block_on(async move {
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                axum::serve(listener, router(assets)).await.unwrap();
+            });
     });
     format!("http://{address}")
 }
 
 async fn listen_auth(lab: Arc<dyn A2aLabApi>, assets: Arc<dyn MediaAssetProvider>) -> String {
     let (listener, address) = bind_local().await.unwrap();
+    let listener = listener.into_std().unwrap();
+    listener.set_nonblocking(true).unwrap();
     let server = A2aServer::new(&lab)
         .with_security(
             [(
@@ -67,8 +85,15 @@ async fn listen_auth(lab: Arc<dyn A2aLabApi>, assets: Arc<dyn MediaAssetProvider
             vec![[("bearerAuth".to_owned(), Vec::new())].into()],
         )
         .with_media_assets(assets);
-    tokio::spawn(async move {
-        server.listen(listener).await.unwrap();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("media listen runtime")
+            .block_on(async move {
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                server.listen(listener).await.unwrap();
+            });
     });
     format!("http://{address}")
 }
@@ -118,7 +143,7 @@ async fn prepare_mjpeg_clip(videos: &MemoryVideos) -> (VideoClipId, String) {
     (clip.id().clone(), clip.path().to_owned())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_gateway_serves_packaged_hls_assets_with_content_types() {
     let videos = MemoryVideos::new();
     let (clip_id, root) = prepare_mjpeg_clip(&videos).await;
@@ -141,8 +166,8 @@ async fn local_gateway_serves_packaged_hls_assets_with_content_types() {
         .await
         .unwrap();
 
-    let base = listen(assets).await;
-    let playlist = reqwest::Client::new()
+    let base = listen(assets);
+    let playlist = http_client()
         .get(format!("{base}{root}{HLS_PLAYLIST_RELATIVE_PATH}"))
         .send()
         .await
@@ -152,7 +177,7 @@ async fn local_gateway_serves_packaged_hls_assets_with_content_types() {
         header(&playlist, "content-type"),
         "application/vnd.apple.mpegurl"
     );
-    let init = reqwest::Client::new()
+    let init = http_client()
         .get(format!("{base}{root}{HLS_INIT_RELATIVE_PATH}"))
         .send()
         .await
@@ -161,13 +186,13 @@ async fn local_gateway_serves_packaged_hls_assets_with_content_types() {
     assert_eq!(header(&init, "content-type"), "video/mp4");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn mjpeg_root_has_closed_boundary_through_gateway() {
     let videos = MemoryVideos::new();
     let (_id, root) = prepare_mjpeg_clip(&videos).await;
     let assets = Arc::new(LocalMediaAssetProvider::new(share(videos)));
-    let base = listen(assets).await;
-    let response = reqwest::Client::new()
+    let base = listen(assets);
+    let response = http_client()
         .get(format!("{base}{root}"))
         .send()
         .await
@@ -179,13 +204,13 @@ async fn mjpeg_root_has_closed_boundary_through_gateway() {
     assert_eq!(frames.len(), 2);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn gateway_rejects_traversal_credential_queries_and_unknown_assets() {
     let videos = MemoryVideos::new();
     let (clip_id, root) = prepare_mjpeg_clip(&videos).await;
     let assets = Arc::new(LocalMediaAssetProvider::new(share(videos)));
-    let base = listen(assets).await;
-    let traversal = reqwest::Client::new()
+    let base = listen(assets);
+    let traversal = http_client()
         .get(format!("{base}{root}../other/init.mp4"))
         .send()
         .await
@@ -193,7 +218,7 @@ async fn gateway_rejects_traversal_credential_queries_and_unknown_assets() {
     assert_eq!(traversal.status(), 404);
     assert_media_headers(&traversal);
 
-    let credential = reqwest::Client::new()
+    let credential = http_client()
         .get(format!("{base}{root}?access_token=secret"))
         .send()
         .await
@@ -204,7 +229,7 @@ async fn gateway_rejects_traversal_credential_queries_and_unknown_assets() {
     assert!(!body.contains("secret"));
     assert!(!body.contains("vault.internal"));
 
-    let unknown = reqwest::Client::new()
+    let unknown = http_client()
         .get(format!("{base}{root}missing.m4s"))
         .send()
         .await
@@ -212,7 +237,7 @@ async fn gateway_rejects_traversal_credential_queries_and_unknown_assets() {
     assert_eq!(unknown.status(), 404);
     assert_media_headers(&unknown);
 
-    let absolute = reqwest::Client::new()
+    let absolute = http_client()
         .get(format!(
             "{base}/media/video-clips/{clip_id}/%2Fetc%2Fpasswd"
         ))
@@ -223,7 +248,7 @@ async fn gateway_rejects_traversal_credential_queries_and_unknown_assets() {
     assert_media_headers(&absolute);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn auth_gated_responses_include_media_security_headers() {
     let videos = MemoryVideos::new();
     let (_id, root) = prepare_mjpeg_clip(&videos).await;
@@ -231,14 +256,14 @@ async fn auth_gated_responses_include_media_security_headers() {
     let assets =
         Arc::new(LocalMediaAssetProvider::new(Arc::clone(&lab))) as Arc<dyn MediaAssetProvider>;
     let base = listen_auth(lab, assets).await;
-    let denied = reqwest::Client::new()
+    let denied = http_client()
         .get(format!("{base}{root}"))
         .send()
         .await
         .unwrap();
     assert_eq!(denied.status(), 401);
     assert_media_headers(&denied);
-    let ok = reqwest::Client::new()
+    let ok = http_client()
         .get(format!("{base}{root}"))
         .bearer_auth("lab-token")
         .send()
@@ -247,7 +272,7 @@ async fn auth_gated_responses_include_media_security_headers() {
     assert_media_headers(&ok);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn fake_remote_provider_proxies_without_upstream_leaks() {
     let remote = Arc::new(FakeRemoteMediaAssetProvider::new());
     let clip_id = VideoClipId::new("remote-clip").unwrap();
@@ -267,8 +292,8 @@ async fn fake_remote_provider_proxies_without_upstream_leaks() {
     );
     remote.bind_clip(clip_id, assets).unwrap();
 
-    let base = listen(remote).await;
-    let playlist = reqwest::Client::new()
+    let base = listen(remote);
+    let playlist = http_client()
         .get(format!("{base}{root}{HLS_PLAYLIST_RELATIVE_PATH}"))
         .send()
         .await
@@ -278,7 +303,7 @@ async fn fake_remote_provider_proxies_without_upstream_leaks() {
     assert!(text.starts_with("#EXTM3U"));
     assert!(!text.contains("vault.internal"));
 
-    let missing = reqwest::Client::new()
+    let missing = http_client()
         .get(format!("{base}{root}seg-9999.m4s"))
         .send()
         .await
@@ -289,21 +314,21 @@ async fn fake_remote_provider_proxies_without_upstream_leaks() {
     assert!(!message.contains("9999/private"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn local_and_remote_share_error_and_header_behavior() {
     let local = Arc::new(LocalMediaAssetProvider::new(share(MemoryVideos::new())))
         as Arc<dyn MediaAssetProvider>;
     let remote = Arc::new(FakeRemoteMediaAssetProvider::new()) as Arc<dyn MediaAssetProvider>;
     for (label, assets) in [("local", local), ("remote", remote)] {
-        let base = listen(assets).await;
-        let response = reqwest::Client::new()
+        let base = listen(assets);
+        let response = http_client()
             .get(format!("{base}/media/video-clips/missing/"))
             .send()
             .await
             .unwrap();
         assert_media_headers(&response);
         assert_eq!(response.status(), 404, "{label}");
-        let credential = reqwest::Client::new()
+        let credential = http_client()
             .get(format!("{base}/media/video-clips/missing/?token=secret"))
             .send()
             .await
@@ -313,14 +338,14 @@ async fn local_and_remote_share_error_and_header_behavior() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn expired_clip_is_rejected_before_bytes() {
     let videos = MemoryVideos::with_clip_ttl(Duration::from_millis(1));
     let (_id, root) = prepare_mjpeg_clip(&videos).await;
     tokio::time::sleep(Duration::from_millis(5)).await;
     let assets = Arc::new(LocalMediaAssetProvider::new(share(videos)));
-    let base = listen(assets).await;
-    let response = reqwest::Client::new()
+    let base = listen(assets);
+    let response = http_client()
         .get(format!("{base}{root}"))
         .send()
         .await
@@ -329,7 +354,7 @@ async fn expired_clip_is_rejected_before_bytes() {
     assert_media_headers(&response);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn live_follow_session_mismatch_and_double_open_are_rejected() {
     let videos = MemoryVideos::new();
     videos
@@ -354,15 +379,15 @@ async fn live_follow_session_mismatch_and_double_open_are_rejected() {
         panic!("follow");
     };
     let assets = Arc::new(LocalMediaAssetProvider::new(lab));
-    let base = listen(assets).await;
-    let first = reqwest::Client::new()
+    let base = listen(assets);
+    let first = http_client()
         .get(format!("{base}{}", handle.path()))
         .send()
         .await
         .unwrap();
     assert!(first.status().is_success());
     drop(first);
-    let second = reqwest::Client::new()
+    let second = http_client()
         .get(format!("{base}{}", handle.path()))
         .send()
         .await
@@ -370,7 +395,7 @@ async fn live_follow_session_mismatch_and_double_open_are_rejected() {
     assert_eq!(second.status(), 400);
     assert_media_headers(&second);
 
-    let mismatch = reqwest::Client::new()
+    let mismatch = http_client()
         .get(format!(
             "{base}/media/video-clips/{}/index.m3u8",
             handle.id()

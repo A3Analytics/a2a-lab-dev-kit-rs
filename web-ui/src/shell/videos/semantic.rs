@@ -3,15 +3,20 @@
 use std::cell::RefCell;
 
 use dioxus::prelude::*;
-use web_sys::AbortController;
 
-use crate::inventory::Fault;
-use crate::shell::loading::{LoadProgress, LoadingSurface};
-use crate::shell::session::{self, calls_allowed, message_id, take_secret};
+#[path = "semantic_transport.rs"]
+mod semantic_transport;
+
+use crate::shell::loading::{StrandSize, StrandsLoader};
+use crate::shell::nav;
+use crate::shell::session::{self, calls_allowed, take_secret};
 use crate::videos;
 use crate::videos::semantic::{
     self, ApiPhase, CoverageBanner, DecisionRow, HitThumb, ProvenancePick, SearchHit, SearchTicket,
 };
+use semantic_transport::{coverage_bounds, fault_text, post_with_abort};
+use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use super::{VideoUi, bound};
 
@@ -64,7 +69,11 @@ enum CapabilityOutcome {
 #[derive(Clone, PartialEq)]
 pub(crate) enum HistoryJob {
     Idle,
-    Run { generation: u32, index: usize },
+    #[allow(dead_code)]
+    Run {
+        generation: u32,
+        index: usize,
+    },
 }
 
 #[derive(Clone, PartialEq)]
@@ -82,37 +91,34 @@ enum HistoryOutcome {
     },
 }
 
-struct SemanticFlight {
-    generation: u32,
-    abort: AbortController,
-}
-
 #[derive(Clone, Copy)]
 struct Loader {
     search: Signal<SearchJob>,
     caps: Signal<CapabilityJob>,
+    #[allow(dead_code)]
     history: Signal<HistoryJob>,
 }
 
 thread_local! {
     static LOADER: RefCell<Option<Loader>> = const { RefCell::new(None) };
-    static FLIGHTS: RefCell<Option<SemanticFlight>> = const { RefCell::new(None) };
     static PROBED_SOURCE: RefCell<String> = const { RefCell::new(String::new()) };
-    static SEARCH_SEEK: RefCell<Option<(String, i64)>> = const { RefCell::new(None) };
+    static SEARCH_SEEK: RefCell<Option<(String, i64, bool)>> = const { RefCell::new(None) };
 }
 
-fn remember_search_seek(source_id: &str, at_us: i64) {
-    SEARCH_SEEK.with(|slot| *slot.borrow_mut() = Some((source_id.to_owned(), at_us)));
+pub(super) fn remember_search_seek(source_id: &str, at_us: i64, autoplay: bool) {
+    SEARCH_SEEK.with(|slot| *slot.borrow_mut() = Some((source_id.to_owned(), at_us, autoplay)));
 }
 
-pub fn take_search_seek(source_id: &str) -> Option<i64> {
+pub fn take_search_seek(source_id: &str) -> Option<(i64, bool)> {
     SEARCH_SEEK.with(|slot| {
         let matches = slot
             .borrow()
             .as_ref()
-            .is_some_and(|(id, _)| id == source_id);
+            .is_some_and(|(id, _, _)| id == source_id);
         if matches {
-            slot.borrow_mut().take().map(|(_, at_us)| at_us)
+            slot.borrow_mut()
+                .take()
+                .map(|(_, at_us, autoplay)| (at_us, autoplay))
         } else {
             None
         }
@@ -214,14 +220,9 @@ pub fn choose_semantic_hit(index: usize) {
     let Some(hit) = state.semantic.selected_hit() else {
         return;
     };
-    if let Some(us) = (hit.captured_us > 0).then_some(hit.captured_us) {
-        super::open_browse_panel();
-        if hit.source_id.is_empty() || hit.source_id == state.reader.source_id {
-            super::timeline::commit_at(us);
-        } else {
-            remember_search_seek(&hit.source_id, us);
-            super::choose_source(&hit.source_id);
-        }
+    if let Some(href) = hit.browse_href() {
+        nav::open(&href);
+        return;
     }
     launch_thumb(index);
 }
@@ -473,12 +474,15 @@ fn SearchResults(state: VideoUi) -> Element {
                     "data-state": mode.slug(),
                     hidden: mode == SearchMode::Ready || mode == SearchMode::Prompt,
                     if mode == SearchMode::Loading {
-                        LoadingSurface {
-                            id: "video-semantic-search-loading".to_owned(),
-                            title: Some(mode.text().to_owned()),
-                            description: None,
-                            progress: LoadProgress::Unknown,
-                            concealed: false,
+                        div {
+                            id: "video-semantic-search-loading",
+                            class: "loading-surface",
+                            role: "status",
+                            aria_live: "polite",
+                            aria_busy: "true",
+                            aria_label: "Searching…",
+                            StrandsLoader { size: StrandSize::Md }
+                            p { class: "loading-title", "{mode.text()}" }
                         }
                     }
                     p {
@@ -632,29 +636,94 @@ fn change_result_page(delta: i32) {
 #[component]
 fn SemanticHitRow(index: usize, hit: SearchHit, selected: bool) -> Element {
     let blocked = hit.media_blocked();
+    let href = hit.browse_href();
     rsx! {
-        button {
-            id: "video-semantic-hit-{index}",
-            class: "video-semantic-hit log-card",
-            r#type: "button",
-            role: "option",
-            aria_selected: if selected { "true" } else { "false" },
-            "data-source": "{hit.source_id}",
-            "data-index-state": "{hit.index_state}",
-            "data-media-state": "{hit.media_state}",
-            disabled: blocked,
-            onclick: move |_| choose_semantic_hit(index),
-            if let Some(thumb) = hit.thumb.as_ref() {
-                SemanticThumb { thumb: thumb.clone() }
+        if let Some(href) = href {
+            a {
+                id: "video-semantic-hit-{index}",
+                class: "video-semantic-hit log-card",
+                href: "{href}",
+                role: "option",
+                aria_selected: if selected { "true" } else { "false" },
+                "data-source": "{hit.source_id}",
+                "data-index-state": "{hit.index_state}",
+                "data-media-state": "{hit.media_state}",
+                onmounted: move |_| intercept_hit_navigation(index),
+                onclick: move |event| {
+                    if modified_click(&event) {
+                        return;
+                    }
+                    event.prevent_default();
+                    choose_semantic_hit(index);
+                },
+                SemanticHitBody { hit: hit.clone() }
             }
-            span { class: "video-semantic-hit-copy",
-                time { datetime: "{hit.captured_at}", "{hit.captured_at}" }
-                span { class: "video-semantic-source", "{hit.source_label}" }
-                span { class: "video-semantic-score", "Score {hit.retrieval_score}" }
-                span { class: "video-semantic-description", "{hit.description}" }
+        } else {
+            button {
+                id: "video-semantic-hit-{index}",
+                class: "video-semantic-hit log-card",
+                r#type: "button",
+                role: "option",
+                aria_selected: if selected { "true" } else { "false" },
+                "data-source": "{hit.source_id}",
+                "data-index-state": "{hit.index_state}",
+                "data-media-state": "{hit.media_state}",
+                disabled: blocked,
+                onclick: move |_| choose_semantic_hit(index),
+                SemanticHitBody { hit: hit.clone() }
             }
         }
     }
+}
+
+#[component]
+fn SemanticHitBody(hit: SearchHit) -> Element {
+    rsx! {
+        if let Some(thumb) = hit.thumb.as_ref() {
+            SemanticThumb { thumb: thumb.clone() }
+        }
+        span { class: "video-semantic-hit-copy",
+            time { datetime: "{hit.captured_at}", "{hit.captured_at}" }
+            span { class: "video-semantic-source", "{hit.source_label}" }
+            span { class: "video-semantic-score", "Score {hit.retrieval_score}" }
+            span { class: "video-semantic-description", "{hit.description}" }
+        }
+    }
+}
+
+fn modified_click(event: &MouseEvent) -> bool {
+    event.modifiers().ctrl()
+        || event.modifiers().meta()
+        || event.modifiers().shift()
+        || event.modifiers().alt()
+}
+
+fn intercept_hit_navigation(index: usize) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    let Some(element) = document.get_element_by_id(&format!("video-semantic-hit-{index}")) else {
+        return;
+    };
+    if element.get_attribute("data-nav-intercept") == Some("1".to_owned()) {
+        return;
+    }
+    let _ = element.set_attribute("data-nav-intercept", "1");
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
+        if event.ctrl_key() || event.meta_key() || event.shift_key() || event.alt_key() {
+            return;
+        }
+        event.prevent_default();
+    }) as Box<dyn FnMut(_)>);
+    let _ = element.add_event_listener_with_callback_and_bool(
+        "click",
+        closure.as_ref().unchecked_ref(),
+        true,
+    );
+    closure.forget();
 }
 
 #[component]
@@ -1110,6 +1179,7 @@ fn launch_search(ticket: SearchTicket) {
     loader.search.set(SearchJob::Run(ticket));
 }
 
+#[allow(dead_code)]
 fn launch_history(generation: u32, index: usize) {
     let Some(mut loader) = loader() else {
         return;
@@ -1210,7 +1280,9 @@ async fn run_search(job: SearchJob, secret: Option<String>) -> SearchOutcome {
                 Ok((mut found, source_incomplete)) => {
                     let label = source_label(source_id);
                     for hit in &mut found {
-                        hit.source_id = source_id.clone();
+                        if hit.source_id.is_empty() {
+                            hit.source_id = source_id.clone();
+                        }
                         hit.source_label = label.clone();
                     }
                     hits.append(&mut found);
@@ -1299,7 +1371,9 @@ async fn run_capabilities(job: CapabilityJob, secret: Option<String>) -> Capabil
                     .to_owned(),
             };
         };
-        if let (Some(start), Some(end)) = coverage_bounds(&source_id) {
+        if let (Some(start), Some(end)) =
+            coverage_bounds(&source_id, search_window, retained_search_window)
+        {
             let command =
                 semantic::coverage_command(&source_id, Some((start.as_str(), end.as_str())), pick);
             post_with_abort(command, secret.clone(), generation)
@@ -1488,86 +1562,4 @@ fn apply_history(mut ui: Signal<VideoUi>, outcome: HistoryOutcome) {
     }
 }
 
-async fn post_with_abort(
-    command: serde_json::Value,
-    secret: Option<String>,
-    generation: u32,
-) -> Result<crate::codec::Reply, String> {
-    let Some(signal) = begin_semantic_command(generation) else {
-        return Err("The semantic request was canceled.".to_owned());
-    };
-    let Some(transport) = session::transport() else {
-        return Err("The browser could not reach this origin.".to_owned());
-    };
-    let Ok(body) = crate::codec::command_message(&message_id(), &command, "") else {
-        return Err("The semantic query could not be built.".to_owned());
-    };
-    match transport
-        .send_signaled(&body, secret.as_deref(), Some(&signal))
-        .await
-    {
-        Err(()) => Err("The browser could not reach this origin.".to_owned()),
-        Ok(reply) => Ok(reply),
-    }
-}
-
-fn begin_semantic_command(generation: u32) -> Option<web_sys::AbortSignal> {
-    let abort = AbortController::new().ok()?;
-    let signal = abort.signal();
-    let flight = SemanticFlight { generation, abort };
-    let previous = FLIGHTS.with(|slot| {
-        let mut current = slot.borrow_mut();
-        if current
-            .as_ref()
-            .is_some_and(|existing| existing.generation > generation)
-        {
-            return Err(flight);
-        }
-        Ok(current.replace(flight))
-    });
-    match previous {
-        Ok(previous) => {
-            if let Some(previous) = previous {
-                previous.abort.abort();
-            }
-            Some(signal)
-        }
-        Err(_flight) => None,
-    }
-}
-
-pub fn abort_semantic_commands() {
-    FLIGHTS.with(|slot| {
-        if let Some(flight) = slot.borrow_mut().take() {
-            flight.abort.abort();
-        }
-    });
-}
-
-fn coverage_bounds(source_id: &str) -> (Option<String>, Option<String>) {
-    let Some(ui) = bound() else {
-        return (None, None);
-    };
-    let state = ui.peek().clone();
-    if let Some((start, end)) = search_window(&state) {
-        return (Some(start), Some(end));
-    }
-    let Some((start, end)) = state
-        .reader
-        .timeline
-        .as_ref()
-        .and_then(retained_search_window)
-    else {
-        let _ = source_id;
-        return (None, None);
-    };
-    (Some(start), Some(end))
-}
-
-fn fault_text(fault: &Fault) -> String {
-    match fault {
-        Fault::Unauthorized(message) | Fault::Forbidden(message) => message.clone(),
-        Fault::Unavailable(message) => message.clone(),
-        Fault::Malformed | Fault::Transport => "The response could not be read.".to_owned(),
-    }
-}
+pub use semantic_transport::abort_semantic_commands;

@@ -230,6 +230,10 @@ async fn play_session(
     };
     OBJECT_URL.with(|slot| *slot.borrow_mut() = Some(object_url.clone()));
     video.set_src(&object_url);
+    if !playback::start_paused() {
+        playback::set_paused(false);
+        playback::bump_ignore_pause();
+    }
     video.load();
     next_frame().await;
     if wait_source_open(&media_source, abort, generation)
@@ -256,10 +260,15 @@ async fn play_session(
     }
     trace.append_order.push(init_relative.to_owned());
     publish_trace(trace);
-    playback::set_paused(false);
+    let paused = playback::start_paused();
+    if !paused {
+        playback::set_paused(false);
+    }
     playback::notify_playing(generation);
-    playback::bump_ignore_pause();
-    let _ = video.play();
+    if !paused {
+        playback::bump_ignore_pause();
+        let _ = video.play();
+    }
     let mut appended = HashSet::new();
     appended.insert(init_relative.to_owned());
     play_appended_segments(
@@ -321,7 +330,9 @@ async fn play_appended_segments(
     if parsed.end_list && !live_playlist_session(playlist_path) {
         let _ = media_source.end_of_stream();
         playback::apply_hls_playback_rate();
-        let _ = video.play();
+        if !playback::start_paused() {
+            let _ = video.play();
+        }
         return wait_until_end(generation, abort, true, video, source_buffer).await;
     }
     playback::apply_hls_playback_rate();
@@ -330,8 +341,14 @@ async fn play_appended_segments(
     } else if live_playlist_session(playlist_path) {
         seek_to_playlist_start(video, source_buffer, parsed.start_offset_secs);
         skip_forward_if_gapped(generation, video, source_buffer);
+        if !playback::start_paused() {
+            playback::set_paused(false);
+            playback::bump_ignore_pause();
+        }
     }
-    let _ = video.play();
+    if !playback::start_paused() {
+        let _ = video.play();
+    }
     refresh_live(
         generation,
         playlist_path,
@@ -370,7 +387,9 @@ async fn append_segments(
         if abort.signal().aborted() {
             return Err(stopped(generation));
         }
-        playback::wait_if_paused(generation).await;
+        if !playback::start_paused() {
+            playback::wait_if_paused(generation).await;
+        }
         if appended.contains(&segment.uri) {
             continue;
         }
@@ -404,11 +423,15 @@ async fn append_segments(
         update_clock_anchor(source_buffer, segment);
         skip_forward_if_gapped(generation, video, source_buffer);
         if live_playlist_session(playlist_path) {
+            playback::set_paused(false);
+            playback::bump_ignore_pause();
             let _ = video.play();
         }
         if from_start && !started {
             video.set_current_time(0.0);
-            let _ = video.play();
+            if !playback::start_paused() {
+                let _ = video.play();
+            }
             started = true;
         }
         if segment.discontinuity_before {
@@ -545,7 +568,9 @@ fn skip_missing_segment(
     appended.insert(segment.uri.clone());
     playback::notify_gap_skipped(generation);
     skip_forward_if_gapped(generation, video, source_buffer);
-    let _ = video.play();
+    if !playback::start_paused() {
+        let _ = video.play();
+    }
 }
 
 fn seek_to_playlist_start(
@@ -611,7 +636,9 @@ fn skip_forward_if_gapped(generation: u32, video: &HtmlVideoElement, buffer: &So
     };
     if hole {
         video.set_current_time(start);
-        let _ = video.play();
+        if !playback::start_paused() {
+            let _ = video.play();
+        }
         playback::notify_gap_skipped(generation);
     }
 }

@@ -44,7 +44,7 @@ pub(super) fn apply_stream(outcome: StreamOutcome) {
 
 pub(super) fn on_playing(generation: u32) {
     run(move || {
-        if playback::start_paused() {
+        if !super::browse_streaming_allowed() || playback::start_paused() {
             return;
         }
         let Some(mut ui) = bound() else {
@@ -60,6 +60,9 @@ pub(super) fn on_playing(generation: u32) {
 pub(super) fn on_frame(generation: u32, captured_at: &str) {
     let captured_at = captured_at.to_owned();
     run(move || {
+        if !super::browse_streaming_allowed() {
+            return;
+        }
         let Some(mut ui) = bound() else {
             return;
         };
@@ -73,6 +76,9 @@ pub(super) fn on_frame(generation: u32, captured_at: &str) {
 
 pub(super) fn on_buffering(generation: u32, buffering: bool) {
     run(move || {
+        if !super::browse_streaming_allowed() {
+            return;
+        }
         let Some(mut ui) = bound() else {
             return;
         };
@@ -85,6 +91,9 @@ pub(super) fn on_buffering(generation: u32, buffering: bool) {
 
 pub(super) fn on_gap_skipped(generation: u32) {
     run(move || {
+        if !super::browse_streaming_allowed() {
+            return;
+        }
         let Some(mut ui) = bound() else {
             return;
         };

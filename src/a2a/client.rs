@@ -5,15 +5,10 @@ use std::sync::Arc;
 use a2a_client::A2AClient;
 use a2a_client::rest::RestTransport;
 use a2a_types::{
-    AgentCard, CancelTaskRequest, DeleteTaskPushNotificationConfigRequest,
-    GetTaskPushNotificationConfigRequest, GetTaskRequest, ListTaskPushNotificationConfigsRequest,
-    ListTasksResponse, Message, Part, Role, SendMessageConfiguration, SendMessageRequest,
-    SendMessageResponse, StreamResponse, SubscribeToTaskRequest, Task, TaskPushNotificationConfig,
+    Message, Part, Role, SendMessageConfiguration, SendMessageRequest, SendMessageResponse, Task,
 };
-use futures_util::StreamExt;
 
 use crate::error::A2aLabError;
-use crate::id::{VideoClipId, VideoFollowId};
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
     ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
@@ -22,21 +17,14 @@ use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest}
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
 use crate::page::Page;
 use crate::service::{A2aLabCommand, A2aLabResult, TaskSnapshot};
-use crate::tasks::{
-    GetTaskStatusRequest, ListTasksRequest, StartTaskRequest, TaskDefinition, TaskRun,
-};
-use crate::videos::{
-    AppendFrameDecisionRequest, AppendFrameDecisionResult, DEFAULT_MJPEG_BOUNDARY,
-    FollowVideoRequest, FrameDecisionCapabilities, FrameDecisionHistoryResult,
-    GetFrameDecisionCapabilitiesRequest, GetSemanticIndexingCoverageRequest,
-    GetSemanticSearchCapabilitiesRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, ListVideoSourcesRequest,
-    ReadFrameDecisionHistoryRequest, SearchSemanticFramesRequest, SemanticFrameSearchResult,
-    SemanticIndexingCoverage, SemanticSearchCapabilities, VideoClip, VideoClipStream, VideoFollow,
-    VideoSource, VideoTimeline, decode_mjpeg_multipart,
-};
+use crate::tasks::{ListTasksRequest, StartTaskRequest, TaskDefinition};
 
 use super::wire::{self, LAB_MEDIA_TYPE};
+
+#[path = "client_a2a.rs"]
+mod client_a2a;
+#[path = "client_videos.rs"]
+mod client_videos;
 
 /// Plain-text answer from an `agent-message` turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,10 +39,10 @@ pub struct AgentMessageResponse {
 
 /// Client for a lab agent speaking A2A HTTP+JSON.
 pub struct A2aClient {
-    inner: A2AClient<RestTransport>,
-    base: String,
+    pub(super) inner: A2AClient<RestTransport>,
+    pub(super) base: String,
     image_transport: ImageTransportConfig,
-    bearer: Option<String>,
+    pub(super) bearer: Option<String>,
 }
 
 impl A2aClient {
@@ -246,425 +234,6 @@ impl A2aClient {
         .await
     }
 
-    /// Lists video sources.
-    pub async fn list_video_sources(
-        &self,
-        request: ListVideoSourcesRequest,
-    ) -> Result<Page<VideoSource>, A2aLabError> {
-        self.result(
-            A2aLabCommand::ListVideoSources(request),
-            |result| match result {
-                A2aLabResult::ListVideoSources(page) => Some(page),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Reads the retained frame at a UTC instant.
-    ///
-    /// The operation name remains `get_video_frame_at`.
-    pub async fn get_video_frame_at(
-        &self,
-        request: GetVideoFrameAtRequest,
-    ) -> Result<GetVideoFrameAtResult, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetVideoFrameAt(request),
-            |result| match result {
-                A2aLabResult::GetVideoFrameAt(frame) => Some(frame),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Prepares a bounded MJPEG clip handle. JSON never includes video bytes.
-    pub async fn get_video_clip(
-        &self,
-        request: GetVideoClipRequest,
-    ) -> Result<VideoClip, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetVideoClip(request),
-            |result| match result {
-                A2aLabResult::GetVideoClip(clip) => Some(clip),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Reads ordered retained coverage for one source. JSON never includes media bytes.
-    pub async fn get_video_timeline(
-        &self,
-        request: GetVideoTimelineRequest,
-    ) -> Result<VideoTimeline, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetVideoTimeline(request),
-            |result| match result {
-                A2aLabResult::GetVideoTimeline(timeline) => Some(timeline),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Prepares a live-follow handle. JSON never includes frame bytes.
-    pub async fn follow_video(
-        &self,
-        request: FollowVideoRequest,
-    ) -> Result<VideoFollow, A2aLabError> {
-        self.result(A2aLabCommand::FollowVideo(request), |result| match result {
-            A2aLabResult::FollowVideo(follow) => Some(follow),
-            _ => None,
-        })
-        .await
-    }
-
-    /// Discovers authorized Jev append/read capabilities.
-    pub async fn get_frame_decision_capabilities(
-        &self,
-        request: GetFrameDecisionCapabilitiesRequest,
-    ) -> Result<FrameDecisionCapabilities, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetFrameDecisionCapabilities(request),
-            |result| match result {
-                A2aLabResult::GetFrameDecisionCapabilities(capabilities) => Some(capabilities),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Appends one authorized Jev production decision record.
-    pub async fn append_frame_decision(
-        &self,
-        request: AppendFrameDecisionRequest,
-    ) -> Result<AppendFrameDecisionResult, A2aLabError> {
-        self.result(
-            A2aLabCommand::AppendFrameDecision(request),
-            |result| match result {
-                A2aLabResult::AppendFrameDecision(append) => Some(append),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Reads bounded Jev decision history.
-    pub async fn read_frame_decision_history(
-        &self,
-        request: ReadFrameDecisionHistoryRequest,
-    ) -> Result<FrameDecisionHistoryResult, A2aLabError> {
-        self.result(
-            A2aLabCommand::ReadFrameDecisionHistory(request),
-            |result| match result {
-                A2aLabResult::ReadFrameDecisionHistory(history) => Some(history),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Discovers optional semantic search schemas and operations.
-    pub async fn get_semantic_search_capabilities(
-        &self,
-        request: GetSemanticSearchCapabilitiesRequest,
-    ) -> Result<SemanticSearchCapabilities, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetSemanticSearchCapabilities(request),
-            |result| match result {
-                A2aLabResult::GetSemanticSearchCapabilities(capabilities) => Some(capabilities),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Searches saved frames by text or reference frame. JSON never includes media bytes.
-    pub async fn search_semantic_frames(
-        &self,
-        request: SearchSemanticFramesRequest,
-    ) -> Result<SemanticFrameSearchResult, A2aLabError> {
-        self.result(
-            A2aLabCommand::SearchSemanticFrames(request),
-            |result| match result {
-                A2aLabResult::SearchSemanticFrames(search) => Some(search),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Reads semantic indexing coverage for one scope and generation.
-    pub async fn get_semantic_indexing_coverage(
-        &self,
-        request: GetSemanticIndexingCoverageRequest,
-    ) -> Result<SemanticIndexingCoverage, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetSemanticIndexingCoverage(request),
-            |result| match result {
-                A2aLabResult::GetSemanticIndexingCoverage(coverage) => Some(coverage),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Origin-qualified URL for `GET` of a live-follow handle.
-    ///
-    /// The handle's own path stays relative. This joins that path to the client origin.
-    #[must_use]
-    pub fn video_live_url(&self, id: &VideoFollowId) -> String {
-        crate::videos::http::live_url(&self.base, id)
-    }
-
-    /// Downloads a prepared clip over `GET /media/video-clips/{id}` using protocol auth.
-    pub async fn open_video_clip(&self, id: &VideoClipId) -> Result<VideoClipStream, A2aLabError> {
-        let mut request = reqwest::Client::new().get(crate::videos::http::clip_url(&self.base, id));
-        if let Some(token) = &self.bearer {
-            request = request.bearer_auth(token);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|error| A2aLabError::transport(error.to_string()))?;
-        let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|error| A2aLabError::transport(error.to_string()))?;
-        if !status.is_success() {
-            return Err(clip_http_error(status, &body));
-        }
-        let frames = decode_mjpeg_multipart(&body, DEFAULT_MJPEG_BOUNDARY)?;
-        Ok(Box::pin(futures_util::stream::iter(
-            frames.into_iter().map(Ok),
-        )))
-    }
-
-    /// Reads a started lab run through the `get_task_status` skill.
-    pub async fn task_status(&self, request: GetTaskStatusRequest) -> Result<TaskRun, A2aLabError> {
-        self.result(
-            A2aLabCommand::GetTaskStatus(request),
-            |result| match result {
-                A2aLabResult::GetTaskStatus(run) => Some(run),
-                _ => None,
-            },
-        )
-        .await
-    }
-
-    /// Fetches an A2A task.
-    pub async fn task(&self, task_id: &str) -> Result<TaskSnapshot, A2aLabError> {
-        let task = self
-            .inner
-            .get_task(&GetTaskRequest {
-                id: task_id.to_owned(),
-                history_length: None,
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)?;
-        wire::snapshot_from_task(&task, self.image_transport)
-    }
-
-    /// Fetches the raw A2A task resource.
-    pub async fn get_a2a_task(&self, task_id: &str) -> Result<Task, A2aLabError> {
-        self.inner
-            .get_task(&GetTaskRequest {
-                id: task_id.to_owned(),
-                history_length: None,
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Lists A2A tasks, optionally filtered by context.
-    pub async fn list_a2a_tasks(
-        &self,
-        context_id: Option<&str>,
-    ) -> Result<ListTasksResponse, A2aLabError> {
-        self.inner
-            .list_tasks(&a2a_types::ListTasksRequest {
-                context_id: context_id.map(ToOwned::to_owned),
-                status: None,
-                page_size: None,
-                page_token: None,
-                history_length: Some(10),
-                status_timestamp_after: None,
-                include_artifacts: Some(true),
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Cancels an A2A task.
-    pub async fn cancel(&self, task_id: &str) -> Result<Task, A2aLabError> {
-        self.inner
-            .cancel_task(&CancelTaskRequest {
-                id: task_id.to_owned(),
-                metadata: None,
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Collects SSE events until the stream ends.
-    pub async fn subscribe(&self, task_id: &str) -> Result<Vec<StreamResponse>, A2aLabError> {
-        let mut stream = self
-            .inner
-            .subscribe_to_task(&SubscribeToTaskRequest {
-                id: task_id.to_owned(),
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)?;
-        let mut events = Vec::new();
-        while let Some(event) = stream.next().await {
-            events.push(event.map_err(wire::sdk_error)?);
-        }
-        Ok(events)
-    }
-
-    /// Sends a streaming message.
-    pub async fn send_stream(
-        &self,
-        command: A2aLabCommand,
-    ) -> Result<Vec<StreamResponse>, A2aLabError> {
-        let request = Self::send_request(&command, None)?;
-        let mut stream = self
-            .inner
-            .send_streaming_message(&request)
-            .await
-            .map_err(wire::sdk_error)?;
-        let mut events = Vec::new();
-        while let Some(event) = stream.next().await {
-            events.push(event.map_err(wire::sdk_error)?);
-        }
-        Ok(events)
-    }
-
-    /// Creates a push notification config.
-    pub async fn create_push_config(
-        &self,
-        config: TaskPushNotificationConfig,
-    ) -> Result<TaskPushNotificationConfig, A2aLabError> {
-        self.inner
-            .create_push_config(&config)
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Deletes a push notification config.
-    pub async fn delete_push_config(
-        &self,
-        task_id: &str,
-        config_id: &str,
-    ) -> Result<(), A2aLabError> {
-        self.inner
-            .delete_push_config(&DeleteTaskPushNotificationConfigRequest {
-                task_id: task_id.to_owned(),
-                id: config_id.to_owned(),
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Fetches a push notification config.
-    pub async fn get_push_config(
-        &self,
-        task_id: &str,
-        config_id: &str,
-    ) -> Result<TaskPushNotificationConfig, A2aLabError> {
-        self.inner
-            .get_push_config(&GetTaskPushNotificationConfigRequest {
-                task_id: task_id.to_owned(),
-                id: config_id.to_owned(),
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Lists push notification configs for a task.
-    pub async fn list_push_configs(
-        &self,
-        task_id: &str,
-    ) -> Result<a2a_types::ListTaskPushNotificationConfigsResponse, A2aLabError> {
-        self.inner
-            .list_push_configs(&ListTaskPushNotificationConfigsRequest {
-                task_id: task_id.to_owned(),
-                page_size: None,
-                page_token: None,
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Sends plain text and returns the agent reply for that conversation.
-    pub async fn agent_message(
-        &self,
-        text: &str,
-        context_id: Option<&str>,
-    ) -> Result<AgentMessageResponse, A2aLabError> {
-        self.agent_message_with_references(text, context_id, &[] as &[&str])
-            .await
-    }
-
-    /// Sends plain text that refines the tasks in `reference_task_ids`.
-    pub async fn agent_message_with_references(
-        &self,
-        text: &str,
-        context_id: Option<&str>,
-        reference_task_ids: &[impl AsRef<str>],
-    ) -> Result<AgentMessageResponse, A2aLabError> {
-        let mut message = Message::new(
-            Role::User,
-            vec![Part::text(text).with_media_type("text/plain")],
-        );
-        message.context_id = context_id.map(ToOwned::to_owned);
-        if !reference_task_ids.is_empty() {
-            message.reference_task_ids = Some(
-                reference_task_ids
-                    .iter()
-                    .map(|id| id.as_ref().to_owned())
-                    .collect(),
-            );
-        }
-        let response = self
-            .inner
-            .send_message(&SendMessageRequest {
-                message,
-                configuration: None,
-                metadata: None,
-                tenant: None,
-            })
-            .await
-            .map_err(wire::sdk_error)?;
-        agent_message_response(response)
-    }
-
-    /// Fetches the well-known Agent Card.
-    pub async fn agent_card(&self) -> Result<AgentCard, A2aLabError> {
-        a2a_client::agent_card::AgentCardResolver::new(None)
-            .resolve(&self.base)
-            .await
-            .map_err(wire::sdk_error)
-    }
-
-    /// Fetches the extended Agent Card.
-    pub async fn extended_agent_card(&self) -> Result<AgentCard, A2aLabError> {
-        self.inner
-            .get_extended_agent_card(&a2a_types::GetExtendedAgentCardRequest { tenant: None })
-            .await
-            .map_err(wire::sdk_error)
-    }
-
     async fn result<T>(
         &self,
         command: A2aLabCommand,
@@ -695,7 +264,7 @@ impl A2aClient {
         }
     }
 
-    fn send_request(
+    pub(super) fn send_request(
         command: &A2aLabCommand,
         configuration: Option<SendMessageConfiguration>,
     ) -> Result<SendMessageRequest, A2aLabError> {
@@ -714,7 +283,7 @@ impl A2aClient {
     }
 }
 
-fn agent_message_response(
+pub(super) fn agent_message_response(
     response: SendMessageResponse,
 ) -> Result<AgentMessageResponse, A2aLabError> {
     match response {
@@ -746,7 +315,7 @@ fn agent_message_response(
     }
 }
 
-fn text_from_task(task: &Task) -> Result<String, A2aLabError> {
+pub(super) fn text_from_task(task: &Task) -> Result<String, A2aLabError> {
     text_from_parts(
         task.artifacts
             .iter()
@@ -755,7 +324,9 @@ fn text_from_task(task: &Task) -> Result<String, A2aLabError> {
     )
 }
 
-fn text_from_parts<'a>(parts: impl Iterator<Item = &'a Part>) -> Result<String, A2aLabError> {
+pub(super) fn text_from_parts<'a>(
+    parts: impl Iterator<Item = &'a Part>,
+) -> Result<String, A2aLabError> {
     let text = parts
         .filter_map(Part::as_text)
         .collect::<Vec<_>>()
@@ -769,7 +340,7 @@ fn text_from_parts<'a>(parts: impl Iterator<Item = &'a Part>) -> Result<String, 
     }
 }
 
-fn expect_variant(
+pub(super) fn expect_variant(
     snapshot: TaskSnapshot,
     matches_result: impl FnOnce(&A2aLabResult) -> bool,
 ) -> Result<TaskSnapshot, A2aLabError> {
@@ -780,7 +351,7 @@ fn expect_variant(
     }
 }
 
-fn clip_http_error(status: reqwest::StatusCode, body: &[u8]) -> A2aLabError {
+pub(super) fn clip_http_error(status: reqwest::StatusCode, body: &[u8]) -> A2aLabError {
     if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
         && let Some(code) = value
             .pointer("/error/code")

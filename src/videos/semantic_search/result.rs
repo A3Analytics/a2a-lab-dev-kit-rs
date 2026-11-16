@@ -309,6 +309,8 @@ pub struct SemanticIndexingStateCounts {
     ready: u64,
     failed: u64,
     expired: u64,
+    #[serde(default)]
+    skipped: u64,
 }
 
 impl SemanticIndexingStateCounts {
@@ -320,7 +322,14 @@ impl SemanticIndexingStateCounts {
             ready,
             failed,
             expired,
+            skipped: 0,
         }
+    }
+
+    /// Adds terminal skipped job counts.
+    #[must_use]
+    pub const fn with_skipped(self, skipped: u64) -> Self {
+        Self { skipped, ..self }
     }
 
     /// Manifest rows awaiting inference.
@@ -347,10 +356,16 @@ impl SemanticIndexingStateCounts {
         self.expired
     }
 
+    /// Terminal skipped eligibility that will not re-enter the queue.
+    #[must_use]
+    pub const fn skipped(self) -> u64 {
+        self.skipped
+    }
+
     /// Total accounted revisions.
     #[must_use]
     pub const fn total(self) -> u64 {
-        self.pending + self.ready + self.failed + self.expired
+        self.pending + self.ready + self.failed + self.expired + self.skipped
     }
 }
 
