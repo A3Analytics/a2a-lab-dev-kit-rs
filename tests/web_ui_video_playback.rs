@@ -40,7 +40,7 @@ fn play(base: &str) {
     page.viewport(1280, 800);
     page.show("#videos");
     page.wait_until(
-        "document.getElementById('video-interval-0') && document.getElementById('video-range-end')",
+        "document.getElementById('video-interval-0') && document.getElementById('video-current-time')",
     );
     assert_eq!(
         page.eval(&local_clock(

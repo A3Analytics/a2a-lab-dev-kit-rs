@@ -35,10 +35,11 @@ pub use logging::{
 };
 pub use semantic_indexing::{
     A2A_LAB_CONFIG_SCHEMA_VERSION_V2, CredentialReference, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
-    DecisionCoveragePolicy, EmbeddingSpaceConfig, SemanticDecisionLimits, SemanticDecisionsConfig,
-    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
-    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
-    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits,
+    DEFAULT_SEMANTIC_SCORE_FLOOR, DecisionCoveragePolicy, EmbeddingSpaceConfig,
+    SemanticDecisionLimits, SemanticDecisionsConfig, SemanticDescriptionConfig,
+    SemanticEmbeddingsConfig, SemanticIndexingConfig, SemanticIndexingLimits,
+    SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule, SemanticStorageLimits,
+    SemanticStreamSchedule, SemanticWorkerLimits,
 };
 pub use video::{VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig};
 

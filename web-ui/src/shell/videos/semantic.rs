@@ -533,9 +533,6 @@ fn SearchResults(state: VideoUi) -> Element {
                 }
                 if mode == SearchMode::Ready {
                     SearchPagination { state: state.clone() }
-                    if let Some(hit) = state.semantic.selected_hit() {
-                        SemanticDetail { hit: hit.clone(), state: state.clone() }
-                    }
                 }
             }
         }
@@ -685,7 +682,6 @@ fn SemanticHitBody(hit: SearchHit) -> Element {
         span { class: "video-semantic-hit-copy",
             time { datetime: "{hit.captured_at}", "{hit.captured_at}" }
             span { class: "video-semantic-source", "{hit.source_label}" }
-            span { class: "video-semantic-score", "Score {hit.retrieval_score}" }
             span { class: "video-semantic-description", "{hit.description}" }
         }
     }
@@ -740,107 +736,6 @@ fn SemanticThumb(thumb: HitThumb) -> Element {
         } else {
             span { class: "video-semantic-thumb-placeholder", "{thumb.withheld}" }
         }
-    }
-}
-
-#[component]
-fn SemanticDetail(hit: SearchHit, state: VideoUi) -> Element {
-    rsx! {
-        section {
-            id: "video-semantic-detail",
-            class: "video-semantic-detail",
-            aria_label: "Semantic frame detail",
-            div { id: "video-semantic-metadata", class: "video-metadata-panel",
-                h3 { "Search metadata (Luna)" }
-                p { class: "video-semantic-note",
-                    "Generated description for retrieval only — not a verified lab decision."
-                }
-                dl {
-                    dt { "Description" } dd { "{hit.description}" }
-                    dt { "Model" } dd { "{hit.description_model}" }
-                    dt { "Provider" } dd { "{hit.description_provider}" }
-                    dt { "Retrieval score" } dd { "{hit.retrieval_score}" }
-                    dt { "Index state" }
-                    dd {
-                        span { id: "video-semantic-index-state", "data-state": "{hit.index_state}", "{hit.index_state}" }
-                    }
-                    dt { "Media" }
-                    dd {
-                        span { id: "video-semantic-media-state", "data-state": "{hit.media_state}", "{hit.media_state}" }
-                        if !hit.media_reason.is_empty() {
-                            span { " — {hit.media_reason}" }
-                        }
-                    }
-                }
-            }
-            if state.semantic.decisions_enabled() {
-                div { id: "video-decision-history", class: "video-decision-panel",
-                    h3 { "Frame decisions (Jev)" }
-                    p { class: "video-decision-note",
-                        "Authoritative predicate assessments from typesafe-jev only."
-                    }
-                    if state.semantic.decision_alert.is_empty() {
-                        if state.semantic.decisions.is_empty() {
-                            p {
-                                id: "video-decision-empty",
-                                role: "status",
-                                "data-state": decision_empty_slug(&state),
-                                "{decision_empty_copy(&state)}"
-                            }
-                        } else {
-                            for (index, row) in state.semantic.decisions.iter().enumerate() {
-                                DecisionRowView { key: "{row.decision_id}", index, row: row.clone() }
-                            }
-                        }
-                    } else {
-                        div { id: "video-decision-alert", role: "alert", "{state.semantic.decision_alert}" }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn DecisionRowView(index: usize, row: DecisionRow) -> Element {
-    rsx! {
-        article {
-            id: "video-decision-row-{index}",
-            class: "video-decision-row",
-            "data-outcome": "{row.outcome}",
-            "data-coverage": "{row.coverage}",
-            "data-evidence": "{row.evidence_state}",
-            dl {
-                dt { "Predicate" } dd { "{row.predicate}" }
-                dt { "Subject" } dd { "{row.subject}" }
-                dt { "Outcome" } dd { "{row.outcome}" }
-                dt { "Evaluation" } dd { "{row.coverage}" }
-                dt { "Producer" } dd { "{row.producer} @ {row.model_revision}" }
-                dt { "Probability" } dd { "{row.probability}" }
-                dt { "Confidence" } dd { "{row.confidence}" }
-                dt { "Region of interest" } dd { "{row.roi}" }
-                dt { "Evaluated" } dd { time { datetime: "{row.evaluated_at}", "{row.evaluated_at}" } }
-                dt { "Evidence" } dd { "{row.evidence_state}" }
-            }
-        }
-    }
-}
-
-fn decision_empty_copy(state: &VideoUi) -> &'static str {
-    match state.semantic.decision_phase {
-        ApiPhase::Unknown => "Loading decision history…",
-        ApiPhase::Ready => "No Jev decisions recorded for this frame.",
-        ApiPhase::Absent => "Decision history is not configured.",
-        ApiPhase::Error => "Decision history could not be read.",
-    }
-}
-
-fn decision_empty_slug(state: &VideoUi) -> &'static str {
-    match state.semantic.decision_phase {
-        ApiPhase::Unknown => "loading",
-        ApiPhase::Ready => "empty",
-        ApiPhase::Absent => "absent",
-        ApiPhase::Error => "error",
     }
 }
 

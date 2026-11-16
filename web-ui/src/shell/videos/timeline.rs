@@ -512,46 +512,6 @@ pub(super) fn timeline_click(event: Event<MouseData>) {
     commit_at(at_us, true);
 }
 
-pub(super) fn commit_typed_range() {
-    commit_typed_range_for_ids("video-range-start", "video-range-end");
-}
-
-pub(super) fn commit_typed_range_for_ids(start_id: &str, end_id: &str) {
-    let local = bound().is_some_and(|ui| ui.peek().local_time);
-    let start = field_to_utc(&session::control_value(start_id), local);
-    let end = field_to_utc(&session::control_value(end_id), local);
-    commit_typed_bounds(&start, &end);
-}
-
-fn commit_typed_bounds(start: &str, end: &str) {
-    let Some(mut ui) = bound() else {
-        return;
-    };
-    let mut next = ui.peek().clone();
-    next.range_start = start.to_owned();
-    next.range_end = end.to_owned();
-    let Ok(range) = videos::check_range(start, end) else {
-        let _ = next.reader.select_range(start, end);
-        ui.set(next);
-        return;
-    };
-    let selection = Window {
-        start_us: range.start_us,
-        end_us: range.end_us,
-    };
-    if next.draft == Some(selection)
-        && next.session.is_some_and(|session| {
-            session.start_us == range.start_us && session.end_us <= range.end_us
-        })
-    {
-        remember(&mut next, selection);
-        ui.set(next);
-        return;
-    }
-    ui.set(next);
-    commit_selection(selection, Some(selection.start_us), true);
-}
-
 fn remember(next: &mut VideoUi, window: Window) {
     remember_window(next, window);
 }

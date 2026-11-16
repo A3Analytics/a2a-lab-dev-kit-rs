@@ -766,7 +766,7 @@ fn assert_auto_playback_started(page: &mut Browser) {
 
 fn assert_typed_range(page: &mut Browser) {
     let entered = page.eval(
-        "(() => { const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); const apply = document.getElementById('video-range-apply'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; start.value = '2024-01-01T00:00:00Z'; end.value = '2024-01-01T00:00:02Z'; start.dispatchEvent(new Event('input', { bubbles: true })); end.dispatchEvent(new Event('input', { bubbles: true })); apply.click(); return true; })()",
+        "(() => { const current = document.getElementById('video-current-time'); const apply = document.getElementById('video-range-apply'); if (!(current instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; current.value = '2024-01-01T00:00:01Z'; current.dispatchEvent(new Event('input', { bubbles: true })); apply.click(); return true; })()",
     );
     assert_eq!(entered, serde_json::json!(true), "range fields missing");
     page.wait_until(

@@ -171,6 +171,12 @@
   padding-top: 0;
 }
 
+#video-search-result-state[data-state="empty"] {
+  align-items: center;
+  width: 100%;
+  text-align: center;
+}
+
 #video-semantic-search-loading {
   width: 100%;
 }

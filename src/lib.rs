@@ -49,14 +49,14 @@ pub use config::{
     A2A_LAB_CONFIG_SCHEMA_VERSION, A2A_LAB_CONFIG_SCHEMA_VERSION_V2, A2aLabConfig, CameraIdView,
     CameraSelector, ChatConfig, ChatProvider, ConfigDuration, CredentialReference,
     DEFAULT_LIVE_OUTPUT_FPS, DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL,
-    DEFAULT_SEMANTIC_DESCRIPTION_BACKEND, DecisionCoveragePolicy, EmbeddingSpaceConfig,
-    LoadedLabConfig, LogOutputFormat, LoggingConfig, OpenTelemetryLoggingConfig,
-    SaveIntervalDuration, SemanticDecisionLimits, SemanticDecisionsConfig,
-    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
-    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
-    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits, VideoCaptureSettings,
-    VideoCaptureSettingsView, VideoCaptureSourceView, VideoConfig, VideoDvrConfig,
-    VideoInputFormat, VideoSourceConfig,
+    DEFAULT_SEMANTIC_DESCRIPTION_BACKEND, DEFAULT_SEMANTIC_SCORE_FLOOR, DecisionCoveragePolicy,
+    EmbeddingSpaceConfig, LoadedLabConfig, LogOutputFormat, LoggingConfig,
+    OpenTelemetryLoggingConfig, SaveIntervalDuration, SemanticDecisionLimits,
+    SemanticDecisionsConfig, SemanticDescriptionConfig, SemanticEmbeddingsConfig,
+    SemanticIndexingConfig, SemanticIndexingLimits, SemanticIndexingSearchLimits,
+    SemanticRoiLimits, SemanticSchedule, SemanticStorageLimits, SemanticStreamSchedule,
+    SemanticWorkerLimits, VideoCaptureSettings, VideoCaptureSettingsView, VideoCaptureSourceView,
+    VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig,
 };
 pub use error::{A2aLabError, VideoAvailability};
 pub use id::{

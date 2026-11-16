@@ -33,7 +33,6 @@ const CONNECTED: &str = "document.getElementById('connection')?.dataset.state ==
 const LONG_SEMANTIC_DESCRIPTION: &str = "Supercalifragilisticexpialidocious-pipette-alignment-artifact-observed-on-channel-one-with-continuous-unbroken-token-stream-and-retrieval-metadata-that-must-wrap-inside-the-results-pane-without-horizontal-overflow";
 const SEMANTIC_OVERFLOW_CHECK: &str = r"(() => {
   const scroll = document.querySelector('#video-search-results .log-scroll');
-  const detail = document.getElementById('video-semantic-detail');
   const hits = [...document.querySelectorAll('#video-semantic-hits .video-semantic-hit')];
   const controlPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--density-control-height')) * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
   const inside = (panel, el) => {
@@ -52,7 +51,6 @@ const SEMANTIC_OVERFLOW_CHECK: &str = r"(() => {
   const docOverflow = document.documentElement.scrollWidth <= window.innerWidth + 1;
   const scrollLeft = scroll ? scroll.scrollLeft : 0;
   const scrollContained = scroll && scrollLeft < 2;
-  const detailContained = !detail || [...detail.querySelectorAll('dd, dt, p, time, span')].every((el) => inside(scroll, el));
   const hitsContained = hits.every((hit) => inside(scroll, hit));
   const scrollY = scroll ? getComputedStyle(scroll).overflowY : '';
   const stacked = getComputedStyle(document.getElementById('video-search-browser')).flexDirection === 'column';
@@ -73,18 +71,14 @@ const SEMANTIC_OVERFLOW_CHECK: &str = r"(() => {
     if (index === 0) return true;
     return hit.getBoundingClientRect().top >= hits[index - 1].getBoundingClientRect().bottom - 1;
   });
-  const detailBox = detail?.getBoundingClientRect() || null;
-  const detailSeparated = !detailBox || hits.every((hit) => !overlaps(hit.getBoundingClientRect(), detailBox));
-  const layoutPass = hitLayout.every((m) => m.fits && m.descInside && m.tallEnough) && hitsStacked && detailSeparated;
+  const layoutPass = hitLayout.every((m) => m.fits && m.descInside && m.tallEnough) && hitsStacked;
   return {
-    pass: docOverflow && scrollContained && detailContained && hitsContained && layoutPass,
+    pass: docOverflow && scrollContained && hitsContained && layoutPass,
     docOverflow,
     scrollContained,
-    detailContained,
     hitsContained,
     layoutPass,
     hitsStacked,
-    detailSeparated,
     hitLayout,
     scrollY,
     stacked,
@@ -423,7 +417,10 @@ fn semantic_flow(base: &str) {
     );
     page.click("video-semantic-previous");
     page.wait_until("document.getElementById('video-semantic-hit-0')");
-    page.wait_until("document.getElementById('video-semantic-detail')");
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-detail')"),
+        serde_json::json!(null),
+    );
     assert_eq!(
         page.eval("document.getElementById('video-semantic-hit-0')?.tagName"),
         serde_json::json!("A"),
@@ -464,37 +461,10 @@ fn semantic_flow(base: &str) {
             return start.value === '2024-01-01T00:00:00' && end.value === '2024-01-01T00:00:10';
         })()",
     );
-    let html = page
-        .eval("(() => document.getElementById('video-semantic-detail')?.innerHTML ?? '')()")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    assert!(html.contains("Search metadata (Luna)"));
-    assert!(html.contains("Frame decisions (Jev)"));
-    assert!(html.contains("not a verified lab decision"));
-    assert!(!html.contains("chupacabra.dvr"));
-    assert!(!html.contains("Bearer "));
-    let index_state = page
-        .eval(
-            "(() => document.getElementById('video-semantic-index-state')?.dataset.state ?? '')()",
-        )
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    assert_eq!(index_state, "ready");
-    page.wait_until(
-        "document.querySelector('#video-decision-row-0')?.dataset.outcome === 'present'",
-    );
     assert_eq!(
-        page.eval("document.querySelector('#video-decision-row-0 a')"),
+        page.eval("document.getElementById('video-decision-history')"),
         serde_json::json!(null),
     );
-    let decision_outcome = page
-        .eval("(() => document.querySelector('#video-decision-row-0')?.dataset.outcome ?? '')()")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    assert_eq!(decision_outcome, "present");
 }
 
 fn semantic_overflow_flow(base: &str) {
@@ -511,7 +481,7 @@ fn semantic_overflow_flow(base: &str) {
     );
     page.set_value("video-semantic-query", "pipette");
     page.click_selector("#video-semantic-submit");
-    page.wait_until("document.getElementById('video-semantic-detail')");
+    page.wait_until("document.querySelector('#video-semantic-hits .video-semantic-hit')");
     let wide = page.eval(SEMANTIC_OVERFLOW_CHECK);
     assert_eq!(
         wide.get("pass"),
@@ -561,7 +531,6 @@ fn semantic_result_states_flow(base: &str) {
     page.click_selector("#video-semantic-submit");
     page.wait_until("document.querySelector('#video-semantic-hits .video-semantic-hit')");
     page.wait_until("document.getElementById('video-semantic-pagination')");
-    page.wait_until("document.getElementById('video-semantic-detail')");
 
     page.eval("window.__holdNextSemanticSearch()");
     page.set_value("video-semantic-query", "pipette tip");
@@ -612,7 +581,6 @@ fn semantic_result_states_flow(base: &str) {
         "document.getElementById('video-search-result-state')?.dataset.state === 'ready'",
     );
     page.wait_until("document.querySelector('#video-semantic-hits .video-semantic-hit')");
-    page.wait_until("document.getElementById('video-semantic-detail')");
 
     page.set_value("video-semantic-query", "no-such-semantic-term");
     page.click_selector("#video-semantic-submit");
@@ -659,7 +627,6 @@ fn linked_hit_flow(base: &str) {
     page.set_value("video-semantic-query", "pipette");
     page.click_selector("#video-semantic-submit");
     page.wait_until(SEARCH_HITS);
-    page.wait_until("document.getElementById('video-semantic-detail')");
     assert_eq!(
         page.eval("document.getElementById('video-semantic-hit-0')?.getAttribute('href')"),
         serde_json::json!("/ui/videos?source_id=cam-a&at=2024-01-01T00%3A00%3A01Z&autoplay=false"),
@@ -681,13 +648,10 @@ fn linked_hit_flow(base: &str) {
         serde_json::json!(true),
     );
     assert_hit_timestamps_share_row_href(&mut page);
-    let html = page
-        .eval("(() => document.getElementById('video-semantic-detail')?.innerHTML ?? '')()")
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    assert!(html.contains("Search metadata (Luna)"));
-    assert!(html.contains("Frame decisions (Jev)"));
+    assert_eq!(
+        page.eval("document.getElementById('video-semantic-detail')"),
+        serde_json::json!(null),
+    );
 
     page.click("video-semantic-hit-2");
     assert_eq!(
@@ -740,9 +704,8 @@ fn assert_hit_timestamps_share_row_href(page: &mut Browser) {
         page.eval("document.querySelector('#video-semantic-hit-0 time')?.closest('a')?.id"),
         serde_json::json!("video-semantic-hit-0"),
     );
-    page.wait_until("document.querySelector('#video-decision-row-0')");
     assert_eq!(
-        page.eval("document.querySelector('#video-decision-row-0 a')"),
+        page.eval("document.getElementById('video-decision-history')"),
         serde_json::json!(null),
     );
 }

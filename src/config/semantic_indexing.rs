@@ -17,6 +17,8 @@ use super::{object_at, parse_u32, reject_unknown_keys};
 /// Default semantic description backend when the file omits `description.provider`.
 pub const DEFAULT_SEMANTIC_DESCRIPTION_BACKEND: FrameDescriptionBackend =
     FrameDescriptionBackend::Bedrock;
+/// Default minimum semantic retrieval score.
+pub const DEFAULT_SEMANTIC_SCORE_FLOOR: &str = "0.20";
 
 /// Supported v2 configuration schema version.
 pub const A2A_LAB_CONFIG_SCHEMA_VERSION_V2: u32 = 2;
@@ -306,6 +308,7 @@ pub struct SemanticIndexingSearchLimits {
     pub candidate_limit: u32,
     pub max_neighbor_frames: u32,
     pub query_window: ConfigDuration,
+    pub score_floor: String,
 }
 
 /// ROI extraction bounds for saved-frame evidence.
@@ -582,7 +585,22 @@ impl SemanticIndexingSearchLimits {
             self.max_neighbor_frames,
             MAX_SEMANTIC_NEIGHBOR_FRAMES,
         )?;
+        let score = self.score_floor.parse::<f64>().map_err(|_| {
+            A2aLabError::invalid(
+                "semantic_indexing.limits.search.score_floor",
+                "must be a finite number between -1 and 1",
+            )
+        })?;
+        validate_score_floor(score)?;
         Ok(())
+    }
+
+    /// Minimum retrieval score retained in semantic search results.
+    #[must_use]
+    pub fn score_floor(&self) -> f32 {
+        self.score_floor
+            .parse()
+            .unwrap_or_else(|_| DEFAULT_SEMANTIC_SCORE_FLOOR.parse().unwrap_or(0.55))
     }
 }
 
@@ -1037,6 +1055,7 @@ fn parse_search_limits(value: Option<&Value>) -> Result<SemanticIndexingSearchLi
             "candidate_limit",
             "max_neighbor_frames",
             "query_window",
+            "score_floor",
         ],
     )?;
     Ok(SemanticIndexingSearchLimits {
@@ -1053,6 +1072,7 @@ fn parse_search_limits(value: Option<&Value>) -> Result<SemanticIndexingSearchLi
             map.get("query_window"),
             "semantic_indexing.limits.search.query_window",
         )?,
+        score_floor: parse_score_floor(map.get("score_floor"))?,
     })
 }
 
@@ -1246,6 +1266,24 @@ fn required_positive_u32(field: Option<&Value>, path: &'static str) -> Result<u3
     let parsed = parse_u32(path, value)?;
     check_positive(path, parsed)?;
     Ok(parsed)
+}
+
+fn parse_score_floor(field: Option<&Value>) -> Result<String, A2aLabError> {
+    let score = field
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| DEFAULT_SEMANTIC_SCORE_FLOOR.parse().unwrap_or(0.55));
+    validate_score_floor(score)?;
+    Ok(score.to_string())
+}
+
+fn validate_score_floor(score: f64) -> Result<(), A2aLabError> {
+    if !score.is_finite() || !(-1.0..=1.0).contains(&score) {
+        return Err(A2aLabError::invalid(
+            "semantic_indexing.limits.search.score_floor",
+            "must be a finite number between -1 and 1",
+        ));
+    }
+    Ok(())
 }
 
 fn required_nonempty_string(

@@ -1,16 +1,14 @@
 use dioxus::prelude::*;
 
-use super::{VideoUi, apply_typed_range, edit_range, follow_newest, toggle_local_time};
+use super::{VideoUi, apply_current_time, edit_current_time, follow_newest, toggle_local_time};
 
 #[component]
 pub(super) fn VideoDetails(
     state: VideoUi,
-    range_start: String,
-    range_end: String,
+    current_time: String,
     local_time: bool,
     range_error: String,
-    utc_start: String,
-    utc_end: String,
+    current_time_utc: String,
     available_start: Option<String>,
     available_end: Option<String>,
     available_start_utc: Option<String>,
@@ -19,22 +17,17 @@ pub(super) fn VideoDetails(
     live_active: bool,
 ) -> Element {
     let invalid = !range_error.is_empty();
-    let placeholder_start = if local_time {
+    let placeholder = if local_time {
         "2024-01-01 00:00:00"
     } else {
         "2024-01-01 00:00:00 UTC"
-    };
-    let placeholder_end = if local_time {
-        "2024-01-01 00:00:02"
-    } else {
-        "2024-01-01 00:00:02 UTC"
     };
     rsx! {
         div {
             id: "video-details",
             class: "video-filter-group",
             role: "group",
-            aria_label: "Time range",
+            aria_label: "Current time",
             "data-source-id": "{state.reader.source_id}",
             "data-time-zone": if local_time { "local" } else { "utc" },
             button {
@@ -46,7 +39,7 @@ pub(super) fn VideoDetails(
                 onclick: move |_| follow_newest(),
                 "LIVE"
             }
-            p { "Time range" }
+            p { "Current time" }
             button {
                 id: "video-local-time",
                 class: "log-facet",
@@ -57,43 +50,27 @@ pub(super) fn VideoDetails(
                 span { class: "log-facet-mark", aria_hidden: "true" }
                 "Local time"
             }
-            label { r#for: "video-range-start", "Start" }
+            label { r#for: "video-current-time", "Current time" }
             input {
-                id: "video-range-start",
+                id: "video-current-time",
                 r#type: "text",
                 spellcheck: false,
                 autocomplete: "off",
-                "aria-label": "Start",
+                "aria-label": "Current time",
                 "aria-invalid": if invalid { "true" } else { "false" },
                 aria_describedby: "video-range-error",
-                "data-label": "Start",
-                "data-utc": "{utc_start}",
-                placeholder: "{placeholder_start}",
-                value: "{range_start}",
-                oninput: move |_| edit_range(true),
-                onkeydown: apply_on_enter,
-            }
-            label { r#for: "video-range-end", "End" }
-            input {
-                id: "video-range-end",
-                r#type: "text",
-                spellcheck: false,
-                autocomplete: "off",
-                "aria-label": "End",
-                "aria-invalid": if invalid { "true" } else { "false" },
-                aria_describedby: "video-range-error",
-                "data-label": "End",
-                "data-utc": "{utc_end}",
-                placeholder: "{placeholder_end}",
-                value: "{range_end}",
-                oninput: move |_| edit_range(false),
+                "data-label": "Current time",
+                "data-utc": "{current_time_utc}",
+                placeholder: "{placeholder}",
+                value: "{current_time}",
+                oninput: move |_| edit_current_time(),
                 onkeydown: apply_on_enter,
             }
             button {
                 id: "video-range-apply",
                 class: "video-outline",
                 r#type: "button",
-                onclick: move |_| apply_typed_range(),
+                onclick: move |_| apply_current_time(),
                 "Apply"
             }
             p { id: "video-range-error", class: "video-range-error", "{range_error}" }
@@ -128,6 +105,6 @@ pub(super) fn VideoDetails(
 fn apply_on_enter(event: KeyboardEvent) {
     if event.key() == Key::Enter {
         event.prevent_default();
-        apply_typed_range();
+        apply_current_time();
     }
 }

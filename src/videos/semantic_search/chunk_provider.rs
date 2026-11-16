@@ -224,6 +224,9 @@ where
                 continue;
             }
             let rank = rank_value(space.metric(), query, vector.values())?;
+            if rank < self.semantic.limits.search.score_floor() {
+                continue;
+            }
             let text = description.text().to_owned();
             ranked.push((rank, record, attachment, text));
         }

@@ -19,7 +19,7 @@ const JPEG: &[u8] = &[
     0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
 ];
 const READY: &str = "document.getElementById('video-interval-0') && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped')";
-const SHOWN: &str = "(() => { const localStamp = (iso) => { const d = new Date(iso); if (Number.isNaN(d.getTime())) return ''; const pad = (n) => String(n).padStart(2, '0'); const wall = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(d).find((part) => part.type === 'timeZoneName')?.value ?? ''; return zone ? `${wall} ${zone}` : wall; }; const available = document.getElementById('video-available-start'); const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); const timeline = document.getElementById('video-timeline'); if (!available || !start || !end || !timeline?.dataset.start || !timeline?.dataset.end) return false; return available.textContent.trim() === localStamp(available.dateTime) && start.value === localStamp(start.dataset.utc) && end.value === localStamp(end.dataset.utc) && timeline.getAttribute('aria-valuetext') === `${localStamp(timeline.dataset.start)} to ${localStamp(timeline.dataset.end)}`; })()";
+const SHOWN: &str = "(() => { const localStamp = (iso) => { const d = new Date(iso); if (Number.isNaN(d.getTime())) return ''; const pad = (n) => String(n).padStart(2, '0'); const wall = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(d).find((part) => part.type === 'timeZoneName')?.value ?? ''; return zone ? `${wall} ${zone}` : wall; }; const available = document.getElementById('video-available-start'); const current = document.getElementById('video-current-time'); const timeline = document.getElementById('video-timeline'); if (!available || !current || !timeline?.dataset.start || !timeline?.dataset.end) return false; return available.textContent.trim() === localStamp(available.dateTime) && current.value === localStamp(current.dataset.utc) && timeline.getAttribute('aria-valuetext') === `${localStamp(timeline.dataset.start)} to ${localStamp(timeline.dataset.end)}`; })()";
 
 #[tokio::test]
 async fn browser_videos_interactions_click_drag_and_type() {
@@ -104,19 +104,19 @@ fn assert_local_time(page: &mut Browser) {
     );
     let utc_available =
         page.eval("document.getElementById('video-available-start')?.textContent.trim() ?? ''");
-    let utc_kept = page.eval("document.getElementById('video-range-start')?.dataset.utc ?? ''");
+    let utc_kept = page.eval("document.getElementById('video-current-time')?.dataset.utc ?? ''");
     page.click("video-local-time");
     page.wait_until(&format!(
-        "{SHOWN} && document.getElementById('video-details')?.dataset.timeZone === 'local' && document.getElementById('video-local-time')?.getAttribute('aria-pressed') === 'true' && document.getElementById('video-range-start')?.placeholder === '2024-01-01 00:00:00'"
+        "{SHOWN} && document.getElementById('video-details')?.dataset.timeZone === 'local' && document.getElementById('video-local-time')?.getAttribute('aria-pressed') === 'true' && document.getElementById('video-current-time')?.placeholder === '2024-01-01 00:00:00'"
     ));
     assert_eq!(
-        page.eval("document.getElementById('video-range-start')?.dataset.utc ?? ''"),
+        page.eval("document.getElementById('video-current-time')?.dataset.utc ?? ''"),
         utc_kept,
         "local time changed the stored instant"
     );
     page.click("video-local-time");
     page.wait_until(
-        "document.getElementById('video-details')?.dataset.timeZone === 'utc' && document.getElementById('video-local-time')?.getAttribute('aria-pressed') === 'false' && document.getElementById('video-range-start')?.placeholder === '2024-01-01 00:00:00 UTC'",
+        "document.getElementById('video-details')?.dataset.timeZone === 'utc' && document.getElementById('video-local-time')?.getAttribute('aria-pressed') === 'false' && document.getElementById('video-current-time')?.placeholder === '2024-01-01 00:00:00 UTC'",
     );
     assert_eq!(
         page.eval("document.getElementById('video-available-start')?.textContent.trim() ?? ''"),
@@ -125,11 +125,10 @@ fn assert_local_time(page: &mut Browser) {
     );
 }
 
-fn type_range(page: &mut Browser, start: &str, end: &str) {
+fn type_range(page: &mut Browser, start: &str, _end: &str) {
     let start = serde_json::to_string(start).unwrap_or_default();
-    let end = serde_json::to_string(end).unwrap_or_default();
     let entered = page.eval(&format!(
-        "(async () => {{ const start = document.getElementById('video-range-start'); const end = document.getElementById('video-range-end'); const apply = document.getElementById('video-range-apply'); if (!(start instanceof HTMLInputElement) || !(end instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; const write = () => {{ start.value = {start}; end.value = {end}; start.dispatchEvent(new Event('input', {{ bubbles: true }})); end.dispatchEvent(new Event('input', {{ bubbles: true }})); }}; write(); await new Promise((resolve) => setTimeout(resolve, 50)); write(); apply.click(); return true; }})()"
+        "(async () => {{ const current = document.getElementById('video-current-time'); const apply = document.getElementById('video-range-apply'); if (!(current instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; current.value = {start}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); await new Promise((resolve) => setTimeout(resolve, 50)); current.value = {start}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); apply.click(); return true; }})()"
     ));
     assert_eq!(entered, serde_json::json!(true), "range fields missing");
 }

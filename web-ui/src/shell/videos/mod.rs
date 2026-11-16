@@ -38,10 +38,10 @@ pub(crate) use route_lifecycle::leave_videos;
 use route_lifecycle::{mirror_status, suspend_browse_media, videos_visible};
 use semantic::{SearchPanel, abort_semantic_commands, note_source_change, wire_resources};
 use timeline::{
-    abort_commands, alert_text, bands, begin_command, commit_at, commit_typed_range, display_clock,
-    displayed_window, ensure_timeline, field_to_utc, follow_newest, playhead_style,
-    replay_retained_start, replay_session, selection_slug, slider_now, slider_text, timeline_click,
-    timeline_down, timeline_key, timeline_move, timeline_up, us_at,
+    abort_commands, alert_text, bands, begin_command, commit_at, display_clock, displayed_window,
+    ensure_timeline, field_to_utc, follow_newest, playhead_style, replay_retained_start,
+    replay_session, selection_slug, slider_now, slider_text, timeline_click, timeline_down,
+    timeline_key, timeline_move, timeline_up, us_at,
 };
 use timeline_refresh::start_coverage_refresh;
 
@@ -587,18 +587,13 @@ fn source_capability(item: &Item) -> Option<videos::SourceCapability> {
     })
 }
 
-pub(super) fn edit_range(start: bool) {
-    let start_raw = session::control_value("video-range-start");
-    let end_raw = session::control_value("video-range-end");
+pub(super) fn edit_current_time() {
+    let current_time = session::control_value("video-current-time");
     let Some(mut ui) = bound() else {
         return;
     };
     let mut next = ui.peek().clone();
-    if start {
-        next.range_draft_start = start_raw;
-    } else {
-        next.range_draft_end = end_raw;
-    }
+    next.range_draft_start = current_time;
     next.range_error.clear();
     ui.set(next);
 }
@@ -618,24 +613,24 @@ pub(super) fn toggle_local_time() {
     ui.set(next);
 }
 
-pub(super) fn apply_typed_range() {
+pub(super) fn apply_current_time() {
     let local = bound().is_some_and(|ui| ui.peek().local_time);
-    let start = field_to_utc(&session::control_value("video-range-start"), local);
-    let end = field_to_utc(&session::control_value("video-range-end"), local);
-    if let Err(fault) = videos::check_range(&start, &end) {
+    let current = field_to_utc(&session::control_value("video-current-time"), local);
+    let Some(at_us) = videos::mjpeg::captured_us(&current) else {
         if let Some(mut ui) = bound() {
             let mut next = ui.peek().clone();
-            next.range_error = timeline::range_fault_message(fault, next.local_time);
+            next.range_error = "Enter a valid current time.".to_owned();
             ui.set(next);
         }
         return;
-    }
+    };
+    let autoplay = bound().is_some_and(|ui| ui.peek().reader.playback == Playback::Playing);
     if let Some(mut ui) = bound() {
         let mut next = ui.peek().clone();
         next.range_error.clear();
         ui.set(next);
     }
-    commit_typed_range();
+    commit_at(at_us, autoplay);
 }
 
 pub(super) fn choose_source(id: &str) {

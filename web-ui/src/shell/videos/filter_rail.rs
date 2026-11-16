@@ -24,7 +24,7 @@ pub(crate) fn source_option(item: &Item) -> String {
     if item.name.is_empty() {
         item.id.clone()
     } else {
-        format!("{} · {}", item.name, item.id)
+        item.name.clone()
     }
 }
 
@@ -97,34 +97,32 @@ pub(super) fn FilterRail(state: VideoUi) -> Element {
             if !state.reader.source_id.is_empty() {
                 VideoDetails {
                     state: state.clone(),
-                    range_start: if state.range_draft_start.is_empty() {
-                        display_clock(&state.range_start, local)
+                    current_time: if state.range_draft_start.is_empty() {
+                        display_clock(
+                            if state.reader.frame_time.is_empty() {
+                                &state.range_start
+                            } else {
+                                &state.reader.frame_time
+                            },
+                            local,
+                        )
                     } else {
                         state.range_draft_start.clone()
                     },
-                    range_end: if state.range_draft_end.is_empty() {
-                        display_clock(&state.range_end, local)
-                    } else {
-                        state.range_draft_end.clone()
-                    },
                     local_time: local,
                     range_error: state.range_error.clone(),
-                    utc_start: committed_utc(
-                        &state.range_start,
-                        state
-                            .reader
-                            .clip
-                            .as_ref()
-                            .map(|clip| clip.effective_start.as_str()),
-                    ),
-                    utc_end: committed_utc(
-                        &state.range_end,
-                        state
-                            .reader
-                            .clip
-                            .as_ref()
-                            .map(|clip| clip.effective_end.as_str()),
-                    ),
+                    current_time_utc: if state.reader.frame_time.is_empty() {
+                        committed_utc(
+                            &state.range_start,
+                            state
+                                .reader
+                                .clip
+                                .as_ref()
+                                .map(|clip| clip.effective_start.as_str()),
+                        )
+                    } else {
+                        state.reader.frame_time.clone()
+                    },
                     available_start,
                     available_end,
                     available_start_utc,
