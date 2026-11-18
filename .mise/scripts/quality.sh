@@ -42,7 +42,6 @@ clippy_warnings() {
 local_gate() {
   step 'cargo fmt' fmt_check
   step 'sila2-matrix' bash .mise/scripts/sila2-matrix.sh
-  step 'wiki-check' bash .mise/scripts/wiki-check.sh
   step kiss kiss_check
   step duplication bash .mise/scripts/duplication.sh
   step check check_warnings

@@ -40,18 +40,6 @@ run = "bash .mise/scripts/duplication.sh"
 description = "Scan test Rust for duplication (advisory)"
 run = "bash .mise/scripts/duplication.sh test"
 
-[wiki-check]
-description = "Generate the Wiki stage offline and validate public docs"
-run = "bash .mise/scripts/wiki-check.sh"
-
-[wiki-publish]
-description = "Publish the Wiki stage from CI using WIKI_TOKEN"
-run = "bash .mise/scripts/wiki-publish.sh"
-
-[wiki-drift]
-description = "Compare the Wiki stage with the remote Wiki without pushing"
-run = "bash .mise/scripts/wiki-drift.sh"
-
 [tck]
 description = "Run the official A2A HTTP+JSON, JSON-RPC, and gRPC TCK against a local memory lab"
 run = "bash .mise/scripts/a2a-tck.sh"
@@ -113,7 +101,7 @@ description = "Decode real MJPEG and YUY2 fixtures through OpenH264, finite MP4,
 run = "cargo test --test media_validate --features yuv,openh264"
 
 [quality]
-description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, web UI checks, clippy, tests, the A2A TCK, and SiLA provider checks"
+description = "Run formatting, the SiLA matrix, complexity, duplication, compile, web UI checks, clippy, tests, the A2A TCK, and SiLA provider checks"
 run = "bash .mise/scripts/quality.sh"
 
 [quality-fast]

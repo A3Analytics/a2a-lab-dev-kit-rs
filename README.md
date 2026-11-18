@@ -63,7 +63,7 @@ Run these commands from the repository root.
 
 ## Open the optional web interface
 
-The web interface stays off unless the `web-ui` feature is enabled and the application calls `A2aServer::with_web_ui`. [Open the optional web interface](<backlog/docs/guide/web-interface/doc-22 - Open-the-optional-web-interface.md>) documents the feature, the WebAssembly checks, the `/ui/` path, and what the browser stores.
+The web interface stays off unless the `web-ui` feature is enabled and the application calls `A2aServer::with_web_ui`.
 
 Run the [web interface example](examples/web_ui.rs) from the repository root:
 
@@ -87,13 +87,9 @@ The devkit `v0.1.0` release at `9d5327868d96b3e800fd89f6debf434bcc12709d` is the
 
 Use the standalone [A2A-LAB TCK documentation](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/README.md) to create fixtures, pin its Action, retain the JSON report, and display the consumer repository's workflow badge. That badge reports only the consumer-owned workflow result; it is not certification or a devkit badge.
 
-## Wiki
-
-Read the [A2A-LAB devkit overview](https://github.com/A3Analytics/a2a-lab-dev-kit-rs/wiki/Home).
-
 ## Configure application logging
 
-Application logging is optional. Add a `logging` section to `a2a-lab.json`, call `init_logging_from_loaded` before starting A2A, MCP, SiLA, or a direct `A2aLabService` host, and keep the returned guard for the process lifetime. Omitted `logging.format` uses human-readable stderr text; set `"format": "json"` or the `otel` feature for explicit structured export. See [Configure application logging](backlog/docs/guide/observability/doc-26%20-%20Configure-application-logging.md) for filters, redaction rules, and OTLP setup.
+Application logging is optional. Add a `logging` section to `a2a-lab.json`, call `init_logging_from_loaded` before starting A2A, MCP, SiLA, or a direct `A2aLabService` host, and keep the returned guard for the process lifetime. Omitted `logging.format` uses human-readable stderr text; set `"format": "json"` or the `otel` feature for explicit structured export.
 
 ## Open the crate documentation
 
@@ -124,8 +120,6 @@ mise exec -- cargo doc --no-deps --open
    mise run quality
    ```
 
-`mise run quality-fast` is the iteration gate. It checks formatting, the SiLA matrix, the Wiki, complexity, duplication, compilation, Clippy, and tests. It disables nextest retries and does not start the external conformance containers.
+`mise run quality-fast` is the iteration gate. It checks formatting, the SiLA matrix, complexity, duplication, compilation, Clippy, and tests. It disables nextest retries and does not start the external conformance containers.
 
 `mise run quality` is the merge gate. It runs that same local work, then the A2A TCK and the SiLA provider checks, and it keeps nextest retries.
-
-The Wiki action publishes public Backlog docs.

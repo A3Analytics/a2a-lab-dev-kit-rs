@@ -2,8 +2,4 @@
 web-ui/vendor/
 **/*.rs.bk
 .DS_Store
-/backlog/tasks/
-/backlog/completed/
-/backlog/archive/
-/backlog/drafts/
-/backlog/milestones/
+/backlog/
