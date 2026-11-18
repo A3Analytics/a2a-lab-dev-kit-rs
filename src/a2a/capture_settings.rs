@@ -92,7 +92,7 @@ pub fn router(store: LabConfigStore, settings: Option<VideoCaptureSettingsHandle
 async fn discover_cameras() -> Response {
     #[cfg(feature = "nokhwa")]
     {
-        return match NokhwaEnumerator.discover() {
+        match NokhwaEnumerator.discover() {
             Ok(snapshot) => Json(serde_json::json!({
                 "cameras": snapshot.capable().iter().map(|camera| {
                     serde_json::json!({
@@ -107,7 +107,7 @@ async fn discover_cameras() -> Response {
                 error.code(),
                 &error.to_string(),
             ),
-        };
+        }
     }
     #[cfg(not(feature = "nokhwa"))]
     {

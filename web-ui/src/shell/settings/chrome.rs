@@ -218,7 +218,7 @@ pub fn CheckField(
 
 #[component]
 fn FieldLabel(id: String, label: String, restart: bool, live: bool, reindex: bool) -> Element {
-    let label = friendly_label(&label);
+    let label = super::labels::friendly_label(&label);
     let _ = restart;
     rsx! {
         div { class: "settings-field-label-row",
@@ -230,43 +230,6 @@ fn FieldLabel(id: String, label: String, restart: bool, live: bool, reindex: boo
                 LiveSign {}
             }
         }
-    }
-}
-
-fn friendly_label(path: &str) -> String {
-    let name = path.rsplit('.').next().unwrap_or(path);
-    match name {
-        "credentials" => "Credentials".to_owned(),
-        "env" => "Environment variable".to_owned(),
-        "fps" => "FPS".to_owned(),
-        "dvr" => "DVR".to_owned(),
-        "roi" => "ROI".to_owned(),
-        "top_k" => "Top K".to_owned(),
-        "max_batch_items" => "Maximum batch items".to_owned(),
-        "max_concurrency" => "Maximum concurrency".to_owned(),
-        "max_queue_backlog" => "Maximum queue backlog".to_owned(),
-        "max_retry_attempts" => "Maximum retry attempts".to_owned(),
-        "max_neighbor_frames" => "Maximum neighbor frames".to_owned(),
-        "max_rois_per_frame" => "Maximum ROIs per frame".to_owned(),
-        "job_deadline" => "Job deadline".to_owned(),
-        "retry_backoff" => "Retry backoff".to_owned(),
-        "score_floor" => "Score floor".to_owned(),
-        "sqlite_path" => "SQLite path".to_owned(),
-        "vector_index_path" => "Vector index path".to_owned(),
-        "max_disk_bytes" => "Maximum disk size".to_owned(),
-        "capture_rate" => "Capture rate".to_owned(),
-        "storage_path" => "Storage path".to_owned(),
-        _ => name
-            .split('_')
-            .map(|word| {
-                let mut chars = word.chars();
-                match chars.next() {
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                    None => String::new(),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
     }
 }
 

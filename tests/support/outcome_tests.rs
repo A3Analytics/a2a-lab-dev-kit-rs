@@ -290,34 +290,15 @@ async fn compare_expired_reads() {
         404,
         "clip_expired",
     );
-    let mcp_clip = mcp
-        .execute(A2aLabCommand::GetVideoClip(request))
-        .await
-        .unwrap();
-    let A2aLabResult::GetVideoClip(mcp_clip) = mcp_clip.task.result else {
-        diverge("clip_expired", "MCP", "unexpected result");
-    };
-    let (status, code, message) = media_error(
-        reqwest::Client::new()
-            .get(format!(
-                "{}{}",
-                mcp_url.trim_end_matches("/mcp"),
-                mcp_clip.path()
-            ))
-            .send()
-            .await
-            .unwrap(),
+    // MCP inlines the finite body, so a zero TTL is clip_expired on the command.
+    expect_mcp(
+        "clip_expired",
+        &mcp_url,
+        &mcp,
+        A2aLabCommand::GetVideoClip(request),
+        "clip_expired",
     )
     .await;
-    expect_media(
-        "clip_expired",
-        "MCP",
-        status,
-        &code,
-        &message,
-        404,
-        "clip_expired",
-    );
     let mut sila = SilaVideos::start(Arc::clone(&lab)).await;
     // The SiLA command reads the finite body while preparing BinaryDownload.
     expect_code(

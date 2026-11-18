@@ -11,6 +11,7 @@ use crate::shell::session::{self, take_secret};
 
 mod chrome;
 mod document;
+mod labels;
 mod semantic;
 mod videos;
 

@@ -10,6 +10,9 @@ mod metrics;
 #[allow(dead_code)]
 #[path = "shell/settings/document.rs"]
 mod settings_document;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "shell/settings/labels.rs"]
+mod settings_labels;
 #[cfg(any(test, target_arch = "wasm32"))]
 mod settings_semantic;
 mod tasks;
