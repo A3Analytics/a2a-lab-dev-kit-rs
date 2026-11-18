@@ -1,5 +1,9 @@
 [workspace]
 
+[patch.crates-io]
+nokhwa-bindings-macos = { git = "https://github.com/l1npengfih/nokhwa", rev = "dd8f26a32de8b1fbe996b7ac870eacf22cad6593" }
+nokhwa-core = { git = "https://github.com/l1npengfih/nokhwa", rev = "dd8f26a32de8b1fbe996b7ac870eacf22cad6593" }
+
 [package]
 name = "a2a-lab-webcam"
 version = "0.1.0"
@@ -8,5 +12,15 @@ publish = false
 description = "Local webcam source for the optional web interface"
 
 [dependencies]
-a2a-lab-dev-kit = { path = "../..", features = ["web-ui", "nokhwa", "yuv", "openh264"] }
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "time", "net"] }
+a2a-lab-dev-kit = { path = "../..", features = [
+    "web-ui",
+    "nokhwa",
+    "yuv",
+    "openh264",
+] }
+tokio = { version = "1.53.1", features = [
+    "macros",
+    "rt-multi-thread",
+    "time",
+    "net",
+] }

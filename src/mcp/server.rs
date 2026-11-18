@@ -7,6 +7,7 @@ use a2a_types::{SecurityRequirement, SecurityScheme};
 use axum::Router;
 use axum::extract::Request;
 use axum::middleware::{Next, from_fn};
+use base64::Engine;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerConfig};
@@ -39,6 +40,17 @@ use crate::videos::{
     SemanticFrameSearchResult, SemanticIndexingCoverage, SemanticSearchCapabilities,
     SharedMediaAssetProvider, VideoClip, VideoFollow, VideoSource, VideoTimeline,
 };
+
+#[derive(Debug, serde::Serialize, schemars::JsonSchema)]
+pub struct McpVideoClip {
+    /// Clip metadata and the gateway path for clients that prefer streaming.
+    clip: VideoClip,
+    /// Complete finite clip body encoded as standard base64.
+    #[schemars(with = "String")]
+    data: String,
+    /// MIME type of `data`.
+    media_type: String,
+}
 
 /// MCP server exposing the lab operations as tools.
 #[derive(Clone)]
@@ -454,20 +466,30 @@ impl McpServer {
 
     #[tool(
         name = "get_video_clip",
-        description = "Prepare a bounded MJPEG clip handle. Bytes are not embedded."
+        description = "Return a bounded MJPEG video clip, including its inline base64 bytes."
     )]
     async fn get_video_clip(
         &self,
         params: Parameters<GetVideoClipRequest>,
-    ) -> Result<Json<VideoClip>, ErrorData> {
-        self.take(
-            A2aLabCommand::GetVideoClip(params.0),
-            |result| match result {
-                A2aLabResult::GetVideoClip(clip) => Some(clip),
-                _ => None,
-            },
-        )
-        .await
+    ) -> Result<Json<McpVideoClip>, ErrorData> {
+        let outcome = self
+            .lab
+            .execute(A2aLabCommand::GetVideoClip(params.0))
+            .await
+            .map_err(|error| mcp_error(&error))?;
+        let A2aLabResult::GetVideoClip(clip) = outcome.task.result else {
+            return Err(ErrorData::internal_error("unexpected result variant", None));
+        };
+        let asset = self
+            .lab
+            .export_finite_video_clip(clip.id())
+            .await
+            .map_err(|error| mcp_error(&error))?;
+        Ok(Json(McpVideoClip {
+            media_type: asset.content_type().to_owned(),
+            data: base64::engine::general_purpose::STANDARD.encode(asset.bytes()),
+            clip,
+        }))
     }
 
     #[tool(

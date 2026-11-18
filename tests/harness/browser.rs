@@ -261,6 +261,7 @@ impl Browser {
             | "inventory/videos"
             | "inventory/videos/browse"
             | "inventory/videos/search" => "view-videos",
+            "config/settings" | "config/settings/" => "view-config-settings",
             _ => "view-logs",
         };
         self.wait_until(&format!(

@@ -3,7 +3,7 @@
 .config-settings {
   display: grid;
   gap: 1rem;
-  padding: 1rem;
+  padding: 1rem 1rem 5rem;
 }
 
 .config-settings-lead {
@@ -46,10 +46,274 @@
 .config-settings-meta dd {
   margin: 0;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .config-settings-form {
   display: grid;
   gap: 0.5rem;
   max-width: 16rem;
+}
+
+.settings-core-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+.settings-card-header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.settings-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.settings-card-description {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.settings-card-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-field {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.settings-field-check {
+  gap: 0.5rem;
+}
+
+.settings-switch {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.settings-switch-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.settings-switch-track {
+  display: inline-flex;
+  align-items: center;
+  width: 2.5rem;
+  height: 1.375rem;
+  padding: 0.125rem;
+  border-radius: 999px;
+  background: var(--muted);
+  transition: background-color 120ms ease;
+}
+
+.settings-switch-thumb {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background: var(--background);
+  box-shadow: var(--shadow-xs);
+  transition: transform 120ms ease;
+}
+
+.settings-switch-input:checked + .settings-switch-track {
+  background: var(--primary);
+}
+
+.settings-switch-input:checked + .settings-switch-track .settings-switch-thumb {
+  transform: translateX(1.125rem);
+}
+
+.settings-switch-input:focus-visible + .settings-switch-track {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.settings-switch-input:disabled + .settings-switch-track,
+.settings-switch:has(.settings-switch-input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.settings-field-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+}
+
+.settings-help {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.settings-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.75rem;
+}
+
+.settings-field input[aria-invalid="true"],
+.settings-field select[aria-invalid="true"] {
+  border-color: var(--destructive);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 25%, transparent);
+}
+
+.settings-impact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--status-degraded);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.settings-impact-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--status-degraded) 16%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--status-degraded) 40%, var(--border));
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.settings-impact-live {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.settings-alert {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+.settings-alert-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.settings-alert-body {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.settings-alert-warning {
+  border-color: color-mix(in oklab, var(--status-degraded) 40%, var(--border));
+  background: color-mix(in oklab, var(--status-degraded) 10%, var(--card));
+  color: var(--status-degraded);
+}
+
+.settings-alert-warning .settings-alert-body {
+  color: color-mix(in oklab, var(--status-degraded) 90%, var(--foreground));
+}
+
+.settings-alert-destructive {
+  border-color: color-mix(in oklab, var(--destructive) 40%, var(--border));
+  background: color-mix(in oklab, var(--destructive) 10%, var(--card));
+  color: var(--destructive);
+}
+
+.settings-alert-destructive .settings-alert-body {
+  color: color-mix(in oklab, var(--destructive) 90%, var(--foreground));
+}
+
+.settings-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-raised);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin: 0 -1rem -1rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--background) 95%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.settings-sticky-note {
+  margin: 0 auto 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.settings-button-primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+}
+
+.settings-button-outline {
+  background: var(--background);
+}
+
+.settings-card-body > button {
+  justify-self: start;
+}
+
+.settings-source-semantic {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-source-semantic > button {
+  justify-self: start;
+}
+
+.settings-source-discovery {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.settings-source-discovery > button {
+  justify-self: start;
+}
+
+.settings-source-discovery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
 }

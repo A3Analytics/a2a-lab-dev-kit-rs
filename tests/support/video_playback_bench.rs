@@ -74,10 +74,9 @@ pub fn bench_stamp_before_newest(whole_seconds: u32) -> String {
     bench_jpeg::captured_at(index)
 }
 
-pub fn load_range_js(start: &str, end: &str) -> String {
+pub fn load_range_js(start: &str, _end: &str) -> String {
     let start = serde_json::to_string(start).unwrap_or_default();
-    let current = serde_json::to_string(start).unwrap_or_default();
     format!(
-        "(() => {{ const current = document.getElementById('video-current-time'); const apply = document.getElementById('video-range-apply'); if (!(current instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; current.value = {current}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); apply.click(); return true; }})()"
+        "(() => {{ const current = document.getElementById('video-current-time'); const apply = document.getElementById('video-range-apply'); if (!(current instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; current.value = {start}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); apply.click(); return true; }})()"
     )
 }

@@ -31,6 +31,11 @@ impl LoadedLabConfig {
         let text = std::str::from_utf8(&bytes)
             .map_err(|_| A2aLabError::invalid("config", "file must be UTF-8"))?;
         let config = A2aLabConfig::parse(text)?;
+        Ok(Self::bind(path, config))
+    }
+
+    /// Binds a parsed envelope to file-relative storage paths.
+    pub(crate) fn bind(path: &Path, config: A2aLabConfig) -> Self {
         let dvr_storage_path = config
             .videos
             .as_ref()
@@ -44,12 +49,12 @@ impl LoadedLabConfig {
             .semantic_indexing
             .as_ref()
             .map(|semantic| resolve_relative_path(path, &semantic.limits.storage.sqlite_path));
-        Ok(Self {
+        Self {
             config,
             dvr_storage_path,
             semantic_vector_index_path,
             semantic_sqlite_path,
-        })
+        }
     }
 }
 

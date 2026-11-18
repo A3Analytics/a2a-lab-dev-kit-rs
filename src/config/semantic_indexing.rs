@@ -19,6 +19,8 @@ pub const DEFAULT_SEMANTIC_DESCRIPTION_BACKEND: FrameDescriptionBackend =
     FrameDescriptionBackend::Bedrock;
 /// Default minimum semantic retrieval score.
 pub const DEFAULT_SEMANTIC_SCORE_FLOOR: &str = "0.20";
+/// Default Jev System One API endpoint.
+pub const DEFAULT_JEV_API_ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
 
 /// Supported v2 configuration schema version.
 pub const A2A_LAB_CONFIG_SCHEMA_VERSION_V2: u32 = 2;
@@ -231,6 +233,7 @@ pub struct EmbeddingSpaceConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticDecisionsConfig {
     provider: String,
+    endpoint: String,
     model: String,
     credentials: Option<CredentialReference>,
 }
@@ -240,6 +243,12 @@ impl SemanticDecisionsConfig {
     #[must_use]
     pub fn provider(&self) -> &str {
         &self.provider
+    }
+
+    /// Jev System One API endpoint.
+    #[must_use]
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
     }
 
     /// Pinned Jev model revision.
@@ -869,7 +878,7 @@ fn parse_decisions(value: Option<&Value>) -> Result<SemanticDecisionsConfig, A2a
     reject_unknown_keys(
         map,
         "semantic_indexing.decisions",
-        &["provider", "model", "credentials"],
+        &["provider", "endpoint", "model", "credentials"],
     )?;
     let provider = match map.get("provider") {
         Some(value) => {
@@ -881,12 +890,19 @@ fn parse_decisions(value: Option<&Value>) -> Result<SemanticDecisionsConfig, A2a
         Some(value) => required_nonempty_string(Some(value), "semantic_indexing.decisions.model")?,
         None => DEFAULT_JEV_MODEL_REVISION.to_owned(),
     };
+    let endpoint = match map.get("endpoint") {
+        Some(value) => {
+            required_nonempty_string(Some(value), "semantic_indexing.decisions.endpoint")?
+        }
+        None => DEFAULT_JEV_API_ENDPOINT.to_owned(),
+    };
     let credentials = parse_credentials(
         "semantic_indexing.decisions.credentials",
         map.get("credentials"),
     )?;
     Ok(SemanticDecisionsConfig {
         provider,
+        endpoint,
         model,
         credentials,
     })
@@ -895,6 +911,7 @@ fn parse_decisions(value: Option<&Value>) -> Result<SemanticDecisionsConfig, A2a
 fn default_decisions() -> SemanticDecisionsConfig {
     SemanticDecisionsConfig {
         provider: JEV_EVALUATOR_PROVIDER_ID.to_owned(),
+        endpoint: DEFAULT_JEV_API_ENDPOINT.to_owned(),
         model: DEFAULT_JEV_MODEL_REVISION.to_owned(),
         credentials: None,
     }

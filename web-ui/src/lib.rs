@@ -6,6 +6,12 @@ mod images;
 mod inventory;
 mod logs;
 mod metrics;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[allow(dead_code)]
+#[path = "shell/settings/document.rs"]
+mod settings_document;
+#[cfg(any(test, target_arch = "wasm32"))]
+mod settings_semantic;
 mod tasks;
 mod videos;
 mod workbench;

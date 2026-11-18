@@ -117,7 +117,7 @@ watch() {
     --restart \
     --stop-signal SIGTERM \
     --stop-timeout 15s \
-    -- cargo run --example web_ui --features web-ui --locked
+    -- cargo run --example web_ui --features web-ui,nokhwa --locked
 }
 
 case "$mode" in

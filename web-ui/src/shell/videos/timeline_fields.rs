@@ -344,6 +344,10 @@ mod tests {
             field_to_utc("2024-01-01T00:00:00Z", true),
             "2024-01-01T00:00:00Z"
         );
+        assert_eq!(
+            field_to_utc("2024-01-01T00:00:10Z", false),
+            "2024-01-01T00:00:10Z"
+        );
     }
 
     #[test]

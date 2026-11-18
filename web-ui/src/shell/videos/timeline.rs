@@ -110,9 +110,7 @@ fn play_at(at_us: i64, autoplay: bool) {
             return;
         };
         remember(&mut next, selection);
-        if !autoplay {
-            next.reader.frame_time = track::format_utc(at_us);
-        }
+        next.reader.frame_time = track::format_utc(at_us);
         request_session(&mut next, session, autoplay);
         ui.set(next);
         return;
@@ -163,9 +161,7 @@ fn commit_selection(selection: Window, anchor: Option<i64>, autoplay: bool) {
     };
     let mut next = ui.peek().clone();
     remember(&mut next, selection);
-    if !autoplay {
-        next.reader.frame_time = track::format_utc(anchor);
-    }
+    next.reader.frame_time = track::format_utc(anchor);
     request_session(&mut next, session, autoplay);
     ui.set(next);
 }
@@ -519,7 +515,7 @@ fn remember(next: &mut VideoUi, window: Window) {
 pub(super) fn remember_window(next: &mut VideoUi, window: Window) {
     next.range_start = track::format_utc(window.start_us);
     next.range_end = track::format_utc(window.end_us);
-    next.range_draft_start = display_clock(&next.range_start, next.local_time);
+    next.range_draft_start.clear();
     next.range_draft_end = display_clock(&next.range_end, next.local_time);
     next.range_error.clear();
     next.draft = Some(window);

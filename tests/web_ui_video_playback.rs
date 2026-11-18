@@ -101,9 +101,8 @@ fn play(base: &str) {
     assert_eq!(frame_time(&mut page), held_time, "paused timestamp changed");
     resume(&mut page);
     page.wait_until(&painted(&format!(
-        "PAINTED !== '' && PAINTED !== '{held}' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped')"
+        "PAINTED !== '' && PAINTED !== '{held}' && document.getElementById('video-status')?.dataset.state === 'playing'"
     )));
-    page.wait_until("document.getElementById('video-status')?.dataset.state === 'stopped'");
     assert!(
         !painted_block(&mut page).is_empty(),
         "last frame was cleared"
@@ -126,7 +125,7 @@ fn play(base: &str) {
     );
     assert_eq!(
         page.eval("document.getElementById('video-timeline')?.dataset.end ?? ''"),
-        serde_json::json!("2024-01-01T00:00:04Z")
+        serde_json::json!("2024-01-01T00:02:00Z")
     );
 }
 
@@ -175,16 +174,6 @@ fn frame_time(page: &mut Browser) -> String {
         .to_owned()
 }
 
-fn detail_utc(page: &mut Browser, label: &str) -> String {
-    let label = serde_json::to_string(label).unwrap_or_default();
-    page.eval(&format!(
-        "document.querySelector('#video-details [data-label={label}]')?.dataset.utc ?? ''"
-    ))
-    .as_str()
-    .unwrap_or("")
-    .to_owned()
-}
-
 fn assert_leading_retention(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until(CONNECTED);
@@ -200,26 +189,33 @@ fn assert_leading_retention(base: &str) {
     );
     load_range(&mut page, "2024-01-01T00:02:30Z", "2024-01-01T00:03:30Z");
     page.wait_until(
-        "document.getElementById('video-alert')?.dataset.failure === '' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && !document.getElementById('video-player')?.hasAttribute('hidden')",
+        "document.getElementById('video-alert')?.dataset.failure === '' && ['playing','stopped','paused'].includes(document.getElementById('video-status')?.dataset.state) && !document.getElementById('video-player')?.hasAttribute('hidden')",
     );
-    let start = detail_utc(&mut page, "Start");
-    let end = detail_utc(&mut page, "End");
+    let start = page
+        .eval("document.getElementById('video-available-start')?.textContent ?? ''")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    let current = page
+        .eval("document.getElementById('video-current-time')?.dataset.utc ?? ''")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
     assert!(
         page.eval("document.getElementById('video-timeline')?.dataset.start ?? ''")
             .as_str()
             .unwrap_or("")
-            .contains("2024-01-01T00:02:30"),
-        "requested range was not kept on the timeline"
+            .contains("2024-01-01T00:03:00"),
+        "seek did not snap to retained coverage"
     );
     assert!(
         start.contains("2024-01-01 00:03:00"),
-        "effective start {start}"
+        "available start {start}"
     );
     assert!(
-        !start.contains("00:02:30"),
-        "effective start must not include trimmed retention {start}"
+        current.contains("2024-01-01T00:03:00"),
+        "current time {current}"
     );
-    assert!(end.contains("2024-01-01 00:03"), "effective end {end}");
 }
 
 async fn trimmed_bench_lab() -> String {

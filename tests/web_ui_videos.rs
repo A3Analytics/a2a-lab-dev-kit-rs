@@ -770,7 +770,7 @@ fn assert_typed_range(page: &mut Browser) {
     );
     assert_eq!(entered, serde_json::json!(true), "range fields missing");
     page.wait_until(
-        "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:00') && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && !document.getElementById('video-player')?.hasAttribute('hidden')",
+        "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:01') && document.getElementById('video-current-time')?.dataset.utc?.includes('2024-01-01T00:00:01') && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped') && !document.getElementById('video-player')?.hasAttribute('hidden')",
     );
 }
 

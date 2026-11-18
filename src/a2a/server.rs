@@ -63,6 +63,8 @@ pub struct A2aServer {
     web_ui: bool,
     #[cfg(feature = "web-ui")]
     capture_settings: Option<super::capture_settings::VideoCaptureSettingsHandle>,
+    #[cfg(feature = "web-ui")]
+    lab_config_store: crate::config::LabConfigStore,
 }
 
 impl A2aServer {
@@ -85,6 +87,8 @@ impl A2aServer {
             web_ui: false,
             #[cfg(feature = "web-ui")]
             capture_settings: None,
+            #[cfg(feature = "web-ui")]
+            lab_config_store: crate::config::LabConfigStore::unconfigured(),
         }
     }
 
@@ -180,6 +184,14 @@ impl A2aServer {
         settings: super::capture_settings::VideoCaptureSettingsHandle,
     ) -> Self {
         self.capture_settings = Some(settings);
+        self
+    }
+
+    /// Attaches the caller-supplied `a2a-lab.json` store used by `/config/settings`.
+    #[cfg(feature = "web-ui")]
+    #[must_use]
+    pub fn with_lab_config_store(mut self, store: crate::config::LabConfigStore) -> Self {
+        self.lab_config_store = store;
         self
     }
 
@@ -330,6 +342,8 @@ fn router(
     let serve_web_ui = server.web_ui;
     #[cfg(feature = "web-ui")]
     let capture_settings = server.capture_settings.clone();
+    #[cfg(feature = "web-ui")]
+    let lab_config_store = server.lab_config_store.clone();
     let app = Router::new()
         .merge(a2a_server::agent_card::agent_card_router(Arc::new(
             StaticAgentCard::new(card),
@@ -339,11 +353,12 @@ fn router(
         .merge(crate::videos::http::router(media));
     #[cfg(feature = "web-ui")]
     let app = if serve_web_ui {
-        let mut routes = super::web_ui::router();
-        if let Some(settings) = capture_settings {
-            routes = routes.merge(super::capture_settings::router(settings));
-        }
-        app.merge(routes)
+        app.merge(
+            super::web_ui::router().merge(super::capture_settings::router(
+                lab_config_store,
+                capture_settings,
+            )),
+        )
     } else {
         app
     };
@@ -359,9 +374,7 @@ fn router(
             if serve_web_ui {
                 let path = request.uri().path();
                 let method = request.method();
-                if super::web_ui::is_public_route(method, path)
-                    || super::capture_settings::is_public_route(method, path)
-                {
+                if super::web_ui::is_public_route(method, path) {
                     return next.run(request).await;
                 }
             }

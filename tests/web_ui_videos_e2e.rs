@@ -343,7 +343,7 @@ fn assert_playback_facts(page: &mut Browser) {
 
 fn assert_range_facts(page: &mut Browser) {
     let labels = detail_labels(page);
-    assert_eq!(labels, ["Start", "End"], "{labels:?}");
+    assert_eq!(labels, ["Current time"], "{labels:?}");
     let text = page
         .eval("document.getElementById('video-details')?.innerText ?? ''")
         .as_str()
@@ -353,8 +353,18 @@ fn assert_range_facts(page: &mut Browser) {
     assert!(!text.contains("Playback"), "{text}");
     assert!(!text.contains("Bench"), "{text}");
     assert!(!text.contains("Camera"), "{text}");
-    let start = detail_utc(page, "Start");
-    let end = detail_utc(page, "End");
+    let current = detail_utc(page, "Current time");
+    let start = page
+        .eval("document.getElementById('video-available-start')?.dateTime ?? ''")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    let end = page
+        .eval("document.getElementById('video-available-end')?.dateTime ?? ''")
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    assert!(current.contains("2024-01-01"), "{current}");
     assert!(start.contains("2024-01-01"), "{start}");
     assert!(end.contains("2024-01-01"), "{end}");
 }

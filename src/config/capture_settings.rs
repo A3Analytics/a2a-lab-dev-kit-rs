@@ -169,6 +169,26 @@ impl VideoCaptureSettings {
         }
     }
 
+    /// Applies persisted `videos.fps` and `videos.dvr.save_interval` only.
+    ///
+    /// Retention, sources, and every other field stay on the running baseline.
+    pub fn apply_persisted_cadence(
+        &mut self,
+        videos: Option<&VideoConfig>,
+    ) -> Result<(), A2aLabError> {
+        let fps = videos.and_then(|config| config.fps);
+        let interval = videos
+            .and_then(|config| config.dvr.as_ref())
+            .and_then(|dvr| dvr.save_interval);
+        if let Some(interval) = interval {
+            self.ensure_save_interval_deliverable(interval)?;
+        }
+        self.configured_fps = fps;
+        self.live_output_fps = fps.unwrap_or(DEFAULT_LIVE_OUTPUT_FPS);
+        self.dvr_save_interval = interval;
+        Ok(())
+    }
+
     /// Applies a `videos` patch. Rejects invalid values and leaves active fields unchanged.
     pub fn apply_patch(&mut self, document: &Value) -> Result<(), A2aLabError> {
         let map = super::object_at("input", document)?;
@@ -353,6 +373,48 @@ mod tests {
         assert_eq!(
             settings.dvr_save_interval(),
             dvr_before.and_then(|dvr| dvr.save_interval)
+        );
+    }
+
+    #[test]
+    fn persisted_cadence_updates_fps_without_dvr_or_retention() {
+        let mut config = sample_config();
+        let dvr_before = config.dvr.clone();
+        let live_retention = config.live_retention;
+        let mut settings = VideoCaptureSettings::from_video_config(Some(&config));
+        config.fps = Some(12);
+        settings.apply_persisted_cadence(Some(&config)).unwrap();
+        assert_eq!(settings.live_output_fps(), 12);
+        assert_eq!(settings.configured_videos_fps(), Some(12));
+        assert_eq!(settings.dvr().cloned(), dvr_before);
+        assert_eq!(settings.live_retention, live_retention);
+        assert_eq!(
+            settings.dvr_save_interval(),
+            dvr_before.and_then(|dvr| dvr.save_interval)
+        );
+    }
+
+    #[test]
+    fn persisted_cadence_updates_save_interval_without_fps_or_retention() {
+        let mut config = sample_config();
+        let fps_before = config.fps;
+        let live_retention = config.live_retention;
+        let dvr_retention = config.dvr.clone();
+        let mut settings = VideoCaptureSettings::from_video_config(Some(&config));
+        if let Some(dvr) = config.dvr.as_mut() {
+            dvr.save_interval = SaveIntervalDuration::parse("videos.dvr.save_interval", "2s").ok();
+        }
+        settings.apply_persisted_cadence(Some(&config)).unwrap();
+        assert_eq!(settings.configured_videos_fps(), fps_before);
+        assert_eq!(settings.live_output_fps(), fps_before.unwrap());
+        assert_eq!(settings.live_retention, live_retention);
+        assert_eq!(settings.dvr().cloned(), dvr_retention);
+        assert_eq!(
+            settings
+                .dvr_save_interval()
+                .map(SaveIntervalDuration::as_text)
+                .as_deref(),
+            Some("2s")
         );
     }
 

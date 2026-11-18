@@ -6,10 +6,10 @@ use a2a_lab_dev_kit::{
     GetVideoFrameAtResult, GetVideoTimelineRequest, Image, ImageDescriptor, ImageSource,
     JsonObject, ListImageSourcesRequest, ListImagesRequest, ListLogSourcesRequest,
     ListMetricsRequest, ListTasksRequest, ListVideoSourcesRequest, LogRecord, LogSource, McpLab,
-    McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricPoint, Page,
-    PageRequest, QueryLogsRequest, QueryMetricRequest, SearchImagesRequest, SourceId,
-    StartTaskRequest, TaskDefinition, TaskId, TaskRun, VideoClip, VideoFollow, VideoSource,
-    VideoTimeline, bind_local,
+    McpServer, McpVideoClip, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricPoint,
+    Page, PageRequest, QueryLogsRequest, QueryMetricRequest, SearchImagesRequest, SourceId,
+    StartTaskRequest, TaskDefinition, TaskId, TaskRun, VideoFollow, VideoSource, VideoTimeline,
+    bind_local,
 };
 use rmcp::handler::server::common::{schema_for_input, schema_for_output};
 use rmcp::handler::server::wrapper::Parameters;
@@ -132,7 +132,7 @@ async fn assert_lab_tools(client: &impl ToolClient) {
         &listed,
         "get_video_frame_at",
     ));
-    assert_contract::<GetVideoClipRequest, VideoClip>(tool(&listed, "get_video_clip"));
+    assert_contract::<GetVideoClipRequest, McpVideoClip>(tool(&listed, "get_video_clip"));
     assert_contract::<GetVideoTimelineRequest, VideoTimeline>(tool(&listed, "get_video_timeline"));
     assert_contract::<FollowVideoRequest, VideoFollow>(tool(&listed, "follow_video"));
     let logs = listed

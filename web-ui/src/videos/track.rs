@@ -496,6 +496,18 @@ mod tests {
     }
 
     #[test]
+    fn short_coverage_seek_starts_at_anchor_and_ends_at_span() {
+        let track = coverage_track(&timeline(&[(
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:00:41Z",
+        )]));
+        let session = session_at(&track, stamp("2024-01-01T00:00:10Z")).unwrap();
+        assert_eq!(session.start_us, stamp("2024-01-01T00:00:10Z"));
+        assert_eq!(session.end_us, stamp("2024-01-01T00:00:41Z"));
+        assert_ne!(session.duration_us(), 2_000_000);
+    }
+
+    #[test]
     fn short_retention_window_nudges_at_track_end() {
         let short = coverage_track(&timeline(&[(
             "2024-01-01T00:00:00Z",

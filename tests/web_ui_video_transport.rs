@@ -68,22 +68,21 @@ fn transport_flow(base: &str) {
 
     load_range(&mut page, "2024-01-01T00:00:00Z", "2024-01-01T00:00:04Z");
     page.wait_until(
-        "document.getElementById('video-status')?.dataset.state === 'stopped' && (document.getElementById('video-status')?.dataset.frameTime ?? '') !== ''",
-    );
-    page.wait_until(
-        "document.getElementById('video-pause')?.getAttribute('aria-label') === 'Play' && document.querySelector('#video-pause polygon') && document.getElementById('video-pause')?.getAttribute('aria-pressed') === 'false'",
+        "document.getElementById('video-status')?.dataset.state === 'playing' && document.getElementById('video-status')?.dataset.frameTime?.includes('2024-01-01T00:00:0')",
     );
     let replay_start = page.eval("document.getElementById('video-timeline')?.dataset.start ?? ''");
     let replay_end = page.eval("document.getElementById('video-timeline')?.dataset.end ?? ''");
-    let stopped_frame =
+    page.click("video-pause");
+    page.wait_until(
+        "document.getElementById('video-pause')?.getAttribute('aria-label') === 'Play' && document.getElementById('video-status')?.dataset.state === 'paused'",
+    );
+    let paused_frame =
         page.eval("document.getElementById('video-status')?.dataset.frameTime ?? ''");
     page.click("video-pause");
     page.wait_until(&format!(
-        "(() => {{ const status = document.getElementById('video-status'); const frame = status?.dataset.frameTime ?? ''; return document.getElementById('video-pause')?.getAttribute('aria-label') === 'Pause' && document.querySelector('#video-pause rect') && status?.dataset.state === 'playing' && frame !== '' && frame < {stopped}; }})()",
-        stopped = serde_json::to_string(
-            stopped_frame.as_str().unwrap_or("")
-        )
-        .unwrap_or_else(|_| "\"\"".to_owned()),
+        "(() => {{ const status = document.getElementById('video-status'); const frame = status?.dataset.frameTime ?? ''; return document.getElementById('video-pause')?.getAttribute('aria-label') === 'Pause' && document.querySelector('#video-pause rect') && status?.dataset.state === 'playing' && frame !== '' && frame >= {paused}; }})()",
+        paused = serde_json::to_string(paused_frame.as_str().unwrap_or(""))
+            .unwrap_or_else(|_| "\"\"".to_owned()),
     ));
     assert_eq!(
         page.eval("document.getElementById('video-timeline')?.dataset.start ?? ''"),

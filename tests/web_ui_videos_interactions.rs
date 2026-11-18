@@ -72,9 +72,9 @@ fn interactions(base: &str) {
         "(() => { const start = document.getElementById('video-timeline')?.dataset.start ?? ''; return (start.includes('2024-01-01T00:00:1') || start.includes('2024-01-01T00:00:2')) && document.getElementById('video-alert')?.dataset.failure === '' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped'); })()",
     );
 
-    type_range(&mut page, "2024-01-01T00:00:10Z", "2024-01-01T00:00:12Z");
+    type_range(&mut page, "2024-01-01T00:00:10Z");
     page.wait_until(
-        "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:10') && document.getElementById('video-timeline')?.dataset.end?.includes('2024-01-01T00:00:12') && document.getElementById('video-alert')?.dataset.failure === '' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped')",
+        "document.getElementById('video-timeline')?.dataset.start?.includes('2024-01-01T00:00:10') && (document.getElementById('video-timeline')?.dataset.end?.includes('2024-01-01T00:00:40') || document.getElementById('video-timeline')?.dataset.end?.includes('2024-01-01T00:00:41')) && document.getElementById('video-current-time')?.dataset.utc?.includes('2024-01-01T00:00:10') && document.getElementById('video-alert')?.dataset.failure === '' && (document.getElementById('video-status')?.dataset.state === 'playing' || document.getElementById('video-status')?.dataset.state === 'stopped')",
     );
 
     assert_local_time(&mut page);
@@ -125,12 +125,16 @@ fn assert_local_time(page: &mut Browser) {
     );
 }
 
-fn type_range(page: &mut Browser, start: &str, _end: &str) {
+fn type_range(page: &mut Browser, start: &str) {
     let start = serde_json::to_string(start).unwrap_or_default();
     let entered = page.eval(&format!(
-        "(async () => {{ const current = document.getElementById('video-current-time'); const apply = document.getElementById('video-range-apply'); if (!(current instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; current.value = {start}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); await new Promise((resolve) => setTimeout(resolve, 50)); current.value = {start}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); apply.click(); return true; }})()"
+        "(() => {{ const current = document.getElementById('video-current-time'); const apply = document.getElementById('video-range-apply'); if (!(current instanceof HTMLInputElement) || !(apply instanceof HTMLButtonElement)) return false; current.value = {start}; current.dispatchEvent(new Event('input', {{ bubbles: true }})); apply.click(); return true; }})()"
     ));
-    assert_eq!(entered, serde_json::json!(true), "range fields missing");
+    assert_eq!(
+        entered,
+        serde_json::json!(true),
+        "current time field missing"
+    );
 }
 
 fn attr(page: &mut Browser, id: &str, name: &str) -> serde_json::Value {

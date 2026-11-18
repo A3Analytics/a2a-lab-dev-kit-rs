@@ -769,6 +769,7 @@ fn access(page: &mut Browser, status: &str) {
                     "nav-tasks",
                     "nav-images",
                     "nav-videos",
+                    "nav-config-settings",
                 ],
             );
             page.eval(
@@ -788,6 +789,7 @@ fn access(page: &mut Browser, status: &str) {
                     "nav-tasks",
                     "nav-images",
                     "nav-videos",
+                    "nav-config-settings",
                 ],
             );
             assert_unreachable(page, "shell", &["nav-toggle"]);

@@ -10,8 +10,8 @@ use rmcp::model::{
 use rmcp::service::{RunningService, ServiceError};
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{IntoTransport, StreamableHttpClientTransport};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::PackagedMediaAsset;
 use crate::error::A2aLabError;
@@ -22,7 +22,8 @@ use crate::service::{
 };
 use crate::tasks::{GetTaskStatusRequest, TaskState};
 use crate::videos::{
-    DEFAULT_MJPEG_BOUNDARY, GetVideoFrameAtResult, VideoClipStream, decode_mjpeg_multipart,
+    DEFAULT_MJPEG_BOUNDARY, GetVideoFrameAtResult, VideoClip, VideoClipStream,
+    decode_mjpeg_multipart,
 };
 
 /// Default Streamable HTTP URL for [`McpServer::serve_http`](super::McpServer::serve_http).
@@ -30,6 +31,15 @@ pub const DEFAULT_MCP_URL: &str = "http://127.0.0.1:31001/mcp";
 
 const CONNECT_TRIES: u32 = 50;
 const CONNECT_WAIT: Duration = Duration::from_millis(20);
+
+#[derive(Deserialize)]
+struct McpVideoClipResponse {
+    clip: VideoClip,
+    #[allow(dead_code)]
+    data: String,
+    #[allow(dead_code)]
+    media_type: String,
+}
 
 /// `A2aLabApi` that dispatches through an MCP server.
 pub struct McpLab {
@@ -296,9 +306,10 @@ impl McpLab {
             A2aLabCommand::GetVideoFrameAt(request) => Ok(A2aLabResult::GetVideoFrameAt(
                 self.call_video_frame_at(request).await?,
             )),
-            A2aLabCommand::GetVideoClip(request) => Ok(A2aLabResult::GetVideoClip(
-                self.call("get_video_clip", request).await?,
-            )),
+            A2aLabCommand::GetVideoClip(request) => {
+                let response: McpVideoClipResponse = self.call("get_video_clip", request).await?;
+                Ok(A2aLabResult::GetVideoClip(response.clip))
+            }
             A2aLabCommand::GetVideoTimeline(request) => Ok(A2aLabResult::GetVideoTimeline(
                 self.call("get_video_timeline", request).await?,
             )),

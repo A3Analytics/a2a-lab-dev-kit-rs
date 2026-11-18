@@ -5,20 +5,15 @@
 
 use std::io::{Write, stdout};
 use std::sync::Arc;
-use std::time::Duration;
 
 use a2a_lab_dev_kit::{
     A2aLabApi, A2aLabError, A2aLabService, A2aServer, AgentMessageFuture, AgentMessageHandler,
     AgentMessageReply, AgentMessageRequest, GetTaskStatusRequest, Image, ImageDescriptor, ImageId,
-    ImageSource, ImageSourceId, JsonObject, LogLevel, LogRecord, LogSource, MJPEG_MEDIA_TYPE,
-    MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, MetricDescriptor, MetricId,
-    MetricPoint, RunId, SourceId, TaskDefinition, TaskId, TaskProvider, TaskState, UtcTimestamp,
-    VideoSource, VideoSourceId, WEB_UI_PATH,
+    ImageSource, ImageSourceId, JsonObject, LabConfigStore, LogLevel, LogRecord, LogSource,
+    MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricId, MetricPoint,
+    RunId, SourceId, TaskDefinition, TaskId, TaskProvider, TaskState, UtcTimestamp, WEB_UI_PATH,
 };
 use tokio::net::TcpListener;
-
-#[path = "web_ui/bench_jpeg.rs"]
-mod bench_jpeg;
 
 const DEFAULT_BIND: &str = "127.0.0.1:3847";
 
@@ -51,11 +46,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let service = lab().await?;
     let listener = bind().await?;
     let address = listener.local_addr()?;
+    let config_path = std::env::current_exe()?
+        .parent()
+        .ok_or("executable has no parent directory")?
+        .join("a2a-lab.json");
+    let config_store = LabConfigStore::open_or_create(config_path)?;
     writeln!(stdout(), "http://{address}{WEB_UI_PATH}")?;
     stdout().flush()?;
     A2aServer::new(&service)
         .with_message_handler(Arc::new(Echo))
         .with_web_ui()
+        .with_lab_config_store(config_store)
         .listen(listener)
         .await?;
     Ok(())
@@ -93,110 +94,7 @@ async fn lab() -> Result<Arc<dyn A2aLabApi>, A2aLabError> {
 
     Ok(A2aLabService::new(logs, metrics, tasks)
         .with_images(images)
-        .with_videos(seed_videos().await?)
         .share())
-}
-
-async fn seed_videos() -> Result<MemoryVideos, A2aLabError> {
-    let videos = MemoryVideos::new();
-    seed_memory_playback(&videos).await?;
-    seed_day_archive(&videos).await?;
-    Ok(videos)
-}
-
-async fn seed_memory_playback(videos: &MemoryVideos) -> Result<(), A2aLabError> {
-    let source = VideoSourceId::new("memory-2min")?;
-    videos
-        .insert_source(VideoSource::new(
-            source.clone(),
-            "2 min memory playback",
-            "Rolling two-minute in-memory recording",
-            None,
-            None,
-            bench_jpeg::FRAME_WIDTH,
-            bench_jpeg::FRAME_HEIGHT,
-            4,
-            MJPEG_MEDIA_TYPE,
-        )?)
-        .await?;
-    videos.set_live_available(&source, true).await?;
-    let mut next = snap_down(UtcTimestamp::now().saturating_add_micros(-bench_jpeg::RETAIN_US));
-    publish_until(videos, &source, &mut next).await?;
-    let running = videos.clone();
-    tokio::spawn(async move {
-        let mut next = next;
-        loop {
-            tokio::time::sleep(Duration::from_micros(
-                u64::try_from(bench_jpeg::FRAME_STEP_US).unwrap_or(250_000),
-            ))
-            .await;
-            if publish_until(&running, &source, &mut next).await.is_err() {
-                break;
-            }
-        }
-    });
-    Ok(())
-}
-
-async fn seed_day_archive(videos: &MemoryVideos) -> Result<(), A2aLabError> {
-    let source = VideoSourceId::new("day-2026")?;
-    videos
-        .insert_source(VideoSource::new(
-            source.clone(),
-            "24 hour Jan 1 2026",
-            "Twenty-four hours of retained video starting 2026-01-01T00:00:00Z",
-            None,
-            None,
-            bench_jpeg::FRAME_WIDTH,
-            bench_jpeg::FRAME_HEIGHT,
-            1,
-            MJPEG_MEDIA_TYPE,
-        )?)
-        .await?;
-    let start = UtcTimestamp::parse("2026-01-01T00:00:00Z")?;
-    let end = UtcTimestamp::parse("2026-01-02T00:00:00Z")?;
-    let mut next = start;
-    while next.as_micros() < end.as_micros() {
-        let (hour, minute, second, step) = bench_jpeg::clock_parts(next.as_micros());
-        videos
-            .insert_frame(
-                source.clone(),
-                next,
-                bench_jpeg::clock_frame(hour, minute, second, step),
-            )
-            .await?;
-        next = next.saturating_add_micros(1_000_000);
-    }
-    Ok(())
-}
-
-fn snap_down(stamp: UtcTimestamp) -> UtcTimestamp {
-    let extra = stamp.as_micros().rem_euclid(bench_jpeg::FRAME_STEP_US);
-    stamp.saturating_add_micros(-extra)
-}
-
-async fn publish_until(
-    videos: &MemoryVideos,
-    source: &VideoSourceId,
-    next: &mut UtcTimestamp,
-) -> Result<(), A2aLabError> {
-    let now = UtcTimestamp::now();
-    let earliest = snap_down(now.saturating_add_micros(-bench_jpeg::RETAIN_US));
-    if next.as_micros() < earliest.as_micros() {
-        *next = earliest;
-    }
-    while next.as_micros() <= now.as_micros() {
-        let (hour, minute, second, step) = bench_jpeg::clock_parts(next.as_micros());
-        videos
-            .insert_frame(
-                source.clone(),
-                *next,
-                bench_jpeg::clock_frame(hour, minute, second, step),
-            )
-            .await?;
-        *next = next.saturating_add_micros(bench_jpeg::FRAME_STEP_US);
-    }
-    videos.forget_before(source, earliest).await
 }
 
 async fn seed_logs() -> Result<MemoryLogs, A2aLabError> {

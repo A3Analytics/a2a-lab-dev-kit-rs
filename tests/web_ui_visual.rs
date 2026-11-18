@@ -19,7 +19,7 @@ mod browser;
 
 use browser::Browser;
 
-const ROUTES: [Route; 7] = [
+const ROUTES: [Route; 8] = [
     Route {
         hash: "#logs",
         title: "Logs",
@@ -62,6 +62,12 @@ const ROUTES: [Route; 7] = [
         kind: Kind::Workbench,
         ready: "document.getElementById('nav-logs')?.getAttribute('aria-current') === 'page' && !document.getElementById('workbench')?.hasAttribute('hidden')",
     },
+    Route {
+        hash: "#config/settings",
+        title: "Settings",
+        kind: Kind::Settings,
+        ready: "document.getElementById('settings-core-form') !== null && !document.getElementById('config-settings-panel')?.hasAttribute('hidden')",
+    },
 ];
 
 const VIEWPORTS: [(u32, u32); 3] = [(767, 768), (768, 768), (1843, 768)];
@@ -75,6 +81,7 @@ enum Kind {
     Videos,
     Chat,
     Workbench,
+    Settings,
 }
 
 #[derive(Clone, Copy)]
@@ -741,6 +748,10 @@ impl Kind {
             Self::Videos => &["Speed", "Cam"],
             Self::Chat => &["visual row", "echo:visual row"],
             Self::Workbench => &["pump ready", "Command"],
+            Self::Settings => &[
+                "Configuration file is not attached. Settings cannot be saved.",
+                "Persistence",
+            ],
         }
     }
 
@@ -752,6 +763,7 @@ impl Kind {
             Self::Images => IMAGE_FORBIDDEN,
             Self::Videos => VIDEO_FORBIDDEN,
             Self::Chat => CHAT_FORBIDDEN,
+            Self::Settings => &["Loading capture settings."],
         }
     }
 }
@@ -830,7 +842,7 @@ const PROBE: &str = r#"(() => {
     const data = ctx.getImageData(0, 0, 1, 1).data;
     return data[0] * 0.2126 + data[1] * 0.7152 + data[2] * 0.0722;
   };
-  const names = new Set(['Logs', 'Metrics', 'Tasks', 'Images', 'Videos', 'Chat']);
+  const names = new Set(['Logs', 'Metrics', 'Tasks', 'Images', 'Videos', 'Chat', 'Settings']);
   const view = document.querySelector('#main > .view:not([hidden])');
   const rail = view ? view.querySelector('#log-filters, #metric-filters, #task-filters, #image-filters, #video-filters') : null;
   const railBox = rail ? rail.getBoundingClientRect() : null;
@@ -860,7 +872,7 @@ const PROBE: &str = r#"(() => {
     bootstrap: document.body.innerText.includes('Loading the lab interface.'),
     children: [...document.getElementById('app').children].map((node) => node.id),
     shellY: shell.top,
-    titles: [...document.querySelectorAll('h1, h2')].filter(visible).map((node) => node.textContent.trim()).filter((title) => names.has(title)),
+    titles: [document.getElementById('view-title')].filter(visible).map((node) => node.textContent.trim()).filter((title) => names.has(title)),
     listPresent: !!(rail && visible(rail)),
     listStacked: !!(rail && getComputedStyle(rail.parentElement).flexDirection === 'column'),
     listWidth: railBox ? railBox.width : 0,

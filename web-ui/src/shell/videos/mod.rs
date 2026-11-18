@@ -587,8 +587,7 @@ fn source_capability(item: &Item) -> Option<videos::SourceCapability> {
     })
 }
 
-pub(super) fn edit_current_time() {
-    let current_time = session::control_value("video-current-time");
+pub(super) fn edit_current_time(current_time: String) {
     let Some(mut ui) = bound() else {
         return;
     };
@@ -614,8 +613,16 @@ pub(super) fn toggle_local_time() {
 }
 
 pub(super) fn apply_current_time() {
+    let drafted = bound()
+        .map(|ui| ui.peek().range_draft_start.clone())
+        .unwrap_or_default();
     let local = bound().is_some_and(|ui| ui.peek().local_time);
-    let current = field_to_utc(&session::control_value("video-current-time"), local);
+    let raw = if drafted.trim().is_empty() {
+        session::control_value("video-current-time")
+    } else {
+        drafted
+    };
+    let current = field_to_utc(&raw, local);
     let Some(at_us) = videos::mjpeg::captured_us(&current) else {
         if let Some(mut ui) = bound() {
             let mut next = ui.peek().clone();

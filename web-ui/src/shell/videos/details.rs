@@ -63,7 +63,7 @@ pub(super) fn VideoDetails(
                 "data-utc": "{current_time_utc}",
                 placeholder: "{placeholder}",
                 value: "{current_time}",
-                oninput: move |_| edit_current_time(),
+                oninput: move |event| edit_current_time(event.value()),
                 onkeydown: apply_on_enter,
             }
             button {

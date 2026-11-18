@@ -322,7 +322,7 @@ fn judge_details(failures: &mut Vec<String>, case: &str, report: &Value) {
             && !flag(report, "detailsClip")
             && text_value(report, "detailsText")
                 .to_ascii_lowercase()
-                .contains("time range")
+                .contains("current time")
             && text_value(report, "detailsText").contains("Start")
             && text_value(report, "detailsText").contains("End")
             && !text_value(report, "detailsText").contains("Connection")

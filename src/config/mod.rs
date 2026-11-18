@@ -9,7 +9,10 @@ mod capture_settings_watch;
 mod duration;
 mod load;
 mod logging;
+#[cfg(any(test, feature = "web-ui"))]
+mod pending;
 mod semantic_indexing;
+mod store;
 mod strict_json;
 mod video;
 
@@ -33,14 +36,17 @@ pub use logging::{
     DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, LogOutputFormat, LoggingConfig,
     OpenTelemetryLoggingConfig,
 };
+#[cfg(any(test, feature = "web-ui"))]
+pub(crate) use pending::pending_restart_and_reindex;
 pub use semantic_indexing::{
-    A2A_LAB_CONFIG_SCHEMA_VERSION_V2, CredentialReference, DEFAULT_SEMANTIC_DESCRIPTION_BACKEND,
-    DEFAULT_SEMANTIC_SCORE_FLOOR, DecisionCoveragePolicy, EmbeddingSpaceConfig,
-    SemanticDecisionLimits, SemanticDecisionsConfig, SemanticDescriptionConfig,
-    SemanticEmbeddingsConfig, SemanticIndexingConfig, SemanticIndexingLimits,
-    SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule, SemanticStorageLimits,
-    SemanticStreamSchedule, SemanticWorkerLimits,
+    A2A_LAB_CONFIG_SCHEMA_VERSION_V2, CredentialReference, DEFAULT_JEV_API_ENDPOINT,
+    DEFAULT_SEMANTIC_DESCRIPTION_BACKEND, DEFAULT_SEMANTIC_SCORE_FLOOR, DecisionCoveragePolicy,
+    EmbeddingSpaceConfig, SemanticDecisionLimits, SemanticDecisionsConfig,
+    SemanticDescriptionConfig, SemanticEmbeddingsConfig, SemanticIndexingConfig,
+    SemanticIndexingLimits, SemanticIndexingSearchLimits, SemanticRoiLimits, SemanticSchedule,
+    SemanticStorageLimits, SemanticStreamSchedule, SemanticWorkerLimits,
 };
+pub use store::{ConfigPersistence, ConfigStoreError, LabConfigSnapshot, LabConfigStore};
 pub use video::{VideoConfig, VideoDvrConfig, VideoInputFormat, VideoSourceConfig};
 
 /// Supported v1 configuration schema version.
