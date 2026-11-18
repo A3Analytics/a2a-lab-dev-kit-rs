@@ -228,7 +228,9 @@ It does not inject `A2A_AUTH_*` credentials.
 
 Those requirements stay upstream NOT TESTED.
 
-`mise run test` starts an ephemeral pre-seeded Keycloak container for the OIDC checks in `tests/a2a_authentication.rs`.
+`mise run test` starts an ephemeral pre-seeded Keycloak container for the OIDC checks in `tests/a2a_authentication.rs`. Its build output goes to `target/quality`, the same directory used by `mise run check` and `mise run clippy`.
+
+`mise run quality-fast` repeats the local quality gate through those tests and disables nextest retries. `mise run quality` is the merge gate: it keeps retries and then runs `mise run tck` plus the SiLA provider checks.
 
 That file also covers issuer, audience, expiry, signature, and scope failures with a local fixture.
 

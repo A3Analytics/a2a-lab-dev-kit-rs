@@ -39,29 +39,37 @@ clippy_warnings() {
   CARGO_TARGET_DIR="$root/target/quality" cargo clippy --all-targets --all-features --quiet -- -D warnings
 }
 
+local_gate() {
+  step 'cargo fmt' fmt_check
+  step 'sila2-matrix' bash .mise/scripts/sila2-matrix.sh
+  step 'wiki-check' bash .mise/scripts/wiki-check.sh
+  step kiss kiss_check
+  step duplication bash .mise/scripts/duplication.sh
+  step check check_warnings
+  step 'web-ui feature-off' bash .mise/scripts/web-ui.sh feature-off
+  step 'web-ui build' bash .mise/scripts/web-ui.sh build
+  step clippy clippy_warnings
+  step 'web-ui freshness' bash .mise/scripts/web-ui.sh freshness
+  step nextest bash .mise/scripts/test.sh
+}
+
 case "$mode" in
   all)
-    step 'cargo fmt' fmt_check
-    step 'sila2-matrix' bash .mise/scripts/sila2-matrix.sh
-    step 'wiki-check' bash .mise/scripts/wiki-check.sh
-    step kiss kiss_check
-    step duplication bash .mise/scripts/duplication.sh
-    step check check_warnings
-    step 'web-ui feature-off' bash .mise/scripts/web-ui.sh feature-off
-    step 'web-ui build' bash .mise/scripts/web-ui.sh build
-    step clippy clippy_warnings
-    step 'web-ui freshness' bash .mise/scripts/web-ui.sh freshness
-    step nextest bash .mise/scripts/test.sh
+    local_gate
     step tck bash .mise/scripts/a2a-tck.sh
     step sila2-interop bash .mise/scripts/sila2-interop.sh
     step sila2-communication bash .mise/scripts/sila2-communication.sh
     step sila2-assess bash .mise/scripts/sila2-assess.sh
     ;;
+  fast)
+    export NEXTEST_PROFILE="${NEXTEST_PROFILE:-fast}"
+    local_gate
+    ;;
   kiss)
     kiss_check
     ;;
   *)
-    echo "usage: quality.sh [all|kiss]" >&2
+    echo "usage: quality.sh [all|fast|kiss]" >&2
     exit 2
     ;;
 esac

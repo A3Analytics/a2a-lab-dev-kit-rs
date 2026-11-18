@@ -120,9 +120,12 @@ mise exec -- cargo doc --no-deps --open
 3. Run the quality checks:
 
    ```bash
+   mise run quality-fast
    mise run quality
    ```
 
-`mise run quality` checks formatting, the SiLA matrix, the Wiki, complexity, duplication, compilation, Clippy, tests, the A2A TCK, and the SiLA provider checks.
+`mise run quality-fast` is the iteration gate. It checks formatting, the SiLA matrix, the Wiki, complexity, duplication, compilation, Clippy, and tests. It disables nextest retries and does not start the external conformance containers.
+
+`mise run quality` is the merge gate. It runs that same local work, then the A2A TCK and the SiLA provider checks, and it keeps nextest retries.
 
 The Wiki action publishes public Backlog docs.

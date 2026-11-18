@@ -115,3 +115,7 @@ run = "cargo test --test media_validate --features yuv,openh264"
 [quality]
 description = "Run formatting, the SiLA matrix, Wiki, complexity, duplication, compile, web UI checks, clippy, tests, the A2A TCK, and SiLA provider checks"
 run = "bash .mise/scripts/quality.sh"
+
+[quality-fast]
+description = "Run the local quality gate through tests, without the external TCK and SiLA containers"
+run = "bash .mise/scripts/quality.sh fast"

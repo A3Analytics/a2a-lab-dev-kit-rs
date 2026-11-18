@@ -37,9 +37,27 @@ fail-fast = false
 failure-output = "immediate-final"
 
 [profile.measure.junit]
-path = "junit.xml"
+path = "target/nextest-measure.xml"
+
+[[profile.measure.overrides]]
+filter = 'binary(web_ui_agent) | binary(web_ui_browser) | binary(web_ui_chat) | binary(web_ui_chrome) | binary(web_ui_h264_live) | binary(web_ui_hls_mse) | binary(web_ui_images) | binary(web_ui_images_closeout) | binary(web_ui_images_visual) | binary(web_ui_loading) | binary(web_ui_logs) | binary(web_ui_metrics) | binary(web_ui_parity) | binary(web_ui_tasks_ui) | binary(web_ui_video_playback) | binary(web_ui_video_speed) | binary(web_ui_videos) | binary(web_ui_videos_route) | binary(web_ui_videos_semantic) | binary(web_ui_videos_closeout) | binary(web_ui_videos_e2e) | binary(web_ui_videos_interactions) | binary(web_ui_videos_visual) | binary(web_ui_visual)'
+test-group = 'browser'
+
+[[profile.measure.overrides]]
+filter = 'binary(live_playback_sessions) | binary(video_gateway)'
+test-group = 'local-http'
 
 [profile.fast]
 retries = 0
 fail-fast = false
 failure-output = "immediate-final"
+
+[[profile.fast.overrides]]
+filter = 'binary(web_ui_agent) | binary(web_ui_browser) | binary(web_ui_chat) | binary(web_ui_chrome) | binary(web_ui_h264_live) | binary(web_ui_hls_mse) | binary(web_ui_images) | binary(web_ui_images_closeout) | binary(web_ui_images_visual) | binary(web_ui_loading) | binary(web_ui_logs) | binary(web_ui_metrics) | binary(web_ui_parity) | binary(web_ui_tasks_ui) | binary(web_ui_video_playback) | binary(web_ui_video_speed) | binary(web_ui_videos) | binary(web_ui_videos_route) | binary(web_ui_videos_semantic) | binary(web_ui_videos_closeout) | binary(web_ui_videos_e2e) | binary(web_ui_videos_interactions) | binary(web_ui_videos_visual) | binary(web_ui_visual)'
+test-group = 'browser'
+retries = 0
+
+[[profile.fast.overrides]]
+filter = 'binary(live_playback_sessions) | binary(video_gateway)'
+test-group = 'local-http'
+retries = 0

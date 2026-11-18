@@ -72,6 +72,11 @@ if [ "$updated" -ne 1 ]; then
 fi
 export A2A_AUTH_ISSUER="$issuer"
 
+# Reuse check and clippy artifacts. An explicit target directory still wins.
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+  export CARGO_TARGET_DIR="$root/target/quality"
+fi
+
 # The all-features debug test binary exhausts the GitHub runner while linking.
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
   export CARGO_PROFILE_TEST_DEBUG="${CARGO_PROFILE_TEST_DEBUG:-line-tables-only}"
