@@ -15,11 +15,15 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::PackagedMediaAsset;
+use crate::config::{A2aLabConfig, ResolvedImageDecisionClient};
 use crate::error::A2aLabError;
 use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{
-    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageProvider, ImageSource,
-    ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDecisionExecutor, ImageDecisionImageRef,
+    ImageDecisionModelInput, ImageDecisionProviderError, ImageDecisionRequest, ImageDecisionResult,
+    ImageDecisionUnmappedAnswer, ImageDescriptor, ImageProvider, ImageSource, ImageTransportConfig,
+    ListImageSourcesRequest, ListImagesRequest, ResolvedImageDecision, SearchImagesRequest,
+    complete_resolved_image_decision, resolve_one_source_image,
 };
 use crate::logs::{ListLogSourcesRequest, LogProvider, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{
@@ -78,6 +82,11 @@ pub enum A2aLabCommand {
     GetImage(GetImageRequest),
     /// Read the current image for one source.
     GetCurrentImage(GetCurrentImageRequest),
+    /// Run one synchronous generic image decision.
+    ///
+    /// An omitted ROI is the full source image. Returned boxes are normalized
+    /// to that image. This operation does not append a typed ledger record.
+    DecideImage(ImageDecisionRequest),
     /// List video sources.
     ListVideoSources(ListVideoSourcesRequest),
     /// Read the retained frame at a UTC instant.
@@ -133,6 +142,8 @@ pub enum A2aLabResult {
     GetImage(Image),
     /// The current image for one source, including its inline bytes.
     GetCurrentImage(Image),
+    /// Generic image-decision answers with source-normalized boxes.
+    DecideImage(ImageDecisionResult),
     /// A page of video sources.
     ListVideoSources(Page<VideoSource>),
     /// The retained frame at a UTC instant.
@@ -390,6 +401,8 @@ pub struct A2aLabService<L, M, W, I = EmptyImages, V = EmptyVideos> {
     images: I,
     videos: V,
     frame_decisions: Option<Arc<dyn FrameDecisionLedgerProvider>>,
+    image_decision_client: Option<ResolvedImageDecisionClient>,
+    image_decision_executor: Option<Arc<dyn ImageDecisionExecutor>>,
     semantic_search: Option<Arc<dyn SemanticVideoSearchProvider>>,
     image_transport: ImageTransportConfig,
     task_store: Mutex<BTreeMap<String, StoredTask>>,
@@ -415,6 +428,8 @@ where
             images: EmptyImages,
             videos: EmptyVideos,
             frame_decisions: None,
+            image_decision_client: None,
+            image_decision_executor: None,
             semantic_search: None,
             image_transport: ImageTransportConfig::from_default(),
             task_store: Mutex::const_new(BTreeMap::new()),
@@ -444,6 +459,8 @@ where
             images,
             videos: self.videos,
             frame_decisions: self.frame_decisions,
+            image_decision_client: self.image_decision_client,
+            image_decision_executor: self.image_decision_executor,
             semantic_search: self.semantic_search,
             image_transport: self.image_transport,
             task_store: self.task_store,
@@ -464,11 +481,56 @@ where
             images: self.images,
             videos,
             frame_decisions: self.frame_decisions,
+            image_decision_client: self.image_decision_client,
+            image_decision_executor: self.image_decision_executor,
             semantic_search: self.semantic_search,
             image_transport: self.image_transport,
             task_store: self.task_store,
             ids: self.ids,
         }
+    }
+
+    /// Attaches a resolved synchronous generic image-decision client.
+    ///
+    /// This does not change typed three-predicate evaluator registration.
+    #[must_use]
+    pub fn with_image_decision_client(mut self, client: ResolvedImageDecisionClient) -> Self {
+        if let Ok(executor) = client.executor() {
+            self.image_decision_executor = Some(executor);
+        }
+        self.image_decision_client = Some(client);
+        self
+    }
+
+    /// Replaces the generic image-decision executor used by `decide_image`.
+    ///
+    /// Typed frame-decision registration is left unchanged. The executor does
+    /// not append ledger records.
+    #[must_use]
+    pub fn with_image_decision_executor(
+        mut self,
+        executor: Arc<dyn ImageDecisionExecutor>,
+    ) -> Self {
+        self.image_decision_executor = Some(executor);
+        self
+    }
+
+    /// Resolves `config.image_decision` onto this service when the lab file sets it.
+    ///
+    /// Typed frame-decision registration is left unchanged. Absent configuration
+    /// leaves any previously attached client in place.
+    #[must_use]
+    pub fn resolve_image_decision_client(self, config: &A2aLabConfig) -> Self {
+        let Some(client) = config.image_decision.clone() else {
+            return self;
+        };
+        self.with_image_decision_client(ResolvedImageDecisionClient::from_config(client))
+    }
+
+    /// Resolved synchronous generic image-decision client, when configured.
+    #[must_use]
+    pub fn image_decision_client(&self) -> Option<&ResolvedImageDecisionClient> {
+        self.image_decision_client.as_ref()
     }
 
     /// Attaches a Jev decision ledger provider for append/read APIs.
@@ -519,6 +581,7 @@ where
             A2aLabCommand::GetVideoClip(request) => self.get_video_clip(request).await,
             A2aLabCommand::GetVideoTimeline(request) => self.get_video_timeline(request).await,
             A2aLabCommand::FollowVideo(request) => self.follow_video(request).await,
+            A2aLabCommand::DecideImage(request) => self.decide_image(request).await,
             A2aLabCommand::GetFrameDecisionCapabilities(request) => {
                 self.get_frame_decision_capabilities(request).await
             }
@@ -551,7 +614,8 @@ where
             A2aLabCommand::SearchImages(request) => self.search_images(request).await,
             A2aLabCommand::GetImage(request) => self.get_image(request).await,
             A2aLabCommand::GetCurrentImage(request) => self.get_current_image(request).await,
-            A2aLabCommand::ListVideoSources(_)
+            A2aLabCommand::DecideImage(_)
+            | A2aLabCommand::ListVideoSources(_)
             | A2aLabCommand::GetVideoFrameAt(_)
             | A2aLabCommand::GetVideoClip(_)
             | A2aLabCommand::GetVideoTimeline(_)
@@ -685,6 +749,40 @@ where
         let image = self.accepted_image(self.images.get_current_image(request).await?)?;
         self.store_snapshot(A2aLabResult::GetCurrentImage(image))
             .await
+    }
+
+    async fn decide_image(
+        &self,
+        request: ImageDecisionRequest,
+    ) -> Result<TaskSnapshot, A2aLabError> {
+        self.image_transport.check_payload(request.image().data())?;
+        let Some(executor) = &self.image_decision_executor else {
+            return Err(A2aLabError::unavailable(
+                "image decision client is not available",
+            ));
+        };
+        let result = executor
+            .decide(&request)
+            .await
+            .map_err(ImageDecisionProviderError::into_lab_error)?;
+        self.store_snapshot(A2aLabResult::DecideImage(result)).await
+    }
+
+    /// Resolves one source image and maps model boxes onto that image.
+    ///
+    /// An omitted ROI is the full source image. A supplied ROI crops only the
+    /// model input. Returned boxes are normalized to the original image. This
+    /// method does not read or append typed frame-decision history.
+    pub async fn resolve_generic_image_decision(
+        &self,
+        image_ref: ImageDecisionImageRef,
+        question: impl AsRef<str>,
+        model_input: ImageDecisionModelInput,
+        model_answers: &[ImageDecisionUnmappedAnswer],
+    ) -> Result<ResolvedImageDecision, A2aLabError> {
+        let source =
+            resolve_one_source_image(&self.images, self.image_transport, &image_ref).await?;
+        complete_resolved_image_decision(source, question.as_ref(), model_input, model_answers)
     }
 
     async fn list_video_sources(

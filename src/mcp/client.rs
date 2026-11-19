@@ -233,6 +233,9 @@ impl McpLab {
             A2aLabCommand::GetCurrentImage(request) => {
                 A2aLabResult::GetCurrentImage(self.call_image("get_current_image", request).await?)
             }
+            A2aLabCommand::DecideImage(request) => {
+                A2aLabResult::DecideImage(self.call("decide_image", request).await?)
+            }
             A2aLabCommand::ListVideoSources(_)
             | A2aLabCommand::GetVideoFrameAt(_)
             | A2aLabCommand::GetVideoClip(_)
@@ -526,13 +529,18 @@ fn media_http_error(status: reqwest::StatusCode, body: &[u8]) -> A2aLabError {
 fn from_service_error(error: ServiceError) -> A2aLabError {
     match error {
         ServiceError::McpError(data) => {
-            let code = data
+            let coded = data
                 .data
                 .as_ref()
                 .and_then(|value| value.get("code"))
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("protocol");
-            A2aLabError::from_code(code, data.message.to_string())
+                .and_then(serde_json::Value::as_str);
+            match coded {
+                Some(code) => A2aLabError::from_code(code, data.message.to_string()),
+                None if data.code == rmcp::model::ErrorCode::INVALID_PARAMS => {
+                    A2aLabError::invalid("request", data.message.to_string())
+                }
+                None => A2aLabError::protocol(data.message.to_string()),
+            }
         }
         other => A2aLabError::transport(other.to_string()),
     }

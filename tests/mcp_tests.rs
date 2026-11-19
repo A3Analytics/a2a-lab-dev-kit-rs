@@ -3,13 +3,13 @@ use std::sync::Arc;
 use a2a_lab_dev_kit::{
     A2aClient, A2aLabService, A2aServer, FollowVideoRequest, GetCurrentImageRequest,
     GetImageRequest, GetTaskStatusRequest, GetVideoClipRequest, GetVideoFrameAtRequest,
-    GetVideoFrameAtResult, GetVideoTimelineRequest, Image, ImageDescriptor, ImageSource,
-    JsonObject, ListImageSourcesRequest, ListImagesRequest, ListLogSourcesRequest,
-    ListMetricsRequest, ListTasksRequest, ListVideoSourcesRequest, LogRecord, LogSource, McpLab,
-    McpServer, McpVideoClip, MemoryLogs, MemoryMetrics, MemoryTasks, MetricDescriptor, MetricPoint,
-    Page, PageRequest, QueryLogsRequest, QueryMetricRequest, SearchImagesRequest, SourceId,
-    StartTaskRequest, TaskDefinition, TaskId, TaskRun, VideoFollow, VideoSource, VideoTimeline,
-    bind_local,
+    GetVideoFrameAtResult, GetVideoTimelineRequest, Image, ImageDecisionRequest,
+    ImageDecisionResult, ImageDescriptor, ImageSource, JsonObject, ListImageSourcesRequest,
+    ListImagesRequest, ListLogSourcesRequest, ListMetricsRequest, ListTasksRequest,
+    ListVideoSourcesRequest, LogRecord, LogSource, McpLab, McpServer, McpVideoClip, MemoryLogs,
+    MemoryMetrics, MemoryTasks, MetricDescriptor, MetricPoint, Page, PageRequest, QueryLogsRequest,
+    QueryMetricRequest, SearchImagesRequest, SourceId, StartTaskRequest, TaskDefinition, TaskId,
+    TaskRun, VideoFollow, VideoSource, VideoTimeline, bind_local,
 };
 use rmcp::handler::server::common::{schema_for_input, schema_for_output};
 use rmcp::handler::server::wrapper::Parameters;
@@ -85,6 +85,7 @@ async fn assert_lab_tools(client: &impl ToolClient) {
         names,
         [
             "append_frame_decision",
+            "decide_image",
             "follow_video",
             "get_current_image",
             "get_frame_decision_capabilities",
@@ -124,6 +125,7 @@ async fn assert_lab_tools(client: &impl ToolClient) {
     assert_contract::<SearchImagesRequest, Page<ImageDescriptor>>(tool(&listed, "search_images"));
     assert_contract::<GetImageRequest, Image>(tool(&listed, "get_image"));
     assert_contract::<GetCurrentImageRequest, Image>(tool(&listed, "get_current_image"));
+    assert_contract::<ImageDecisionRequest, ImageDecisionResult>(tool(&listed, "decide_image"));
     assert_contract::<ListVideoSourcesRequest, Page<VideoSource>>(tool(
         &listed,
         "list_video_sources",

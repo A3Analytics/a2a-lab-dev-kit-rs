@@ -48,6 +48,49 @@ impl fmt::Display for VideoAvailability {
     }
 }
 
+/// Stable generic image-decision failure that is not a plain validation error.
+///
+/// Provider unavailability stays [`A2aLabError::Unavailable`]. These categories
+/// are the remaining provider reasons shared by HTTP, MCP, and A2A.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageDecisionFailure {
+    /// The provider answer failed the bounded contract.
+    InvalidAnswer,
+    /// A configured bound was exceeded.
+    LimitExceeded,
+    /// The provider deadline elapsed.
+    DeadlineExceeded,
+}
+
+impl ImageDecisionFailure {
+    /// Stable machine-readable reason.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidAnswer => "invalid_answer",
+            Self::LimitExceeded => "limit_exceeded",
+            Self::DeadlineExceeded => "deadline_exceeded",
+        }
+    }
+
+    /// Parses a reason produced by [`Self::as_str`].
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "invalid_answer" => Some(Self::InvalidAnswer),
+            "limit_exceeded" => Some(Self::LimitExceeded),
+            "deadline_exceeded" => Some(Self::DeadlineExceeded),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for ImageDecisionFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// Failure returned by the lab dev kit.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum A2aLabError {
@@ -90,6 +133,14 @@ pub enum A2aLabError {
     Video {
         /// Machine-readable availability reason.
         availability: VideoAvailability,
+        /// Human-readable explanation.
+        message: String,
+    },
+    /// A generic image decision failed for a stable provider reason.
+    #[error("{failure}: {message}")]
+    ImageDecision {
+        /// Machine-readable provider category.
+        failure: ImageDecisionFailure,
         /// Human-readable explanation.
         message: String,
     },
@@ -171,6 +222,15 @@ impl A2aLabError {
         Self::video(VideoAvailability::LiveUnavailable, message)
     }
 
+    /// Creates a generic image-decision provider failure.
+    #[must_use]
+    pub fn image_decision(failure: ImageDecisionFailure, message: impl Into<String>) -> Self {
+        Self::ImageDecision {
+            failure,
+            message: message.into(),
+        }
+    }
+
     /// Returns the video availability reason when this error is one.
     #[must_use]
     pub const fn availability(&self) -> Option<VideoAvailability> {
@@ -193,6 +253,7 @@ impl A2aLabError {
             Self::Transport { .. } => "transport",
             Self::Protocol { .. } => "protocol",
             Self::Video { availability, .. } => availability.as_str(),
+            Self::ImageDecision { failure, .. } => failure.as_str(),
         }
     }
 
@@ -201,6 +262,9 @@ impl A2aLabError {
         let message = message.into();
         if let Some(availability) = VideoAvailability::parse(code) {
             return Self::video(availability, message);
+        }
+        if let Some(failure) = ImageDecisionFailure::parse(code) {
+            return Self::image_decision(failure, message);
         }
         match code {
             "invalid" => Self::invalid("request", message),

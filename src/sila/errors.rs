@@ -90,7 +90,8 @@ pub(crate) fn lab_error(error: A2aLabError, not_found: &str) -> Status {
         A2aLabError::Invalid { message, .. }
         | A2aLabError::Transport { message }
         | A2aLabError::Protocol { message }
-        | A2aLabError::Video { message, .. } => undefined(message),
+        | A2aLabError::Video { message, .. }
+        | A2aLabError::ImageDecision { message, .. } => undefined(message),
     }
 }
 

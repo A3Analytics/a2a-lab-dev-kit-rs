@@ -21,8 +21,8 @@ const DEFAULT_ADDRESS: &str = "127.0.0.1:31001";
 use crate::a2a::{AccessGate, Authenticator, auth_response, security_configuration_error};
 use crate::error::A2aLabError;
 use crate::images::{
-    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
-    ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDecisionRequest, ImageDecisionResult,
+    ImageDescriptor, ImageSource, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
 };
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
@@ -429,6 +429,24 @@ impl McpServer {
     }
 
     #[tool(
+        name = "decide_image",
+        description = "Run one synchronous generic image decision. Omitted ROI is the full image. Boxes are normalized to the source image."
+    )]
+    async fn decide_image(
+        &self,
+        params: Parameters<ImageDecisionRequest>,
+    ) -> Result<Json<ImageDecisionResult>, ErrorData> {
+        self.take(
+            A2aLabCommand::DecideImage(params.0),
+            |result| match result {
+                A2aLabResult::DecideImage(decision) => Some(decision),
+                _ => None,
+            },
+        )
+        .await
+    }
+
+    #[tool(
         name = "list_video_sources",
         description = "List the video sources this agent can read"
     )]
@@ -657,10 +675,15 @@ fn mcp_error(error: &A2aLabError) -> ErrorData {
         | A2aLabError::Video {
             availability: crate::error::VideoAvailability::LiveUnavailable,
             ..
+        }
+        | A2aLabError::ImageDecision {
+            failure: crate::error::ImageDecisionFailure::DeadlineExceeded,
+            ..
         } => ErrorData::internal_error(message, data),
         A2aLabError::Invalid { .. }
         | A2aLabError::Protocol { .. }
         | A2aLabError::NotFound { .. }
-        | A2aLabError::Video { .. } => ErrorData::invalid_params(message, data),
+        | A2aLabError::Video { .. }
+        | A2aLabError::ImageDecision { .. } => ErrorData::invalid_params(message, data),
     }
 }

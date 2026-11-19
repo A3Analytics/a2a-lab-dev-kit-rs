@@ -1,6 +1,7 @@
 //! Immutable Jev-only frame decision records, evaluator contracts, and ledger boundary.
 
 mod access;
+mod adapter;
 mod api;
 mod config;
 mod failure;
@@ -18,6 +19,7 @@ mod routing;
 mod scope;
 
 pub use access::{FrameDecisionClientRole, FrameDecisionOperation, FrameDecisionSchemaRefs};
+pub use adapter::TypedLabPredicateJevAdapter;
 pub use api::{
     AppendFrameDecisionRequest, AppendFrameDecisionResult, DecisionEvidenceAvailability,
     FrameDecisionCapabilities, FrameDecisionEvaluationOwnership, FrameDecisionHistoryEntry,

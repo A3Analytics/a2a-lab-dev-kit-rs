@@ -374,6 +374,12 @@ pub(crate) fn snapshot_from_task(
 }
 
 pub(crate) fn sdk_error(error: A2AError) -> A2aLabError {
+    let decision_code = metadata_code(&error)
+        .filter(|code| crate::error::ImageDecisionFailure::parse(code).is_some())
+        .map(str::to_owned);
+    if let Some(code) = decision_code {
+        return A2aLabError::from_code(&code, strip_code_prefix(&code, &error.message));
+    }
     match error.code {
         error_code::TASK_NOT_FOUND => A2aLabError::not_found("task", error.message),
         error_code::INVALID_PARAMS
@@ -388,8 +394,8 @@ pub(crate) fn sdk_error(error: A2AError) -> A2aLabError {
     }
 }
 
-fn video_reason(error: &A2AError) -> Option<&'static str> {
-    let code = error.details.as_ref()?.iter().find_map(|detail| {
+fn metadata_code(error: &A2AError) -> Option<&str> {
+    error.details.as_ref()?.iter().find_map(|detail| {
         if detail.type_url != a2a_types::ERROR_INFO_TYPE {
             return None;
         }
@@ -398,7 +404,11 @@ fn video_reason(error: &A2AError) -> Option<&'static str> {
             .get("metadata")
             .and_then(|metadata| metadata.get("code"))
             .and_then(serde_json::Value::as_str)
-    })?;
+    })
+}
+
+fn video_reason(error: &A2AError) -> Option<&'static str> {
+    let code = metadata_code(error)?;
     VideoAvailability::parse(code).map(VideoAvailability::as_str)
 }
 
@@ -416,17 +426,34 @@ pub(crate) fn a2a_error(error: &A2aLabError) -> A2AError {
             A2AError::content_type_not_supported()
         }
         A2aLabError::Protocol { message } => A2AError::invalid_request(message.clone()),
-        A2aLabError::Video { .. } => {
-            A2AError::internal(error.to_string()).with_details(vec![TypedDetail::error_info(
-                "INTERNAL_ERROR",
-                a2a_types::PROTOCOL_DOMAIN,
-                Some(HashMap::from([(
-                    "code".to_owned(),
-                    error.code().to_owned(),
-                )])),
-            )])
+        A2aLabError::Video { .. } => decision_detail(A2AError::internal(error.to_string()), error),
+        A2aLabError::ImageDecision { failure, message } => {
+            let message = format!("{}: {message}", failure.as_str());
+            let proto = match failure {
+                crate::error::ImageDecisionFailure::DeadlineExceeded => A2AError::internal(message),
+                crate::error::ImageDecisionFailure::InvalidAnswer
+                | crate::error::ImageDecisionFailure::LimitExceeded => {
+                    A2AError::invalid_params(message)
+                }
+            };
+            decision_detail(proto, error)
         }
     }
+}
+
+fn strip_code_prefix(code: &str, message: &str) -> String {
+    message
+        .strip_prefix(&format!("{code}: "))
+        .unwrap_or(message)
+        .to_owned()
+}
+
+fn decision_detail(error: A2AError, lab: &A2aLabError) -> A2AError {
+    error.with_details(vec![TypedDetail::error_info(
+        "INTERNAL_ERROR",
+        a2a_types::PROTOCOL_DOMAIN,
+        Some(HashMap::from([("code".to_owned(), lab.code().to_owned())])),
+    )])
 }
 
 #[cfg(test)]

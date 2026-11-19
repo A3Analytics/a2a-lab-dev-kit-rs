@@ -7,6 +7,7 @@ mod camera_selector;
 mod capture_settings;
 mod capture_settings_watch;
 mod duration;
+mod image_decision;
 mod load;
 mod logging;
 #[cfg(any(test, feature = "web-ui"))]
@@ -31,6 +32,11 @@ pub use capture_settings::{
 };
 pub use capture_settings_watch::VideoCaptureSettingsWatch;
 pub use duration::{ConfigDuration, SaveIntervalDuration};
+pub use image_decision::{
+    DEFAULT_IMAGE_DECISION_TIMEOUT_SECS, IMAGE_DECISION_CLIENT_DOWNSTREAM_DEPENDENCY,
+    ImageDecisionClientConfig, MAX_IMAGE_DECISION_RESPONSE_BYTES, MAX_IMAGE_DECISION_TIMEOUT_SECS,
+    ResolvedImageDecisionClient,
+};
 pub use load::LoadedLabConfig;
 pub use logging::{
     DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, LogOutputFormat, LoggingConfig,
@@ -63,6 +69,8 @@ pub struct A2aLabConfig {
     pub videos: Option<VideoConfig>,
     /// Optional additive semantic indexing settings.
     pub semantic_indexing: Option<SemanticIndexingConfig>,
+    /// Optional synchronous generic JEV image-decision client.
+    pub image_decision: Option<ImageDecisionClientConfig>,
     /// Optional application logging settings. Absent means logging stays off.
     pub logging: Option<LoggingConfig>,
 }
@@ -118,6 +126,7 @@ impl A2aLabConfig {
                 "chat",
                 "videos",
                 "semantic_indexing",
+                "image_decision",
                 "logging",
             ][..],
             _ => {
@@ -143,12 +152,17 @@ impl A2aLabConfig {
         if let Some(semantic) = semantic_indexing.as_ref() {
             semantic.reject_source_embedding_overrides(videos.as_ref())?;
         }
+        let image_decision = match map.get("image_decision") {
+            None => None,
+            Some(value) => Some(ImageDecisionClientConfig::parse_value(value)?),
+        };
         let logging = logging::parse_logging(map.get("logging"))?;
         Ok(Self {
             schema_version,
             chat,
             videos,
             semantic_indexing,
+            image_decision,
             logging,
         })
     }
@@ -326,6 +340,7 @@ mod tests {
         assert!(config.chat.is_none());
         assert!(config.videos.is_none());
         assert!(config.semantic_indexing.is_none());
+        assert!(config.image_decision.is_none());
         assert!(config.logging.is_none());
     }
 

@@ -295,16 +295,20 @@ fn encoded_part(frame: &VideoFrame) -> Result<Bytes, A2aLabError> {
 
 fn media_error(error: &A2aLabError) -> Response {
     let status = match error {
-        A2aLabError::Invalid { .. } => StatusCode::BAD_REQUEST,
         A2aLabError::Unavailable { .. }
         | A2aLabError::Video {
             availability: crate::error::VideoAvailability::LiveUnavailable,
+            ..
+        }
+        | A2aLabError::ImageDecision {
+            failure: crate::error::ImageDecisionFailure::DeadlineExceeded,
             ..
         } => StatusCode::SERVICE_UNAVAILABLE,
         A2aLabError::Transport { .. } | A2aLabError::Protocol { .. } => {
             StatusCode::INTERNAL_SERVER_ERROR
         }
         A2aLabError::NotFound { .. } | A2aLabError::Video { .. } => StatusCode::NOT_FOUND,
+        A2aLabError::Invalid { .. } | A2aLabError::ImageDecision { .. } => StatusCode::BAD_REQUEST,
     };
     let body = serde_json::json!({
         "error": {

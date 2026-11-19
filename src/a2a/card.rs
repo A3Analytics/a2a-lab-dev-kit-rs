@@ -122,6 +122,11 @@ const LAB_SKILLS: &[(&str, &str, &str)] = &[
         "Read the current image for one source, including its inline bytes",
     ),
     (
+        "decide-image",
+        "Decide image",
+        "Run one synchronous generic image decision. An omitted ROI is the full image, and boxes are normalized to the source image.",
+    ),
+    (
         "list-video-sources",
         "List video sources",
         "List the video sources this agent can read",

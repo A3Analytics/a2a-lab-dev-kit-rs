@@ -34,6 +34,14 @@ fn operation_name_from_tag(operation: &str) -> &'static str {
         Some('r') => read_operation(operation),
         Some('a') => append_operation(operation),
         Some('f') => follow_operation(operation),
+        Some('d') => decide_operation(operation),
+        _ => "unknown_operation",
+    }
+}
+
+fn decide_operation(operation: &str) -> &'static str {
+    match operation {
+        "decide_image" => "decide_image",
         _ => "unknown_operation",
     }
 }

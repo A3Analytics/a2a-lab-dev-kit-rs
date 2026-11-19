@@ -410,7 +410,7 @@ fn map_forbidden_digest(digest: &Sha256Digest) -> Result<(), FrameDecisionEvalua
     reject_forbidden_decision_input(ForbiddenDecisionInput::EmbeddingSimilarity)
 }
 
-fn subject_token(subject: &DecisionSubject) -> String {
+pub(crate) fn subject_token(subject: &DecisionSubject) -> String {
     match subject {
         DecisionSubject::PipetteChannel(entry) => {
             format!("pipette:{}:{}", entry.pipetter_id(), entry.channel())
