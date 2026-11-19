@@ -234,8 +234,8 @@ fn legacy_flow(base: &str) {
     let mut page = Browser::open(&format!("{base}/ui/"));
     page.wait_until(CONNECTED);
     page.show("#videos");
-    page.click("video-search-tab");
     page.wait_until("document.getElementById('video-interval-0')");
+    page.click("video-search-tab");
     page.wait_until(
         "document.getElementById('video-semantic-capability')?.dataset.state === 'absent' || document.getElementById('video-semantic-capability')?.dataset.state === 'ready'",
     );

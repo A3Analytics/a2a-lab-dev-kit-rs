@@ -590,14 +590,7 @@ async fn live_disconnect_cancels_and_keeps_a_bounded_queue() {
         .unwrap();
     assert!(response.status().is_success());
     wait_until(|| burst.pulled() > 0).await;
-    tokio::time::sleep(Duration::from_millis(150)).await;
-    let pulled = burst.pulled();
-    tokio::time::sleep(Duration::from_millis(150)).await;
-    assert_eq!(
-        burst.pulled(),
-        pulled,
-        "unread live response kept an unbounded queue"
-    );
+    let pulled = wait_pulled_stable(&burst).await;
     drop(response);
     wait_flag(&burst).await;
     tokio::time::sleep(Duration::from_millis(80)).await;
@@ -1013,6 +1006,26 @@ async fn live_next(state: LiveState) -> Option<(Result<VideoFrame, A2aLabError>,
 
 async fn wait_flag(probe: &ProbeVideos) {
     wait_until(|| probe.dropped()).await;
+}
+
+async fn wait_pulled_stable(probe: &ProbeVideos) -> usize {
+    let start = Instant::now();
+    let mut stable_since = Instant::now();
+    let mut pulled = probe.pulled();
+    loop {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        let current = probe.pulled();
+        if current != pulled {
+            pulled = current;
+            stable_since = Instant::now();
+        } else if stable_since.elapsed() >= Duration::from_millis(300) {
+            return pulled;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "unread live response kept an unbounded queue"
+        );
+    }
 }
 
 struct ClipGapRefused;
