@@ -124,7 +124,7 @@ const LAB_SKILLS: &[(&str, &str, &str)] = &[
     (
         "decide-image",
         "Decide image",
-        "Run one synchronous generic image decision. An omitted ROI is the full image, and boxes are normalized to the source image.",
+        "Run one synchronous image decision for a retained source frame. Questions use choice, score, or noul.",
     ),
     (
         "list-video-sources",

@@ -33,8 +33,9 @@ pub use capture_settings::{
 pub use capture_settings_watch::VideoCaptureSettingsWatch;
 pub use duration::{ConfigDuration, SaveIntervalDuration};
 pub use image_decision::{
-    DEFAULT_IMAGE_DECISION_TIMEOUT_SECS, IMAGE_DECISION_CLIENT_DOWNSTREAM_DEPENDENCY,
-    ImageDecisionClientConfig, MAX_IMAGE_DECISION_RESPONSE_BYTES, MAX_IMAGE_DECISION_TIMEOUT_SECS,
+    AgentCoreImageDecisionSettings, DEFAULT_IMAGE_DECISION_TIMEOUT_SECS,
+    IMAGE_DECISION_CLIENT_DOWNSTREAM_DEPENDENCY, ImageDecisionClientConfig, ImageDecisionProvider,
+    MAX_IMAGE_DECISION_RESPONSE_BYTES, MAX_IMAGE_DECISION_TIMEOUT_SECS,
     ResolvedImageDecisionClient,
 };
 pub use load::LoadedLabConfig;

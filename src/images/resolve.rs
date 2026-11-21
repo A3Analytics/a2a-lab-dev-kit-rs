@@ -2,7 +2,7 @@
 //!
 //! Callers name an image through [`ImageProvider`]. This module does not append
 //! typed frame-decision records, and it does not add settings pages, whole-video
-//! indexing or backfill, AgentCore, Strands, an AWS SDK client, or profile 1.3.0.
+//! indexing or backfill, `AgentCore`, Strands, an AWS SDK client, or profile 1.3.0.
 //! Downstream labs consume the devkit from a published git revision.
 
 use serde::de::Error as _;
@@ -17,10 +17,10 @@ use crate::images::decision::{
 };
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageProvider,
-    ImageTransportConfig, SearchImagesRequest,
+    ImageTransportConfig, ListImagesRequest, SearchImagesRequest,
 };
-use crate::page::{Page, PageRequest};
-use crate::time::TimeRange;
+use crate::page::{MAX_PAGE_LIMIT, Page, PageRequest};
+use crate::time::{TimeRange, UtcTimestamp};
 
 const RESOLUTION_PAGE_LIMIT: u32 = 2;
 
@@ -233,6 +233,71 @@ impl ResolvedImageDecision {
     pub const fn result(&self) -> &ImageDecisionResult {
         &self.result
     }
+}
+
+pub(crate) async fn resolve_captured_image(
+    provider: &impl ImageProvider,
+    transport: ImageTransportConfig,
+    source_id: &ImageSourceId,
+    captured_at: UtcTimestamp,
+) -> Result<Image, A2aLabError> {
+    let mut cursor = None;
+    let mut candidates = Vec::new();
+    loop {
+        let page = PageRequest::new(cursor.clone(), MAX_PAGE_LIMIT)?;
+        let request = ListImagesRequest::new(source_id.clone(), page)?;
+        let found = provider.list_images(request).await?;
+        candidates.extend(found.items().iter().cloned());
+        match found.next_cursor() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    let selected = select_captured_descriptor(&candidates, source_id, captured_at)?;
+    let image = provider
+        .get_image(GetImageRequest::new(selected.id().clone()))
+        .await?;
+    accept_image(transport, &image, Some(selected.id()), Some(source_id))
+}
+
+pub(crate) fn select_captured_descriptor<'a>(
+    candidates: &'a [ImageDescriptor],
+    source_id: &ImageSourceId,
+    captured_at: UtcTimestamp,
+) -> Result<&'a ImageDescriptor, A2aLabError> {
+    let eligible: Vec<_> = candidates
+        .iter()
+        .filter(|descriptor| {
+            descriptor.source_id() == source_id && descriptor.captured_at() >= captured_at
+        })
+        .collect();
+    let exact: Vec<_> = eligible
+        .iter()
+        .copied()
+        .filter(|descriptor| descriptor.captured_at() == captured_at)
+        .collect();
+    let pool = if exact.is_empty() {
+        let first_after = eligible
+            .iter()
+            .copied()
+            .filter(|descriptor| descriptor.captured_at() > captured_at)
+            .map(ImageDescriptor::captured_at)
+            .min()
+            .ok_or_else(|| A2aLabError::not_found("image", source_id.to_string()))?;
+        eligible
+            .into_iter()
+            .filter(|descriptor| descriptor.captured_at() == first_after)
+            .collect()
+    } else {
+        exact
+    };
+    pool.into_iter()
+        .max_by(|left, right| {
+            left.captured_at()
+                .cmp(&right.captured_at())
+                .then_with(|| left.id().as_str().cmp(right.id().as_str()))
+        })
+        .ok_or_else(|| A2aLabError::not_found("image", source_id.to_string()))
 }
 
 pub(crate) async fn resolve_one_source_image(

@@ -21,8 +21,9 @@ const DEFAULT_ADDRESS: &str = "127.0.0.1:31001";
 use crate::a2a::{AccessGate, Authenticator, auth_response, security_configuration_error};
 use crate::error::A2aLabError;
 use crate::images::{
-    GetCurrentImageRequest, GetImageRequest, Image, ImageDecisionRequest, ImageDecisionResult,
-    ImageDescriptor, ImageSource, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
+    ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest, SourceImageDecisionRequest,
+    SourceImageDecisionResult,
 };
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
@@ -430,12 +431,12 @@ impl McpServer {
 
     #[tool(
         name = "decide_image",
-        description = "Run one synchronous generic image decision. Omitted ROI is the full image. Boxes are normalized to the source image."
+        description = "Run one synchronous image decision for a retained source frame. Questions use choice, score, or noul. The model comes from configuration."
     )]
     async fn decide_image(
         &self,
-        params: Parameters<ImageDecisionRequest>,
-    ) -> Result<Json<ImageDecisionResult>, ErrorData> {
+        params: Parameters<SourceImageDecisionRequest>,
+    ) -> Result<Json<SourceImageDecisionResult>, ErrorData> {
         self.take(
             A2aLabCommand::DecideImage(params.0),
             |result| match result {

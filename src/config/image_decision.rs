@@ -1,10 +1,10 @@
-//! Optional `image_decision` lab-file client for one synchronous generic JEV decision.
+//! Optional `image_decision` lab-file client for one synchronous image decision.
 //!
 //! Downstream repositories consume this configuration from a published git revision
 //! of `a2a-lab-dev-kit`, never a path dependency. HTTP, MCP, and A2A remain the
-//! integration surfaces. This module does not add settings pages, whole-video
-//! indexing or backfill, AgentCore, Strands, an AWS SDK client, or a profile
-//! 1.3.0 bump.
+//! integration surfaces. An `agentcore` provider names a runtime for the lab agent
+//! to invoke. This module does not add settings pages, whole-video indexing or
+//! backfill, a Strands runtime, an AWS SDK client, or a profile 1.3.0 bump.
 //!
 //! Resolving the client does not register or replace the typed three-predicate
 //! evaluator. Generic completion does not append a typed frame-decision record.
@@ -41,8 +41,12 @@ pub const MAX_IMAGE_DECISION_TIMEOUT_SECS: u64 = 120;
 /// Largest accepted generic decision response, matching the typed JEV response cap.
 pub const MAX_IMAGE_DECISION_RESPONSE_BYTES: u64 = 256 * 1024;
 
+const FIELD_PROVIDER: &str = "image_decision.provider";
 const FIELD_ENDPOINT: &str = "image_decision.endpoint";
 const FIELD_MODEL: &str = "image_decision.model";
+const FIELD_RUNTIME_ARN: &str = "image_decision.runtime_arn";
+const FIELD_QUALIFIER: &str = "image_decision.qualifier";
+const FIELD_REGION: &str = "image_decision.region";
 const FIELD_TIMEOUT: &str = "image_decision.timeout";
 const FIELD_IMAGE_BYTES: &str = "image_decision.max_image_bytes";
 const FIELD_REQUEST_BYTES: &str = "image_decision.max_request_bytes";
@@ -51,18 +55,65 @@ const FIELD_CREDENTIALS: &str = "image_decision.credentials";
 const FIELD_CREDENTIALS_ENV: &str = "image_decision.credentials.env";
 const FIELD_ROI: &str = "image_decision.roi";
 
-/// Validated synchronous JEV image-decision client settings from the lab file.
+/// Which backend completes one configured image decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageDecisionProvider {
+    /// HTTPS decision endpoint.
+    Http,
+    /// Amazon Bedrock `AgentCore` Runtime.
+    AgentCore,
+}
+
+/// Runtime address for an `AgentCore` image-decision provider.
 ///
-/// An omitted `roi` selects the full original image.
+/// The model identity is pinned by the runtime deployment, not this lab file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCoreImageDecisionSettings {
+    runtime_arn: String,
+    qualifier: String,
+    region: String,
+}
+
+impl AgentCoreImageDecisionSettings {
+    /// Agent runtime `ARN` passed to `InvokeAgentRuntime`.
+    #[must_use]
+    pub fn runtime_arn(&self) -> &str {
+        &self.runtime_arn
+    }
+
+    /// Runtime endpoint qualifier, such as `prod`.
+    #[must_use]
+    pub fn qualifier(&self) -> &str {
+        &self.qualifier
+    }
+
+    /// AWS region that hosts the runtime.
+    #[must_use]
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ImageDecisionBackend {
+    Http {
+        endpoint: String,
+        model: String,
+        credentials_env: Option<String>,
+    },
+    AgentCore(AgentCoreImageDecisionSettings),
+}
+
+/// Validated synchronous image-decision client settings from the lab file.
+///
+/// An omitted `provider` selects HTTP. An omitted `roi` selects the full original image.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageDecisionClientConfig {
-    endpoint: String,
-    model: String,
+    backend: ImageDecisionBackend,
     timeout_secs: u64,
     max_image_bytes: u64,
     max_request_bytes: u64,
     max_response_bytes: u64,
-    credentials_env: Option<String>,
     roi_bits: Option<[u32; 4]>,
 }
 
@@ -72,15 +123,13 @@ impl ImageDecisionClientConfig {
         let map = object_at("image_decision", value)?;
         reject_insecure_keys(map)?;
         reject_unknown(map)?;
-        let endpoint = required_string(map.get("endpoint"), FIELD_ENDPOINT)?;
-        let endpoint = parse_endpoint(&endpoint)?;
-        let model = required_string(map.get("model"), FIELD_MODEL)?;
-        let model_input = ImageDecisionModelInput::new(&model, None).map_err(|_| {
-            A2aLabError::invalid(
-                FIELD_MODEL,
-                "must be a single token within the model length limit",
-            )
-        })?;
+        let provider = parse_provider(map.get("provider"))?;
+        let backend = match provider {
+            ImageDecisionProvider::Http => parse_http_backend(map)?,
+            ImageDecisionProvider::AgentCore => {
+                ImageDecisionBackend::AgentCore(parse_agentcore(map)?)
+            }
+        };
         let timeout_secs = match map.get("timeout") {
             None => DEFAULT_IMAGE_DECISION_TIMEOUT_SECS,
             Some(value) => parse_timeout(value)?,
@@ -107,33 +156,54 @@ impl ImageDecisionClientConfig {
                 MAX_IMAGE_DECISION_RESPONSE_BYTES,
             )?,
         };
-        let credentials_env = parse_credentials(map.get("credentials"))?;
         let roi_bits = match map.get("roi") {
             None => None,
             Some(value) => Some(parse_roi(value)?.bounds().map(f32::to_bits)),
         };
         Ok(Self {
-            endpoint,
-            model: model_input.model().to_owned(),
+            backend,
             timeout_secs,
             max_image_bytes,
             max_request_bytes,
             max_response_bytes,
-            credentials_env,
             roi_bits,
         })
     }
 
-    /// HTTPS JEV endpoint.
+    /// Selected decision backend.
     #[must_use]
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
+    pub const fn provider(&self) -> ImageDecisionProvider {
+        match self.backend {
+            ImageDecisionBackend::Http { .. } => ImageDecisionProvider::Http,
+            ImageDecisionBackend::AgentCore(_) => ImageDecisionProvider::AgentCore,
+        }
     }
 
-    /// Pinned decision model.
+    /// HTTPS decision endpoint when this client uses HTTP.
     #[must_use]
-    pub fn model(&self) -> &str {
-        &self.model
+    pub fn endpoint(&self) -> Option<&str> {
+        match &self.backend {
+            ImageDecisionBackend::Http { endpoint, .. } => Some(endpoint),
+            ImageDecisionBackend::AgentCore(_) => None,
+        }
+    }
+
+    /// Pinned HTTP decision model when this client uses HTTP.
+    #[must_use]
+    pub fn model(&self) -> Option<&str> {
+        match &self.backend {
+            ImageDecisionBackend::Http { model, .. } => Some(model),
+            ImageDecisionBackend::AgentCore(_) => None,
+        }
+    }
+
+    /// `AgentCore` runtime settings when this client uses `AgentCore`.
+    #[must_use]
+    pub const fn agentcore(&self) -> Option<&AgentCoreImageDecisionSettings> {
+        match &self.backend {
+            ImageDecisionBackend::AgentCore(settings) => Some(settings),
+            ImageDecisionBackend::Http { .. } => None,
+        }
     }
 
     /// Synchronous client timeout in whole seconds.
@@ -169,7 +239,12 @@ impl ImageDecisionClientConfig {
     /// Environment variable that holds the client credential, when configured.
     #[must_use]
     pub fn credentials_env(&self) -> Option<&str> {
-        self.credentials_env.as_deref()
+        match &self.backend {
+            ImageDecisionBackend::Http {
+                credentials_env, ..
+            } => credentials_env.as_deref(),
+            ImageDecisionBackend::AgentCore(_) => None,
+        }
     }
 
     /// Configured crop. `None` means the lab file omitted `roi`.
@@ -193,13 +268,22 @@ impl ImageDecisionClientConfig {
 
     /// Model input represented by this client. Omitted `roi` stays omitted.
     pub fn model_input(&self) -> Result<ImageDecisionModelInput, A2aLabError> {
-        ImageDecisionModelInput::new(self.model(), self.roi())
+        let Some(model) = self.model() else {
+            return Err(A2aLabError::invalid(
+                FIELD_PROVIDER,
+                "agentcore pins the model in the runtime deployment",
+            ));
+        };
+        ImageDecisionModelInput::new(model, self.roi())
     }
 }
 
 impl Serialize for ImageDecisionClientConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut length = 2;
+        let mut length = match &self.backend {
+            ImageDecisionBackend::Http { .. } => 2,
+            ImageDecisionBackend::AgentCore(_) => 4,
+        };
         if self.timeout_secs != DEFAULT_IMAGE_DECISION_TIMEOUT_SECS {
             length += 1;
         }
@@ -212,15 +296,32 @@ impl Serialize for ImageDecisionClientConfig {
         if self.max_response_bytes != MAX_IMAGE_DECISION_RESPONSE_BYTES {
             length += 1;
         }
-        if self.credentials_env.is_some() {
+        if self.credentials_env().is_some() {
             length += 1;
         }
         if self.roi_bits.is_some() {
             length += 1;
         }
         let mut map = serializer.serialize_map(Some(length))?;
-        map.serialize_entry("endpoint", &self.endpoint)?;
-        map.serialize_entry("model", &self.model)?;
+        match &self.backend {
+            ImageDecisionBackend::Http {
+                endpoint,
+                model,
+                credentials_env,
+            } => {
+                map.serialize_entry("endpoint", endpoint)?;
+                map.serialize_entry("model", model)?;
+                if let Some(env_var) = credentials_env {
+                    map.serialize_entry("credentials", &CredentialsEnv { env: env_var })?;
+                }
+            }
+            ImageDecisionBackend::AgentCore(settings) => {
+                map.serialize_entry("provider", "agentcore")?;
+                map.serialize_entry("runtime_arn", settings.runtime_arn())?;
+                map.serialize_entry("qualifier", settings.qualifier())?;
+                map.serialize_entry("region", settings.region())?;
+            }
+        }
         if self.timeout_secs != DEFAULT_IMAGE_DECISION_TIMEOUT_SECS {
             map.serialize_entry("timeout", &format!("{}s", self.timeout_secs))?;
         }
@@ -232,9 +333,6 @@ impl Serialize for ImageDecisionClientConfig {
         }
         if self.max_response_bytes != MAX_IMAGE_DECISION_RESPONSE_BYTES {
             map.serialize_entry("max_response_bytes", &self.max_response_bytes)?;
-        }
-        if let Some(env_var) = &self.credentials_env {
-            map.serialize_entry("credentials", &CredentialsEnv { env: env_var })?;
         }
         if let Some(roi) = self.roi() {
             map.serialize_entry("roi", &roi)?;
@@ -296,16 +394,22 @@ impl ResolvedImageDecisionClient {
 
     /// HTTP executor pinned to this client's model and bounds.
     pub fn executor(&self) -> Result<Arc<dyn ImageDecisionExecutor>, A2aLabError> {
+        let (Some(endpoint), Some(model)) = (self.config.endpoint(), self.config.model()) else {
+            return Err(A2aLabError::unavailable(
+                "agentcore image decisions are executed by the lab agent",
+            ));
+        };
         let limits = ImageDecisionHttpLimits::new(
             ImageTransportConfig::new(self.config.max_image_bytes())?,
             usize::try_from(self.config.max_request_bytes()).unwrap_or(usize::MAX),
             usize::try_from(self.config.max_response_bytes()).unwrap_or(usize::MAX),
             self.config.timeout(),
         )?;
-        let http = ImageDecisionHttpClient::new(self.config.endpoint(), limits)?;
-        Ok(Arc::new(ModelPinnedImageDecision::new(
+        let http = ImageDecisionHttpClient::new(endpoint, limits)?;
+        Ok(Arc::new(ModelPinnedImageDecision::with_roi(
             http,
-            self.config.model(),
+            model,
+            self.config.roi(),
         )))
     }
 
@@ -318,7 +422,12 @@ impl ResolvedImageDecisionClient {
         request: &ImageDecisionRequest,
         model_answers: &[ImageDecisionModelAnswer],
     ) -> Result<ImageDecisionResult, ImageDecisionProviderError> {
-        if request.model_input().model() != self.config.model() {
+        let Some(model) = self.config.model() else {
+            return Err(bounded_invalid_answer(
+                "agentcore does not complete generic box decisions",
+            ));
+        };
+        if request.model_input().model() != model {
             return Err(bounded_invalid_answer(
                 "model does not match the configured client",
             ));
@@ -386,8 +495,12 @@ fn reject_insecure_keys(map: &Map<String, Value>) -> Result<(), A2aLabError> {
 
 fn reject_unknown(map: &Map<String, Value>) -> Result<(), A2aLabError> {
     const ALLOWED: &[&str] = &[
+        "provider",
         "endpoint",
         "model",
+        "runtime_arn",
+        "qualifier",
+        "region",
         "timeout",
         "max_image_bytes",
         "max_request_bytes",
@@ -405,7 +518,6 @@ fn reject_unknown(map: &Map<String, Value>) -> Result<(), A2aLabError> {
 
 fn unknown_field(key: &str) -> &'static str {
     match key {
-        "provider" => "image_decision.provider",
         "fallback" => "image_decision.fallback",
         "timeout_ms" => "image_decision.timeout_ms",
         _ => "image_decision",
@@ -426,6 +538,154 @@ fn required_string(value: Option<&Value>, field: &'static str) -> Result<String,
         ));
     }
     Ok(text.clone())
+}
+
+fn parse_provider(value: Option<&Value>) -> Result<ImageDecisionProvider, A2aLabError> {
+    let Some(value) = value else {
+        return Ok(ImageDecisionProvider::Http);
+    };
+    let Value::String(text) = value else {
+        return Err(A2aLabError::invalid(FIELD_PROVIDER, "must be a string"));
+    };
+    match text.as_str() {
+        "http" => Ok(ImageDecisionProvider::Http),
+        "agentcore" => Ok(ImageDecisionProvider::AgentCore),
+        _ => Err(A2aLabError::invalid(
+            FIELD_PROVIDER,
+            "must be http or agentcore",
+        )),
+    }
+}
+
+fn parse_http_backend(map: &Map<String, Value>) -> Result<ImageDecisionBackend, A2aLabError> {
+    reject_agentcore_fields(map)?;
+    let endpoint = required_string(map.get("endpoint"), FIELD_ENDPOINT)?;
+    let endpoint = parse_endpoint(&endpoint)?;
+    let model = required_string(map.get("model"), FIELD_MODEL)?;
+    let model_input = ImageDecisionModelInput::new(&model, None).map_err(|_| {
+        A2aLabError::invalid(
+            FIELD_MODEL,
+            "must be a single token within the model length limit",
+        )
+    })?;
+    Ok(ImageDecisionBackend::Http {
+        endpoint,
+        model: model_input.model().to_owned(),
+        credentials_env: parse_credentials(map.get("credentials"))?,
+    })
+}
+
+fn parse_agentcore(
+    map: &Map<String, Value>,
+) -> Result<AgentCoreImageDecisionSettings, A2aLabError> {
+    reject_http_fields(map)?;
+    Ok(AgentCoreImageDecisionSettings {
+        runtime_arn: parse_runtime_arn(&required_string(
+            map.get("runtime_arn"),
+            FIELD_RUNTIME_ARN,
+        )?)?,
+        qualifier: parse_qualifier(&required_string(map.get("qualifier"), FIELD_QUALIFIER)?)?,
+        region: parse_region(&required_string(map.get("region"), FIELD_REGION)?)?,
+    })
+}
+
+fn reject_agentcore_fields(map: &Map<String, Value>) -> Result<(), A2aLabError> {
+    for (key, field) in [
+        ("runtime_arn", FIELD_RUNTIME_ARN),
+        ("qualifier", FIELD_QUALIFIER),
+        ("region", FIELD_REGION),
+    ] {
+        if map.contains_key(key) {
+            return Err(A2aLabError::invalid(
+                field,
+                "is only valid for provider agentcore",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn reject_http_fields(map: &Map<String, Value>) -> Result<(), A2aLabError> {
+    for (key, field) in [
+        ("endpoint", FIELD_ENDPOINT),
+        ("model", FIELD_MODEL),
+        ("credentials", FIELD_CREDENTIALS),
+    ] {
+        if map.contains_key(key) {
+            return Err(A2aLabError::invalid(
+                field,
+                "is only valid for provider http",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn parse_runtime_arn(text: &str) -> Result<String, A2aLabError> {
+    if text.len() > 2048
+        || text.chars().any(char::is_whitespace)
+        || !text.starts_with("arn:")
+        || !text.contains(":bedrock-agentcore:")
+        || !text.contains(":runtime/")
+    {
+        return Err(A2aLabError::invalid(
+            FIELD_RUNTIME_ARN,
+            "must be an AgentCore runtime ARN",
+        ));
+    }
+    Ok(text.to_owned())
+}
+
+fn parse_qualifier(text: &str) -> Result<String, A2aLabError> {
+    if (1..=256).contains(&text.len())
+        && text.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        })
+    {
+        Ok(text.to_owned())
+    } else {
+        Err(A2aLabError::invalid(
+            FIELD_QUALIFIER,
+            "must be a runtime endpoint name",
+        ))
+    }
+}
+
+fn parse_region(text: &str) -> Result<String, A2aLabError> {
+    let mut parts = text.split('-');
+    let Some(first) = parts.next() else {
+        return Err(invalid_region());
+    };
+    if first.len() < 2
+        || !first
+            .chars()
+            .all(|character| character.is_ascii_lowercase())
+    {
+        return Err(invalid_region());
+    }
+    let mut saw_name = false;
+    let mut saw_number = false;
+    for part in parts {
+        if part.is_empty() {
+            return Err(invalid_region());
+        }
+        if part.chars().all(|character| character.is_ascii_digit()) {
+            saw_number = true;
+        } else if part.chars().all(|character| character.is_ascii_lowercase()) {
+            saw_name = true;
+        } else {
+            return Err(invalid_region());
+        }
+    }
+    if saw_name && saw_number {
+        Ok(text.to_owned())
+    } else {
+        Err(invalid_region())
+    }
+}
+
+fn invalid_region() -> A2aLabError {
+    A2aLabError::invalid(FIELD_REGION, "must be an AWS region")
 }
 
 fn parse_endpoint(text: &str) -> Result<String, A2aLabError> {

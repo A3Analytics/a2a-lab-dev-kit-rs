@@ -9,6 +9,7 @@ mod decision_http;
 mod model;
 mod provider;
 mod resolve;
+mod source_decision;
 
 pub use decision::{
     IMAGE_DECISION_DOWNSTREAM_DEPENDENCY, IMAGE_DECISION_EXCLUDED_SCOPE, IMAGE_DECISION_TRANSPORTS,
@@ -31,4 +32,10 @@ pub use model::{
 };
 pub use provider::ImageProvider;
 pub use resolve::{ImageDecisionImageRef, ImageDecisionModelCrop, ResolvedImageDecision};
-pub(crate) use resolve::{complete_resolved_image_decision, resolve_one_source_image};
+pub(crate) use resolve::{
+    complete_resolved_image_decision, resolve_captured_image, resolve_one_source_image,
+};
+pub use source_decision::{
+    ImageDecisionPrimitiveAnswer, ImageDecisionQuestion, ImageDecisionQuestions, NoulCriteria,
+    SourceImageDecisionRequest, SourceImageDecisionResult,
+};

@@ -12,7 +12,7 @@
 //! A full-frame model input omits the ROI and is the full source image. Answer
 //! boxes are already normalized to that image by the generic client. HTTP, MCP,
 //! and A2A remain lab transports. This module does not add settings pages,
-//! whole-video indexing or backfill, AgentCore, Strands, an AWS SDK client, a
+//! whole-video indexing or backfill, `AgentCore`, Strands, an AWS SDK client, a
 //! judge or other LLM fallback, or a profile 1.3.0 bump.
 
 use std::collections::HashMap;

@@ -292,7 +292,6 @@ fn public_contract_documents_the_published_revision_boundary() {
         "settings-pages",
         "whole-video-indexing",
         "whole-video-backfill",
-        "agentcore",
         "strands",
         "aws-sdk",
         "profile-1.3.0",

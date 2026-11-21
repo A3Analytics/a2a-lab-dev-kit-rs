@@ -10,9 +10,9 @@ use a2a_types::{
 
 use crate::error::A2aLabError;
 use crate::images::{
-    GetCurrentImageRequest, GetImageRequest, Image, ImageDecisionRequest, ImageDecisionResult,
-    ImageDescriptor, ImageSource, ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest,
-    SearchImagesRequest,
+    GetCurrentImageRequest, GetImageRequest, Image, ImageDescriptor, ImageSource,
+    ImageTransportConfig, ListImageSourcesRequest, ListImagesRequest, SearchImagesRequest,
+    SourceImageDecisionRequest, SourceImageDecisionResult,
 };
 use crate::logs::{ListLogSourcesRequest, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{ListMetricsRequest, MetricDescriptor, MetricPoint, QueryMetricRequest};
@@ -235,14 +235,14 @@ impl A2aClient {
         .await
     }
 
-    /// Runs one synchronous generic image decision.
+    /// Runs one synchronous image decision for a retained source frame.
     ///
-    /// An omitted ROI is the full source image. Returned boxes are normalized
-    /// to that image. This call does not append a typed ledger record.
+    /// The caller supplies a source, capture time, and typed questions. This
+    /// call does not append a typed ledger record.
     pub async fn decide_image(
         &self,
-        request: ImageDecisionRequest,
-    ) -> Result<ImageDecisionResult, A2aLabError> {
+        request: SourceImageDecisionRequest,
+    ) -> Result<SourceImageDecisionResult, A2aLabError> {
         self.result(A2aLabCommand::DecideImage(request), |result| match result {
             A2aLabResult::DecideImage(decision) => Some(decision),
             _ => None,

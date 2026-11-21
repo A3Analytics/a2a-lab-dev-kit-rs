@@ -3,7 +3,7 @@
 //! Downstream repositories consume this contract from a published git revision
 //! of `a2a-lab-dev-kit`, never a path dependency. The types are transport-neutral:
 //! HTTP, MCP, and A2A carry the same JSON. This module does not add
-//! settings pages, whole-video indexing or backfill, AgentCore, Strands, an AWS
+//! settings pages, whole-video indexing or backfill, a Strands runtime, an AWS
 //! SDK client, or a profile 1.3.0 bump.
 //!
 //! A generic decision is a question over one image. It is not a typed
@@ -30,7 +30,6 @@ pub const IMAGE_DECISION_EXCLUDED_SCOPE: &[&str] = &[
     "settings-pages",
     "whole-video-indexing",
     "whole-video-backfill",
-    "agentcore",
     "strands",
     "aws-sdk",
     "profile-1.3.0",
@@ -742,6 +741,21 @@ pub trait ImageDecisionExecutor: Send + Sync {
         &self,
         request: &ImageDecisionRequest,
     ) -> Result<ImageDecisionResult, ImageDecisionProviderError>;
+
+    /// Completes typed questions for an image the service already resolved.
+    async fn decide_questions(
+        &self,
+        image: &Image,
+        questions: &crate::images::ImageDecisionQuestions,
+    ) -> Result<crate::images::SourceImageDecisionResult, ImageDecisionProviderError> {
+        let _ = (image, questions);
+        Err(ImageDecisionProviderError::unavailable(
+            "image decision client does not accept source questions",
+        )
+        .unwrap_or(ImageDecisionProviderError::Unavailable {
+            message: "image decision client is not available".to_owned(),
+        }))
+    }
 }
 
 /// Completes a generic image decision from model answers.

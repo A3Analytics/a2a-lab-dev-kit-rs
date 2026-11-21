@@ -156,7 +156,6 @@ fn downstream_boundary_excludes_fallback_and_path_dependencies() {
         "settings-pages",
         "whole-video-indexing",
         "whole-video-backfill",
-        "agentcore",
         "strands",
         "aws-sdk",
         "profile-1.3.0",

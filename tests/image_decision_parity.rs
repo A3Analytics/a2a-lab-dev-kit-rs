@@ -16,10 +16,12 @@ use a2a_lab_dev_kit::{
     FrameDecisionEvaluatorProviderConfig, FrameDecisionLedgerProvider,
     GetFrameDecisionCapabilitiesRequest, IMAGE_DECISION_DOWNSTREAM_DEPENDENCY,
     IMAGE_DECISION_EXCLUDED_SCOPE, IMAGE_DECISION_TRANSPORTS, Image, ImageDecisionExecutor,
-    ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionProviderError,
-    ImageDecisionRequest, ImageDecisionResult, ImageDecisionRoi, ImageDescriptor, ImageId,
-    ImageSourceId, JsonObject, McpServer, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos,
-    Sha256Digest, UtcTimestamp, execute_generic_image_decision,
+    ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionPrimitiveAnswer,
+    ImageDecisionProviderError, ImageDecisionQuestion, ImageDecisionRequest, ImageDecisionResult,
+    ImageDecisionRoi, ImageDescriptor, ImageId, ImageSource, ImageSourceId, JsonObject, McpServer,
+    MemoryImages, MemoryLogs, MemoryMetrics, MemoryTasks, MemoryVideos, Sha256Digest,
+    SourceImageDecisionRequest, SourceImageDecisionResult, UtcTimestamp,
+    execute_generic_image_decision,
 };
 use a2a_types::{Message, Part, Role, SendMessageRequest, SendMessageResponse, error_code};
 use async_trait::async_trait;
@@ -32,6 +34,7 @@ use rmcp::model::{
 use rmcp::service::{RunningService, ServiceError};
 use rmcp::transport::StreamableHttpClientTransport;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 type McpSession = RunningService<rmcp::RoleClient, ClientConfig>;
 
@@ -67,6 +70,25 @@ impl ImageDecisionExecutor for Scripted {
         let behavior = self.behavior.lock().expect("script").clone();
         match behavior {
             Behavior::Answers(answers) => execute_generic_image_decision(request, &answers),
+            Behavior::Error(error) => Err(error),
+        }
+    }
+
+    async fn decide_questions(
+        &self,
+        _image: &Image,
+        questions: &a2a_lab_dev_kit::ImageDecisionQuestions,
+    ) -> Result<SourceImageDecisionResult, ImageDecisionProviderError> {
+        let behavior = self.behavior.lock().expect("script").clone();
+        match behavior {
+            Behavior::Answers(_) => {
+                let mut answers = BTreeMap::new();
+                answers.insert(
+                    "tip_attached".to_owned(),
+                    ImageDecisionPrimitiveAnswer::Noul { noul: 0.94 },
+                );
+                SourceImageDecisionResult::from_questions(questions, answers)
+            }
             Behavior::Error(error) => Err(error),
         }
     }
@@ -145,7 +167,7 @@ fn bits(bounds: [f32; 4]) -> [u32; 4] {
 
 #[derive(Debug)]
 enum Observed {
-    Decision(ImageDecisionResult),
+    Decision(SourceImageDecisionResult),
     Error(String),
 }
 
@@ -172,13 +194,15 @@ async fn open(script: Option<Scripted>) -> Endpoints {
         .unwrap(),
         appends: Arc::clone(&appends),
     };
-    let mut service =
-        A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
-            .with_videos(MemoryVideos::default())
-            .with_frame_decisions(Arc::new(ledger));
-    if let Some(script) = script {
-        service = service.with_image_decision_executor(Arc::new(script));
-    }
+    let service = A2aLabService::new(MemoryLogs::new(), MemoryMetrics::new(), MemoryTasks::new())
+        .with_videos(MemoryVideos::default())
+        .with_frame_decisions(Arc::new(ledger))
+        .with_images(catalog().await);
+    let service = if let Some(script) = script {
+        service.with_image_decision_executor(Arc::new(script))
+    } else {
+        service
+    };
     let lab = service.share();
     let a2a_lab = Arc::clone(&lab);
     let (a2a_listener, a2a_address) = a2a_lab_dev_kit::bind_local().await.unwrap();
@@ -264,7 +288,24 @@ fn command_message(command: Value) -> SendMessageRequest {
     }
 }
 
-fn command_value(request: &ImageDecisionRequest) -> Value {
+fn source_request() -> SourceImageDecisionRequest {
+    let mut questions = BTreeMap::new();
+    questions.insert(
+        "tip_attached".to_owned(),
+        ImageDecisionQuestion::Noul {
+            instructions: "Is a pipette tip attached?".to_owned(),
+            criteria: None,
+        },
+    );
+    SourceImageDecisionRequest::new(
+        ImageSourceId::new("cam").unwrap(),
+        UtcTimestamp::parse("2024-01-01T00:00:00Z").unwrap(),
+        questions,
+    )
+    .unwrap()
+}
+
+fn command_value(request: &SourceImageDecisionRequest) -> Value {
     serde_json::to_value(A2aLabCommand::DecideImage(request.clone())).unwrap()
 }
 
@@ -273,20 +314,6 @@ fn request_shape(request: &ImageDecisionRequest, omits_roi: bool) -> Value {
     assert!(value.get("image").is_some() && value.get("question").is_some());
     assert!(value.get("model_input").is_some());
     assert_eq!(value["model_input"].get("roi").is_none(), omits_roi);
-    let command = command_value(request);
-    assert_eq!(command["operation"], "decide_image");
-    assert_eq!(command["params"], value);
-    value
-}
-
-fn result_shape(result: &ImageDecisionResult) -> Value {
-    let value = serde_json::to_value(result).unwrap();
-    assert!(value.get("answers").and_then(Value::as_array).is_some());
-    let answer = &value["answers"][0];
-    assert_eq!(answer["text"], "yes");
-    assert!(answer.get("probability").is_some());
-    assert!(answer["source_box"].get("bounds").is_some());
-    assert!(answer.get("model_box").is_none());
     value
 }
 
@@ -513,28 +540,42 @@ async fn compare(endpoints: &Endpoints, name: &str, command: Value, expected: &O
     );
 }
 
-fn decision_expected(request: &ImageDecisionRequest, model_box: [f32; 4]) -> Observed {
+fn decision_expected() -> Observed {
+    let mut answers = BTreeMap::new();
+    answers.insert(
+        "tip_attached".to_owned(),
+        ImageDecisionPrimitiveAnswer::Noul { noul: 0.94 },
+    );
     let result =
-        execute_generic_image_decision(request, &[answer(model_box)]).expect("local decision");
-    let shape = result_shape(&result);
-    assert_eq!(
-        serde_json::to_value(&result).unwrap(),
-        shape,
-        "canonical result shape"
+        SourceImageDecisionResult::from_questions(source_request().questions(), answers).unwrap();
+    assert!(
+        serde_json::to_value(&result)
+            .unwrap()
+            .get("image")
+            .is_none()
     );
     Observed::Decision(result)
 }
 
-fn source_bits(observed: &Observed) -> [u32; 4] {
-    let Observed::Decision(result) = observed else {
-        panic!("expected a decision, observed {observed:?}");
-    };
-    bits(result.answers()[0].source_box().unwrap().bounds())
+async fn catalog() -> MemoryImages {
+    let store = MemoryImages::new();
+    store
+        .insert_source(ImageSource {
+            id: ImageSourceId::new("cam").unwrap(),
+            name: "Deck".to_owned(),
+            description: "deck camera".to_owned(),
+            asset_id: None,
+            semantic_id: None,
+        })
+        .await
+        .unwrap();
+    store.insert_image(image()).await.unwrap();
+    store
 }
 
 fn assert_tool_schema(tool: &rmcp::model::Tool) {
-    let input = schema_for_input::<Parameters<ImageDecisionRequest>>().expect("input schema");
-    let output = schema_for_output::<ImageDecisionResult>();
+    let input = schema_for_input::<Parameters<SourceImageDecisionRequest>>().expect("input schema");
+    let output = schema_for_output::<SourceImageDecisionResult>();
     assert_eq!(tool.input_schema.as_ref(), input.as_ref());
     assert_eq!(tool.output_schema.as_deref(), Some(output.as_ref()));
     assert_eq!(input.get("type").and_then(Value::as_str), Some("object"));
@@ -544,10 +585,12 @@ fn assert_tool_schema(tool: &rmcp::model::Tool) {
         .iter()
         .filter_map(Value::as_str)
         .collect::<Vec<_>>();
-    assert!(required.contains(&"image"));
-    assert!(required.contains(&"question"));
-    assert!(required.contains(&"model_input"));
-    assert!(!required.contains(&"roi"));
+    assert!(required.contains(&"source_id"));
+    assert!(required.contains(&"captured_at"));
+    assert!(required.contains(&"questions"));
+    assert!(!required.contains(&"image"));
+    assert!(!required.contains(&"model_input"));
+    assert!(!required.contains(&"model"));
 }
 
 async fn assert_capability_parity(endpoints: &Endpoints) {
@@ -604,7 +647,6 @@ fn published_boundary_and_local_normalization_stay_in_contract() {
         "settings-pages",
         "whole-video-indexing",
         "whole-video-backfill",
-        "agentcore",
         "strands",
         "aws-sdk",
         "profile-1.3.0",
@@ -655,32 +697,19 @@ async fn generic_decision_parity_across_http_mcp_and_a2a() {
     let endpoints = open(Some(script.clone())).await;
     assert_discovery(&endpoints).await;
 
-    let full = request(None);
-    request_shape(&full, true);
-    let expected = decision_expected(&full, [0.2, 0.3, 0.4, 0.5]);
+    let full = source_request();
+    let shape = serde_json::to_value(&full).unwrap();
+    assert!(shape.get("image").is_none());
+    assert!(shape.get("model").is_none());
+    assert!(shape.get("model_input").is_none());
+    let expected = decision_expected();
     compare(
         &endpoints,
-        "success-full-image",
+        "success-source-frame",
         command_value(&full),
         &expected,
     )
     .await;
-    assert_eq!(source_bits(&expected), bits([0.2, 0.3, 0.4, 0.5]));
-    assert_eq!(endpoints.appends.load(Ordering::SeqCst), 0);
-
-    let crop = ImageDecisionRoi::new([0.25, 0.25, 0.75, 0.75]).unwrap();
-    script.set(Behavior::Answers(vec![answer([0.0, 0.0, 0.5, 0.5])]));
-    let cropped = request(Some(crop));
-    request_shape(&cropped, false);
-    let cropped_expected = decision_expected(&cropped, [0.0, 0.0, 0.5, 0.5]);
-    compare(
-        &endpoints,
-        "cropped-source-box",
-        command_value(&cropped),
-        &cropped_expected,
-    )
-    .await;
-    assert_eq!(source_bits(&cropped_expected), bits([0.25, 0.25, 0.5, 0.5]));
     assert_eq!(endpoints.appends.load(Ordering::SeqCst), 0);
 
     let cases = [
@@ -714,15 +743,15 @@ async fn generic_decision_parity_across_http_mcp_and_a2a() {
         compare(
             &endpoints,
             name,
-            command_value(&request(None)),
+            command_value(&source_request()),
             &Observed::Error(category.to_owned()),
         )
         .await;
     }
     assert_eq!(endpoints.appends.load(Ordering::SeqCst), 0);
 
-    let mut malformed = command_value(&request(None));
-    malformed["params"]["question"] = json!("   ");
+    let mut malformed = command_value(&source_request());
+    malformed["params"]["questions"]["tip_attached"]["type"] = json!("box");
     compare(
         &endpoints,
         "malformed-question",
@@ -736,7 +765,7 @@ async fn generic_decision_parity_across_http_mcp_and_a2a() {
     compare(
         &missing,
         "client-unavailable",
-        command_value(&request(None)),
+        command_value(&source_request()),
         &Observed::Error("unavailable".to_owned()),
     )
     .await;

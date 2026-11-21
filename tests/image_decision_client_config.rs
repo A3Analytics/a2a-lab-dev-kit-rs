@@ -9,9 +9,9 @@ use a2a_lab_dev_kit::{
     FrameDecisionReadScope, GetFrameDecisionCapabilitiesRequest,
     IMAGE_DECISION_CLIENT_DOWNSTREAM_DEPENDENCY, IMAGE_DECISION_DOWNSTREAM_DEPENDENCY,
     IMAGE_DECISION_EXCLUDED_SCOPE, IMAGE_DECISION_TRANSPORTS, Image, ImageDecisionClientConfig,
-    ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionRequest, ImageDecisionRoi,
-    ImageDescriptor, ImageId, ImageSourceId, JEV_MAX_IMAGE_BYTES, JEV_MAX_REQUEST_BYTES,
-    JsonObject, LabPredicate, MemoryLogs, MemoryMetrics, MemoryTasks,
+    ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionProvider, ImageDecisionRequest,
+    ImageDecisionRoi, ImageDescriptor, ImageId, ImageSourceId, JEV_MAX_IMAGE_BYTES,
+    JEV_MAX_REQUEST_BYTES, JsonObject, LabPredicate, MemoryLogs, MemoryMetrics, MemoryTasks,
     PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED, PREDICATE_PLATE_MISALIGNED,
     PageRequest, ReadFrameDecisionHistoryRequest, RegisteredFrameDecisionEvaluator, Sha256Digest,
     TimeRange, UtcTimestamp, VideoSourceId,
@@ -244,7 +244,7 @@ fn rejects_missing_malformed_insecure_and_out_of_bounds_settings() {
                 "provider": "bedrock"
             }),
             "image_decision.provider",
-            "unknown field",
+            "must be http or agentcore",
         ),
     ];
 
@@ -475,6 +475,41 @@ async fn service_resolution_keeps_typed_registration_and_skips_the_ledger() {
 }
 
 #[test]
+fn agentcore_provider_names_a_runtime_and_rejects_client_model_fields() {
+    let parsed = A2aLabConfig::parse(&document(&json!({
+        "provider": "agentcore",
+        "runtime_arn": "arn:aws:bedrock-agentcore:us-west-2:419772657749:runtime/decider",
+        "qualifier": "prod",
+        "region": "us-west-2",
+        "timeout": "45s"
+    })))
+    .unwrap();
+    let client = parsed.image_decision.unwrap();
+    assert_eq!(client.provider(), ImageDecisionProvider::AgentCore);
+    assert!(client.endpoint().is_none());
+    assert!(client.model().is_none());
+    let settings = client.agentcore().unwrap();
+    assert_eq!(settings.qualifier(), "prod");
+    assert_eq!(settings.region(), "us-west-2");
+    assert!(settings.runtime_arn().ends_with(":runtime/decider"));
+    let encoded = serde_json::to_value(&client).unwrap();
+    assert!(encoded.get("model").is_none());
+    assert!(encoded.get("endpoint").is_none());
+    let restored = A2aLabConfig::parse(&document(&encoded)).unwrap();
+    assert_eq!(restored.image_decision.as_ref(), Some(&client));
+
+    let (field, message) = invalid(&document(&json!({
+        "provider": "agentcore",
+        "runtime_arn": "arn:aws:bedrock-agentcore:us-west-2:419772657749:runtime/decider",
+        "qualifier": "prod",
+        "region": "us-west-2",
+        "model": "jev-1.14.0"
+    })));
+    assert_eq!(field, "image_decision.model");
+    assert!(message.contains("provider http"));
+}
+
+#[test]
 fn downstream_dependency_stays_a_published_git_revision() {
     assert_eq!(
         IMAGE_DECISION_CLIENT_DOWNSTREAM_DEPENDENCY,
@@ -490,7 +525,6 @@ fn downstream_dependency_stays_a_published_git_revision() {
         "settings-pages",
         "whole-video-indexing",
         "whole-video-backfill",
-        "agentcore",
         "strands",
         "aws-sdk",
         "profile-1.3.0",

@@ -404,7 +404,6 @@ async fn resolution_does_not_append_typed_ledger_records() {
         "settings-pages",
         "whole-video-indexing",
         "whole-video-backfill",
-        "agentcore",
         "strands",
         "aws-sdk",
         "profile-1.3.0",

@@ -379,7 +379,6 @@ fn typed_evaluator_and_published_revision_boundary_stay_in_place() {
         "settings-pages",
         "whole-video-indexing",
         "whole-video-backfill",
-        "agentcore",
         "strands",
         "aws-sdk",
         "profile-1.3.0",

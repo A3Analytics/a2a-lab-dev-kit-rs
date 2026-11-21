@@ -20,10 +20,11 @@ use crate::error::A2aLabError;
 use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{
     GetCurrentImageRequest, GetImageRequest, Image, ImageDecisionExecutor, ImageDecisionImageRef,
-    ImageDecisionModelInput, ImageDecisionProviderError, ImageDecisionRequest, ImageDecisionResult,
-    ImageDecisionUnmappedAnswer, ImageDescriptor, ImageProvider, ImageSource, ImageTransportConfig,
-    ListImageSourcesRequest, ListImagesRequest, ResolvedImageDecision, SearchImagesRequest,
-    complete_resolved_image_decision, resolve_one_source_image,
+    ImageDecisionModelInput, ImageDecisionProviderError, ImageDecisionUnmappedAnswer,
+    ImageDescriptor, ImageProvider, ImageSource, ImageTransportConfig, ListImageSourcesRequest,
+    ListImagesRequest, ResolvedImageDecision, SearchImagesRequest, SourceImageDecisionRequest,
+    SourceImageDecisionResult, complete_resolved_image_decision, resolve_captured_image,
+    resolve_one_source_image,
 };
 use crate::logs::{ListLogSourcesRequest, LogProvider, LogRecord, LogSource, QueryLogsRequest};
 use crate::metrics::{
@@ -82,11 +83,12 @@ pub enum A2aLabCommand {
     GetImage(GetImageRequest),
     /// Read the current image for one source.
     GetCurrentImage(GetCurrentImageRequest),
-    /// Run one synchronous generic image decision.
+    /// Run one synchronous image decision for a retained source frame.
     ///
-    /// An omitted ROI is the full source image. Returned boxes are normalized
-    /// to that image. This operation does not append a typed ledger record.
-    DecideImage(ImageDecisionRequest),
+    /// The caller supplies a source, capture time, and typed questions. The
+    /// service loads the image and uses the configured model. This operation
+    /// does not append a typed ledger record.
+    DecideImage(SourceImageDecisionRequest),
     /// List video sources.
     ListVideoSources(ListVideoSourcesRequest),
     /// Read the retained frame at a UTC instant.
@@ -142,8 +144,8 @@ pub enum A2aLabResult {
     GetImage(Image),
     /// The current image for one source, including its inline bytes.
     GetCurrentImage(Image),
-    /// Generic image-decision answers with source-normalized boxes.
-    DecideImage(ImageDecisionResult),
+    /// Typed image-decision answers for the resolved source frame.
+    DecideImage(SourceImageDecisionResult),
     /// A page of video sources.
     ListVideoSources(Page<VideoSource>),
     /// The retained frame at a UTC instant.
@@ -753,16 +755,22 @@ where
 
     async fn decide_image(
         &self,
-        request: ImageDecisionRequest,
+        request: SourceImageDecisionRequest,
     ) -> Result<TaskSnapshot, A2aLabError> {
-        self.image_transport.check_payload(request.image().data())?;
         let Some(executor) = &self.image_decision_executor else {
             return Err(A2aLabError::unavailable(
                 "image decision client is not available",
             ));
         };
+        let image = resolve_captured_image(
+            &self.images,
+            self.image_transport,
+            request.source_id(),
+            request.captured_at(),
+        )
+        .await?;
         let result = executor
-            .decide(&request)
+            .decide_questions(&image, request.questions())
             .await
             .map_err(ImageDecisionProviderError::into_lab_error)?;
         self.store_snapshot(A2aLabResult::DecideImage(result)).await

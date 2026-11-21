@@ -13,20 +13,22 @@
 //! compatibility adapter.
 //!
 //! This module does not add settings pages, whole-video indexing or backfill,
-//! AgentCore, Strands, an AWS SDK client, or a profile 1.3.0 bump.
+//! `AgentCore`, Strands, an AWS SDK client, or a profile 1.3.0 bump.
 
 use std::time::Duration;
 
+use base64::Engine;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::{StatusCode, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use async_trait::async_trait;
 
 use crate::error::A2aLabError;
 use crate::images::{
-    ImageDecisionModelAnswer, ImageDecisionProviderError, ImageDecisionRequest,
-    ImageDecisionResult, ImageTransportConfig, execute_generic_image_decision,
+    Image, ImageDecisionModelAnswer, ImageDecisionPrimitiveAnswer, ImageDecisionProviderError,
+    ImageDecisionQuestions, ImageDecisionRequest, ImageDecisionResult, ImageDecisionRoi,
+    ImageTransportConfig, SourceImageDecisionResult, execute_generic_image_decision,
 };
 
 use super::decision::ImageDecisionExecutor;
@@ -183,21 +185,108 @@ impl ImageDecisionHttpClient {
         let payload = read_capped(response, self.limits.max_response_bytes()).await?;
         interpret(status, json, &payload, request)
     }
+
+    /// Posts typed questions and a resolved image to the configured provider.
+    ///
+    /// `model` and `roi` come from backend configuration. The public request does
+    /// not carry either value.
+    pub async fn decide_questions(
+        &self,
+        model: &str,
+        roi: Option<ImageDecisionRoi>,
+        image: &Image,
+        questions: &ImageDecisionQuestions,
+    ) -> Result<SourceImageDecisionResult, ImageDecisionProviderError> {
+        self.limits
+            .image_transport()
+            .check_payload(image.data())
+            .map_err(|_| limit_exceeded("image", "image exceeds the configured maximum"))?;
+        let data = base64::engine::general_purpose::STANDARD.encode(image.data());
+        let body = ProviderBody {
+            model,
+            state: ProviderState {
+                image: ProviderImage {
+                    media_type: image.descriptor().media_type(),
+                    data: &data,
+                },
+                roi,
+            },
+            questions,
+        };
+        let body =
+            serde_json::to_vec(&body).map_err(|_| invalid_answer("request json is invalid"))?;
+        if body.len() > self.limits.max_request_bytes() {
+            return Err(limit_exceeded(
+                "request",
+                "request exceeds the configured maximum",
+            ));
+        }
+        let response = self
+            .http
+            .post(self.endpoint.clone())
+            .header(CONTENT_TYPE, "application/json")
+            .header(ACCEPT, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(transport_error)?;
+        let status = response.status();
+        let json = content_type_is_json(response.headers());
+        let payload = read_capped(response, self.limits.max_response_bytes()).await?;
+        interpret_questions(status, json, &payload, questions)
+    }
+}
+
+#[derive(Serialize)]
+struct ProviderBody<'a> {
+    model: &'a str,
+    state: ProviderState<'a>,
+    questions: &'a ImageDecisionQuestions,
+}
+
+#[derive(Serialize)]
+struct ProviderState<'a> {
+    image: ProviderImage<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roi: Option<ImageDecisionRoi>,
+}
+
+#[derive(Serialize)]
+struct ProviderImage<'a> {
+    media_type: &'a str,
+    data: &'a str,
+}
+
+#[derive(Deserialize)]
+struct ProviderAnswers {
+    answers: std::collections::BTreeMap<String, ImageDecisionPrimitiveAnswer>,
 }
 
 /// HTTP decision client that also checks the configured model name.
 pub struct ModelPinnedImageDecision {
     http: ImageDecisionHttpClient,
     model: String,
+    roi: Option<ImageDecisionRoi>,
 }
 
 impl ModelPinnedImageDecision {
     /// Pins `http` to one model identifier.
     #[must_use]
     pub fn new(http: ImageDecisionHttpClient, model: impl Into<String>) -> Self {
+        Self::with_roi(http, model, None)
+    }
+
+    /// Pins `http` to one model and an optional configured crop.
+    #[must_use]
+    pub fn with_roi(
+        http: ImageDecisionHttpClient,
+        model: impl Into<String>,
+        roi: Option<ImageDecisionRoi>,
+    ) -> Self {
         Self {
             http,
             model: model.into(),
+            roi,
         }
     }
 }
@@ -212,6 +301,16 @@ impl ImageDecisionExecutor for ModelPinnedImageDecision {
             return Err(invalid_answer("model does not match the configured client"));
         }
         ImageDecisionHttpClient::decide(&self.http, request).await
+    }
+
+    async fn decide_questions(
+        &self,
+        image: &Image,
+        questions: &ImageDecisionQuestions,
+    ) -> Result<SourceImageDecisionResult, ImageDecisionProviderError> {
+        self.http
+            .decide_questions(&self.model, self.roi, image, questions)
+            .await
     }
 }
 
@@ -269,6 +368,25 @@ fn interpret(
     let response: WireResponse = serde_json::from_value(value)
         .map_err(|_| invalid_answer("response answers are invalid"))?;
     execute_generic_image_decision(request, &response.answers)
+}
+
+fn interpret_questions(
+    status: StatusCode,
+    json: bool,
+    payload: &[u8],
+    questions: &ImageDecisionQuestions,
+) -> Result<SourceImageDecisionResult, ImageDecisionProviderError> {
+    if !status.is_success() {
+        return Err(failure_status(status, json, payload));
+    }
+    if !json {
+        return Err(invalid_answer(
+            "response content type is not application/json",
+        ));
+    }
+    let response: ProviderAnswers = serde_json::from_slice(payload)
+        .map_err(|_| invalid_answer("response answers are invalid"))?;
+    SourceImageDecisionResult::from_questions(questions, response.answers)
 }
 
 fn failure_status(status: StatusCode, json: bool, payload: &[u8]) -> ImageDecisionProviderError {
