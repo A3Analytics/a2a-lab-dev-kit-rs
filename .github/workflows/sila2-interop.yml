@@ -2,6 +2,8 @@ name: SiLA 2 interop
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:

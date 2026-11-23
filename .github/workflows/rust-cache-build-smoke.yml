@@ -1,0 +1,44 @@
+name: Rust cache build smoke
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      MISE_AUTO_INSTALL: "0"
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache Rust builds
+        id: cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}
+          workspaces: ". -> target"
+
+      - name: Build tests
+        env:
+          CARGO_TARGET_DIR: target/quality
+          CARGO_PROFILE_TEST_DEBUG: line-tables-only
+        run: cargo test --workspace --all-features --locked --no-run
+
+      - name: Report cache result
+        run: echo "cache-hit=${{ steps.cache.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require a cache hit when rerun
+        if: github.run_attempt > 1
+        run: test "${{ steps.cache.outputs.cache-hit }}" = "true"
