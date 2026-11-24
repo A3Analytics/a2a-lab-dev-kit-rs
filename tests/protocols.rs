@@ -1,0 +1,16 @@
+mod a2a_authentication;
+mod a2a_compliance;
+mod a2a_images;
+mod a2a_tests;
+mod a2a_videos;
+mod aas_tests;
+mod industrial_tests;
+mod mcp_images;
+mod mcp_tests;
+mod mcp_videos;
+mod opcua_tests;
+mod ros2_tests;
+mod sila_images;
+mod sila_provider;
+mod sila_tests;
+mod sila_videos;

@@ -7,8 +7,8 @@ port=50053
 mkdir -p "$out"
 cd "$root"
 
-cargo build -p sila2-conformance --offline
-server="$root/target/debug/sila2-conformance"
+cargo build -p sila2-conformance --all-features --offline
+server="${CARGO_TARGET_DIR:-$root/target}/debug/sila2-conformance"
 "$server" "127.0.0.1:$port" >"$out/server.log" 2>&1 &
 server_pid=$!
 cleanup() {

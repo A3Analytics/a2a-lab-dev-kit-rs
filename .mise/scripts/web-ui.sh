@@ -74,7 +74,6 @@ build() {
 }
 
 freshness() {
-  export CARGO_TARGET_DIR="$root/target/quality"
   cargo check --all-features --locked
   local stamp="$root/target/web-ui-wasm/source.fingerprint"
   if [ ! -s "$stamp" ]; then
@@ -98,7 +97,7 @@ freshness() {
 }
 
 serve() {
-  cargo nextest run --all-features --test web_ui
+  cargo nextest run --all-features --test web_serving -E 'test(/^web_ui::/)'
 }
 
 watch() {
@@ -117,7 +116,7 @@ watch() {
     --restart \
     --stop-signal SIGTERM \
     --stop-timeout 15s \
-    -- cargo run --example web_ui --features web-ui,nokhwa --locked
+    -- cargo run --example web_ui --all-features --locked
 }
 
 case "$mode" in

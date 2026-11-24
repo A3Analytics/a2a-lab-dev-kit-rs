@@ -1,0 +1,10 @@
+mod semantic_chunk_dvr;
+mod semantic_fts;
+mod semantic_hybrid_search;
+mod semantic_indexing_providers;
+mod semantic_interval_eligibility;
+mod semantic_rebuild_search;
+mod semantic_search_contracts;
+mod semantic_search_parity;
+mod semantic_worker_lanes;
+mod sqlite_chunk_dvr;

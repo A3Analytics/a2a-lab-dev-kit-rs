@@ -58,7 +58,7 @@ Run these commands from the repository root.
 2. Run the [logs, metrics, and tasks example](examples/logs_metrics_tasks.rs):
 
    ```bash
-   mise exec -- cargo run --example logs_metrics_tasks
+   mise exec -- cargo run --all-features --example logs_metrics_tasks
    ```
 
 ## Open the optional web interface
@@ -68,7 +68,7 @@ The web interface stays off unless the `web-ui` feature is enabled and the appli
 Run the [web interface example](examples/web_ui.rs) from the repository root:
 
 ```bash
-mise exec -- cargo run --example web_ui --features web-ui
+mise run web-ui
 ```
 
 The example listens on `http://127.0.0.1:3847/ui/` unless `WEB_UI_BIND` is set. To use the local webcam as the video source instead of the synthetic bench recording, run `mise run web-ui-webcam`. `WEB_UI_WEBCAM_INDEX` selects another camera, starting at `0`. To rebuild and restart the bench example when `web-ui/`, `examples/web_ui.rs`, or the crate sources change:
@@ -139,6 +139,17 @@ mise exec -- cargo doc --no-deps --open
    mise run quality-fast
    mise run quality
    ```
+
+The workspace's local build, lint, and test tasks use all features and share Cargo's default
+`target` directory. Use `CARGO_TARGET_DIR` to override it. The default-feature and
+feature-off compatibility checks run separately in CI.
+
+Integration tests are grouped into suites listed in `Cargo.toml`. Register new
+test modules in the appropriate suite. To run the tests in `tests/video_parity.rs`:
+
+```bash
+mise run test -- --test video_parity_suite -E 'test(/^video_parity::/)'
+```
 
 `mise run quality-fast` is the iteration gate. It checks formatting, the SiLA matrix, complexity, duplication, compilation, Clippy, and tests. It disables nextest retries and does not start the external conformance containers.
 

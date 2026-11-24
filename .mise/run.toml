@@ -4,7 +4,7 @@ run = "mise exec -- backlog browser"
 
 [build]
 description = "Compile the crate"
-run = "cargo check --workspace"
+run = "cargo check --workspace --all-features"
 
 [fmt]
 description = "Format Rust sources"
@@ -16,12 +16,11 @@ run = "cargo fmt --all --check && cargo fmt --manifest-path web-ui/Cargo.toml --
 
 [check]
 description = "Type-check the crate with warnings denied"
-env = { CARGO_TARGET_DIR = "{{config_root}}/../target/quality", RUSTFLAGS = "-D warnings" }
-run = "cargo check --workspace"
+env = { RUSTFLAGS = "-D warnings" }
+run = "cargo check --workspace --all-features"
 
 [clippy]
 description = "Lint all targets and features with warnings denied"
-env = { CARGO_TARGET_DIR = "{{config_root}}/../target/quality" }
 run = "cargo clippy --all-targets --all-features -- -D warnings"
 
 [test]
@@ -86,11 +85,11 @@ run = "cargo run --manifest-path examples/webcam/Cargo.toml"
 
 [web-ui]
 description = "Serve the web UI with optional camera discovery"
-run = "cargo run --example web_ui --features web-ui,nokhwa"
+run = "cargo run --example web_ui --all-features"
 
 [media-bench]
 description = "Opt-in MJPEG and YUY2 conversion and encode measurement. Not part of quality and not a CI timing gate."
-run = "cargo run --release --example media_bench --features yuv,openh264"
+run = "cargo run --release --example media_bench --all-features"
 
 [media-features]
 description = "Check OpenH264 and Nokhwa stay out of default and WASM graphs, then decode the Apple media fixture when this host can."
@@ -98,7 +97,7 @@ run = "bash .mise/scripts/media-features.sh"
 
 [media-validate]
 description = "Decode real MJPEG and YUY2 fixtures through OpenH264, finite MP4, and HLS without a camera or FFmpeg"
-run = "cargo test --test media_validate --features yuv,openh264"
+run = "cargo test --test media_validate --all-features"
 
 [quality]
 description = "Run formatting, the SiLA matrix, complexity, duplication, compile, web UI checks, clippy, tests, the A2A TCK, and SiLA provider checks"

@@ -32,11 +32,11 @@ fmt_check() {
 }
 
 check_warnings() {
-  CARGO_TARGET_DIR="$root/target/quality" RUSTFLAGS="-D warnings" cargo check --workspace --quiet
+  RUSTFLAGS="-D warnings" cargo check --workspace --all-features --quiet
 }
 
 clippy_warnings() {
-  CARGO_TARGET_DIR="$root/target/quality" cargo clippy --all-targets --all-features --quiet -- -D warnings
+  cargo clippy --all-targets --all-features --quiet -- -D warnings
 }
 
 local_gate() {
@@ -45,7 +45,6 @@ local_gate() {
   step kiss kiss_check
   step duplication bash .mise/scripts/duplication.sh
   step check check_warnings
-  step 'web-ui feature-off' bash .mise/scripts/web-ui.sh feature-off
   step 'web-ui build' bash .mise/scripts/web-ui.sh build
   step clippy clippy_warnings
   step 'web-ui freshness' bash .mise/scripts/web-ui.sh freshness

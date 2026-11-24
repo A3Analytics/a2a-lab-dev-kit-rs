@@ -48,7 +48,7 @@ else
   export A2A_TCK_ADVERTISE=host.docker.internal
 fi
 
-phase 'tck example' cargo build --example a2a_interface --quiet
+phase 'tck example' cargo build --all-features --example a2a_interface --quiet
 
 server_log="$root/target/a2a-tck-sut.log"
 server_pid=""
@@ -63,7 +63,7 @@ trap cleanup EXIT
 
 start_sut() {
   : >"$server_log"
-  "$root/target/debug/examples/a2a_interface" >"$server_log" 2>&1 &
+  "${CARGO_TARGET_DIR:-$root/target}/debug/examples/a2a_interface" >"$server_log" 2>&1 &
   server_pid=$!
   sut_url=""
   docker_sut=""

@@ -13,6 +13,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  feature-compatibility:
+    runs-on: ubuntu-latest
+    env:
+      MISE_AUTO_INSTALL: "0"
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: "rust"
+
+      - name: Check default and disabled features
+        run: mise run web-ui-feature-off
+
   tck:
     runs-on: ubuntu-latest
     env:

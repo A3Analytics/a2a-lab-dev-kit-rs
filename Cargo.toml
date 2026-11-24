@@ -13,6 +13,7 @@ edition = "2024"
 rust-version = "1.98.1"
 description = "Rust dev kit for lab logs, metrics, and tasks over A2A and MCP"
 publish = false
+autotests = false
 
 [profile.dev.package.openh264]
 opt-level = 3
@@ -60,6 +61,82 @@ otel = [
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",
 ]
+
+[[test]]
+name = "a2a_lab_config"
+path = "tests/a2a_lab_config.rs"
+
+[[test]]
+name = "application"
+path = "tests/application.rs"
+
+[[test]]
+name = "capture"
+path = "tests/capture.rs"
+
+[[test]]
+name = "capture_settings_http"
+path = "tests/capture_settings_http.rs"
+
+[[test]]
+name = "decide_image_typesafe_resolution"
+path = "tests/decide_image_typesafe_resolution.rs"
+
+[[test]]
+name = "frame_decision"
+path = "tests/frame_decision.rs"
+
+[[test]]
+name = "image_decision"
+path = "tests/image_decision.rs"
+
+[[test]]
+name = "local_http"
+path = "tests/local_http.rs"
+
+[[test]]
+name = "media_codecs"
+path = "tests/media_codecs.rs"
+
+[[test]]
+name = "media_validate"
+path = "tests/media_validate.rs"
+
+[[test]]
+name = "protocols"
+path = "tests/protocols.rs"
+
+[[test]]
+name = "semantic_search"
+path = "tests/semantic_search.rs"
+
+[[test]]
+name = "settings_consistency_matrix"
+path = "tests/settings_consistency_matrix.rs"
+
+[[test]]
+name = "typed_jev_adapter"
+path = "tests/typed_jev_adapter.rs"
+
+[[test]]
+name = "typesafe_api_key_config"
+path = "tests/typesafe_api_key_config.rs"
+
+[[test]]
+name = "video_contract_suite"
+path = "tests/video_contract_suite.rs"
+
+[[test]]
+name = "video_parity_suite"
+path = "tests/video_parity_suite.rs"
+
+[[test]]
+name = "web_browser"
+path = "tests/web_browser.rs"
+
+[[test]]
+name = "web_serving"
+path = "tests/web_serving.rs"
 
 [[example]]
 name = "web_ui"

@@ -13,8 +13,8 @@ use a2a_lab_dev_kit::{
     VideoCodec, VideoProvider, VideoSource, VideoSourceId, router, video_clip_path,
 };
 
-use crate::dvr_store_contract::FakeDvrMediaStore;
-use crate::fake_remote_media::{FakeRemoteAsset, FakeRemoteMediaAssetProvider};
+use self::dvr_store_contract::FakeDvrMediaStore;
+use self::fake_remote_media::{FakeRemoteAsset, FakeRemoteMediaAssetProvider};
 
 const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xD9];
 const H264_INIT: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0x67];

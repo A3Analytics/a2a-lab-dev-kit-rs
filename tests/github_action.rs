@@ -99,6 +99,8 @@ fn official_a2a_tck_remains_in_the_quality_gate() {
     assert!(QUALITY_SCRIPT.contains("fast)"));
     assert!(MISE_TASKS.contains("[quality-fast]"));
     assert!(MISE_TASKS.contains(".mise/scripts/quality.sh fast"));
-    assert!(TEST_SCRIPT.contains("CARGO_TARGET_DIR=\"$root/target/quality\""));
+    assert!(TEST_SCRIPT.contains("cargo nextest run --workspace --all-features"));
+    assert!(!TEST_SCRIPT.contains("target/quality"));
+    assert!(TCK_WORKFLOW.contains("mise run web-ui-feature-off"));
     assert!(TCK_WORKFLOW.contains("rustup target add wasm32-unknown-unknown"));
 }
