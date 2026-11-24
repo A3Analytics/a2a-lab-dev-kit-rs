@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::error::A2aLabError;
 
 use super::strict_json::parse_strict_json;
-use super::{A2aLabConfig, LoadedLabConfig};
+use super::{LoadedLabConfig, strip_typesafe_secret};
 
 /// How the attached configuration file can be persisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,10 +210,7 @@ impl LabConfigStore {
         let candidate = serde_json::to_vec(&document).map_err(|_| {
             ConfigStoreError::Invalid(A2aLabError::invalid("input", "must be valid JSON"))
         })?;
-        let candidate_text = std::str::from_utf8(&candidate).map_err(|_| {
-            ConfigStoreError::Invalid(A2aLabError::invalid("input", "must be UTF-8"))
-        })?;
-        A2aLabConfig::parse(candidate_text).map_err(ConfigStoreError::Invalid)?;
+        LoadedLabConfig::load_bytes(&path, &candidate).map_err(ConfigStoreError::Invalid)?;
         let snapshot = loaded_snapshot(&path, &candidate, persistence)?;
         Ok(ProposedConfigPatch {
             path,
@@ -314,15 +311,14 @@ fn loaded_snapshot(
     bytes: &[u8],
     persistence: ConfigPersistence,
 ) -> Result<LabConfigSnapshot, ConfigStoreError> {
-    let document = original_document(bytes)?;
-    let text =
-        std::str::from_utf8(bytes).map_err(|_| ConfigStoreError::path("file must be UTF-8"))?;
-    let config = A2aLabConfig::parse(text).map_err(ConfigStoreError::Invalid)?;
+    let mut document = original_document(bytes)?;
+    let loaded = LoadedLabConfig::load_bytes(path, bytes).map_err(ConfigStoreError::Invalid)?;
+    strip_typesafe_secret(&mut document);
     Ok(LabConfigSnapshot {
         persistence,
         revision: Some(content_hash(bytes)),
         document,
-        loaded: Some(LoadedLabConfig::bind(path, config)),
+        loaded: Some(loaded),
     })
 }
 

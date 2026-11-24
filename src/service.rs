@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::PackagedMediaAsset;
-use crate::config::{A2aLabConfig, ResolvedImageDecisionClient};
+use crate::config::{A2aLabConfig, LoadedLabConfig, ResolvedImageDecisionClient};
 use crate::error::A2aLabError;
 use crate::id::{RunId, VideoClipId, VideoFollowId};
 use crate::images::{
@@ -520,13 +520,53 @@ where
     /// Resolves `config.image_decision` onto this service when the lab file sets it.
     ///
     /// Typed frame-decision registration is left unchanged. Absent configuration
-    /// leaves any previously attached client in place.
+    /// leaves any previously attached client in place. This path stays
+    /// unauthenticated and keeps the generic HTTP request shape.
     #[must_use]
     pub fn resolve_image_decision_client(self, config: &A2aLabConfig) -> Self {
         let Some(client) = config.image_decision.clone() else {
             return self;
         };
         self.with_image_decision_client(ResolvedImageDecisionClient::from_config(client))
+    }
+
+    /// Resolves `decide_image` from a loaded lab config.
+    ///
+    /// An image-decision endpoint, model, and resolved API key install an
+    /// executor that calls the TypeSafe System One client with those values.
+    /// An executor already installed with [`Self::with_image_decision_executor`]
+    /// stays in place. Without a resolved key, the unauthenticated HTTP client
+    /// remains the `decide_image` path. This method does not append a typed
+    /// frame-decision ledger record.
+    pub fn resolve_image_decision_from_loaded(
+        self,
+        loaded: &LoadedLabConfig,
+    ) -> Result<Self, A2aLabError> {
+        if self.image_decision_executor.is_some() {
+            return Ok(self);
+        }
+        let Some(config) = loaded.config.image_decision.clone() else {
+            return Ok(self);
+        };
+        let api_key = loaded.image_decision_api_key()?;
+        let resolved = ResolvedImageDecisionClient::from_config(config);
+        if resolved.config().endpoint().is_some()
+            && resolved.config().model().is_some()
+            && let Some(api_key) = api_key.as_deref()
+        {
+            return self.install_typesafe_image_decision(resolved, api_key);
+        }
+        Ok(self.resolve_image_decision_client(&loaded.config))
+    }
+
+    fn install_typesafe_image_decision(
+        mut self,
+        resolved: ResolvedImageDecisionClient,
+        api_key: &str,
+    ) -> Result<Self, A2aLabError> {
+        self.image_decision_executor = Some(resolved.typesafe_executor(api_key)?);
+        self.image_decision_client = Some(resolved);
+        Ok(self)
     }
 
     /// Resolved synchronous generic image-decision client, when configured.

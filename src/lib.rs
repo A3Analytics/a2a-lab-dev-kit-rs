@@ -17,6 +17,7 @@ pub mod id;
 pub mod images;
 pub mod industrial;
 pub mod json_object;
+mod layered_config;
 pub mod logs;
 pub mod mcp;
 pub mod memory;
@@ -83,8 +84,8 @@ pub use images::{
     MAX_IMAGE_DECISION_ANSWERS, MAX_IMAGE_DECISION_ERROR_CHARS, MAX_IMAGE_DECISION_LIMIT_CHARS,
     MAX_IMAGE_DECISION_MODEL_CHARS, MAX_IMAGE_DECISION_QUESTION_CHARS, NoulCriteria,
     ResolvedImageDecision, SearchImagesRequest, SourceImageDecisionRequest,
-    SourceImageDecisionResult, TckMalformedImageRequests, execute_generic_image_decision,
-    map_model_bounds_onto_source, normalize_model_box_to_source,
+    SourceImageDecisionResult, TckMalformedImageRequests, TypeSafeSystemOneClient,
+    execute_generic_image_decision, map_model_bounds_onto_source, normalize_model_box_to_source,
 };
 pub use industrial::{
     IndustrialLabBuilder, IndustrialLogs, IndustrialMetrics, IndustrialTasks, ScriptedLive,

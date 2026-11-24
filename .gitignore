@@ -3,3 +3,4 @@ web-ui/vendor/
 **/*.rs.bk
 .DS_Store
 /backlog/
+*.secret.json

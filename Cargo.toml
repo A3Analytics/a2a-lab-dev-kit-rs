@@ -163,6 +163,7 @@ yuv = { version = "0.8.20", default-features = false, optional = true, features 
     "rdm",
     "sse",
 ] }
+config = { version = "0.15.27", default-features = false, features = ["json"] }
 
 [dev-dependencies]
 a2a-client = { version = "0.2.7", package = "a2a-client-lf" }

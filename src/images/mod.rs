@@ -1,6 +1,6 @@
 //! Image sources, searchable descriptors, inline image payloads, generic image
-//! decision contracts, one-image resolution, and a synchronous JEV-style decision
-//! HTTP client.
+//! decision contracts, one-image resolution, a synchronous JEV-style decision
+//! HTTP client, and a TypeSafe System One HTTP client.
 //!
 //! This crate does not capture frames and does not include a built-in image adapter.
 
@@ -10,6 +10,7 @@ mod model;
 mod provider;
 mod resolve;
 mod source_decision;
+mod typesafe_system_one;
 
 pub use decision::{
     IMAGE_DECISION_DOWNSTREAM_DEPENDENCY, IMAGE_DECISION_EXCLUDED_SCOPE, IMAGE_DECISION_TRANSPORTS,
@@ -39,3 +40,5 @@ pub use source_decision::{
     ImageDecisionPrimitiveAnswer, ImageDecisionQuestion, ImageDecisionQuestions, NoulCriteria,
     SourceImageDecisionRequest, SourceImageDecisionResult,
 };
+pub(crate) use typesafe_system_one::PinnedTypeSafeDecision;
+pub use typesafe_system_one::TypeSafeSystemOneClient;

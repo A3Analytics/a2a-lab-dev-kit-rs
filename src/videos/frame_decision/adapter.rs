@@ -1,78 +1,108 @@
-//! Compatibility adapter from the typed three-predicate live evaluator to the
-//! generic synchronous JEV client.
+//! Typed three-predicate evaluator over the TypeSafe System One client.
 //!
 //! Downstream repositories construct [`TypedLabPredicateJevAdapter`] from a
 //! published git revision of `a2a-lab-dev-kit`, never a path dependency. The
-//! adapter accepts only the three v1 lab predicates, sends each validated
-//! request through [`crate::images::ImageDecisionHttpClient`], and maps the
-//! generic answer onto the existing coverage, outcome, provenance, and result
-//! types. It does not append a [`super::record::FrameDecisionRecord`]. Generic
-//! image decisions stay side-effect free.
+//! adapter accepts only the three v1 lab predicates, sends each one as a named
+//! System One question, and maps the answer onto the existing coverage,
+//! outcome, provenance, and result types. It does not append a
+//! [`super::record::FrameDecisionRecord`].
 //!
-//! A full-frame model input omits the ROI and is the full source image. Answer
-//! boxes are already normalized to that image by the generic client. HTTP, MCP,
-//! and A2A remain lab transports. This module does not add settings pages,
-//! whole-video indexing or backfill, `AgentCore`, Strands, an AWS SDK client, a
-//! judge or other LLM fallback, or a profile 1.3.0 bump.
+//! The uploaded image is the full frame. A configured ROI stays on the typed
+//! result and is not sent as a crop. HTTP, MCP, and A2A remain lab transports.
+//! This module does not add settings pages, whole-video indexing or backfill,
+//! `AgentCore`, Strands, an AWS SDK client, a judge or other LLM fallback, or a
+//! profile 1.3.0 bump.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
+use crate::config::LoadedLabConfig;
 use crate::error::A2aLabError;
 use crate::id::SavedFrameId;
 use crate::images::{
-    Image, ImageDecisionAnswer, ImageDecisionHttpClient, ImageDecisionHttpLimits,
-    ImageDecisionModelInput, ImageDecisionRequest, ImageDecisionResult, ImageDecisionRoi,
-    ImageTransportConfig,
+    Image, ImageDecisionHttpLimits, ImageDecisionPrimitiveAnswer, ImageDecisionQuestion,
+    ImageTransportConfig, SourceImageDecisionResult, TypeSafeSystemOneClient,
 };
 use crate::time::UtcTimestamp;
 use crate::videos::digest::Sha256Digest;
-use crate::videos::index_provenance::FrameRoiTransform;
 
 use super::config::{FrameDecisionEvaluatorLimits, FrameDecisionEvaluatorProviderConfig};
 use super::failure::FrameDecisionEvaluationFailure;
-use super::predicate::LabPredicate;
+use super::predicate::{
+    LabPredicate, PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED,
+    PREDICATE_PLATE_MISALIGNED,
+};
 use super::provider::FrameDecisionEvaluator;
 use super::record::{
     DecisionEvaluationCoverage, JevEvaluationProvenance, JevStructuredOutput, LabProbabilityVector,
 };
-use super::request::{
-    FrameDecisionEvaluationRequest, guard_against_description_evidence, subject_token,
-};
+use super::request::{FrameDecisionEvaluationRequest, guard_against_description_evidence};
 use super::result::{
     DecisionThresholdPolicy, KeyedFrameDecisionEvaluation, interpret_structured_outcome,
 };
 
-/// Live evaluator that asks the generic JEV client one question per typed request.
+/// Live evaluator that asks System One one named question per typed request.
 #[derive(Debug, Clone)]
 pub struct TypedLabPredicateJevAdapter {
     config: FrameDecisionEvaluatorProviderConfig,
     limits: FrameDecisionEvaluatorLimits,
-    client: ImageDecisionHttpClient,
+    client: TypeSafeSystemOneClient,
+    model: String,
     threshold: DecisionThresholdPolicy,
     evaluated_at: UtcTimestamp,
-    frames: HashMap<SavedFrameId, Image>,
+    frames: std::collections::HashMap<SavedFrameId, Image>,
 }
 
 impl TypedLabPredicateJevAdapter {
     /// Builds an adapter for a config whose predicates are a subset of the three v1 declarations.
+    ///
+    /// `model` is the evaluator producer revision. [`Self::from_loaded`] uses the
+    /// semantic decision model instead.
     pub fn new(
         config: FrameDecisionEvaluatorProviderConfig,
         limits: FrameDecisionEvaluatorLimits,
-        client: ImageDecisionHttpClient,
+        client: TypeSafeSystemOneClient,
         evaluated_at: UtcTimestamp,
     ) -> Result<Self, A2aLabError> {
-        guard_supported(config.supported_predicates())?;
-        Ok(Self {
+        let model = config.producer().model_revision().to_owned();
+        Self::assemble(config, limits, client, model, evaluated_at)
+    }
+
+    /// Builds an adapter from semantic decision endpoint and model plus the shared TypeSafe key.
+    ///
+    /// The key is [`LoadedLabConfig::semantic_decision_api_key`]. A missing
+    /// semantic block or key is an error and does not reveal a credential.
+    pub fn from_loaded(
+        loaded: &LoadedLabConfig,
+        config: FrameDecisionEvaluatorProviderConfig,
+        limits: FrameDecisionEvaluatorLimits,
+        evaluated_at: UtcTimestamp,
+    ) -> Result<Self, A2aLabError> {
+        let decisions = loaded
+            .config
+            .semantic_indexing
+            .as_ref()
+            .map(|semantic| &semantic.decisions)
+            .ok_or_else(|| {
+                A2aLabError::invalid("semantic_indexing.decisions", "required field is missing")
+            })?;
+        let api_key = loaded
+            .semantic_decision_api_key()?
+            .ok_or_else(|| A2aLabError::invalid("typesafe.api_key", "required field is missing"))?;
+        let client = TypeSafeSystemOneClient::new(
+            decisions.endpoint(),
+            api_key,
+            Self::http_limits(limits)?,
+        )?;
+        Self::assemble(
             config,
             limits,
             client,
-            threshold: DecisionThresholdPolicy::pilot(),
+            decisions.model().to_owned(),
             evaluated_at,
-            frames: HashMap::new(),
-        })
+        )
     }
 
-    /// Aligns the generic HTTP client bounds with the typed evaluator limits.
+    /// Aligns the System One client bounds with the typed evaluator limits.
     pub fn http_limits(
         limits: FrameDecisionEvaluatorLimits,
     ) -> Result<ImageDecisionHttpLimits, A2aLabError> {
@@ -87,9 +117,9 @@ impl TypedLabPredicateJevAdapter {
         )
     }
 
-    /// Binds saved-frame revisions to the images the generic client will send.
+    /// Binds saved-frame revisions to the images the client will send.
     #[must_use]
-    pub fn with_frames(mut self, frames: HashMap<SavedFrameId, Image>) -> Self {
+    pub fn with_frames(mut self, frames: std::collections::HashMap<SavedFrameId, Image>) -> Self {
         self.frames = frames;
         self
     }
@@ -100,9 +130,16 @@ impl TypedLabPredicateJevAdapter {
         self.evaluated_at
     }
 
-    /// Evaluates one typed request through the generic client.
+    /// Model sent on the System One request.
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// Evaluates one typed request through a named System One question.
     ///
-    /// The returned evaluation does not append a ledger record.
+    /// The returned evaluation does not append a ledger record. The configured
+    /// ROI remains on the typed provenance. The uploaded image is not cropped.
     pub async fn evaluate_frame(
         &self,
         request: &FrameDecisionEvaluationRequest,
@@ -111,10 +148,38 @@ impl TypedLabPredicateJevAdapter {
         self.ensure_predicate(request)?;
         guard_against_description_evidence(request.evidence())?;
         guard_image(self.limits, image)?;
-        let generic = generic_request(&self.config, request, image)?;
-        guard_encoded_request(&generic, self.limits)?;
-        let result = self.client.decide(&generic).await.map_err(map_provider)?;
-        self.map_result(request, &result)
+        let questions = questions_for(request.predicate())?;
+        let result = self
+            .client
+            .decide_questions(&self.model, image, &questions)
+            .await
+            .map_err(map_provider)?;
+        self.map_result(request, &questions, &result)
+    }
+
+    fn assemble(
+        config: FrameDecisionEvaluatorProviderConfig,
+        limits: FrameDecisionEvaluatorLimits,
+        client: TypeSafeSystemOneClient,
+        model: String,
+        evaluated_at: UtcTimestamp,
+    ) -> Result<Self, A2aLabError> {
+        guard_supported(config.supported_predicates())?;
+        if model.trim().is_empty() {
+            return Err(A2aLabError::invalid(
+                "model",
+                "Jev model revision must not be empty",
+            ));
+        }
+        Ok(Self {
+            config,
+            limits,
+            client,
+            model,
+            threshold: DecisionThresholdPolicy::pilot(),
+            evaluated_at,
+            frames: std::collections::HashMap::new(),
+        })
     }
 
     fn ensure_predicate(
@@ -133,14 +198,20 @@ impl TypedLabPredicateJevAdapter {
     fn map_result(
         &self,
         request: &FrameDecisionEvaluationRequest,
-        result: &ImageDecisionResult,
+        questions: &BTreeMap<String, ImageDecisionQuestion>,
+        result: &SourceImageDecisionResult,
     ) -> Result<KeyedFrameDecisionEvaluation, FrameDecisionEvaluationFailure> {
-        let answer = result.answers().first().ok_or_else(|| {
+        let name = questions.keys().next().ok_or_else(|| {
             FrameDecisionEvaluationFailure::InvalidProvenance {
-                message: "generic decision returned no answers".to_owned(),
+                message: "typed decision returned no answers".to_owned(),
             }
         })?;
-        let structured = structured_from_answer(answer)?;
+        let answer = result.answers().get(name).ok_or_else(|| {
+            FrameDecisionEvaluationFailure::InvalidProvenance {
+                message: "typed decision returned no answers".to_owned(),
+            }
+        })?;
+        let structured = structured_from_primitive(answer)?;
         let outcome = interpret_structured_outcome(&structured, self.threshold)?;
         let digest = response_digest(result)?;
         let provenance = provenance_for(&self.config, self.evaluated_at, request, &digest)?;
@@ -230,42 +301,39 @@ fn unsupported_predicates() -> A2aLabError {
     )
 }
 
-fn generic_request(
-    config: &FrameDecisionEvaluatorProviderConfig,
-    request: &FrameDecisionEvaluationRequest,
-    image: &Image,
-) -> Result<ImageDecisionRequest, FrameDecisionEvaluationFailure> {
-    let model =
-        ImageDecisionModelInput::new(config.producer().model_revision(), model_roi(request)?)
-            .map_err(invalid_evidence)?;
-    ImageDecisionRequest::new(image.clone(), decision_question(request), model)
-        .map_err(invalid_evidence)
+fn questions_for(
+    predicate: &LabPredicate,
+) -> Result<BTreeMap<String, ImageDecisionQuestion>, FrameDecisionEvaluationFailure> {
+    let (name, instructions) = named_question(predicate)?;
+    let mut questions = BTreeMap::new();
+    questions.insert(name.to_owned(), noul_question(instructions));
+    Ok(questions)
 }
 
-fn model_roi(
-    request: &FrameDecisionEvaluationRequest,
-) -> Result<Option<ImageDecisionRoi>, FrameDecisionEvaluationFailure> {
-    let transform = request.model_input_transform();
-    if is_full_frame(transform) {
-        return Ok(None);
+fn named_question(
+    predicate: &LabPredicate,
+) -> Result<(&'static str, &'static str), FrameDecisionEvaluationFailure> {
+    let question = match (predicate.id(), predicate.version()) {
+        (PREDICATE_PIPETTE_TIP_ATTACHED, 1) => ("pipette_tip_attached", "pipette tip attached"),
+        (PREDICATE_FOREIGN_OBJECT_PRESENT, 1) => {
+            ("foreign_object_present", "foreign object present")
+        }
+        (PREDICATE_PLATE_MISALIGNED, 1) => ("plate_misaligned", "plate misaligned"),
+        _ => {
+            return Err(FrameDecisionEvaluationFailure::UnsupportedPredicate {
+                predicate_id: predicate.id().to_owned(),
+                predicate_version: predicate.version(),
+            });
+        }
+    };
+    Ok(question)
+}
+
+fn noul_question(instructions: &str) -> ImageDecisionQuestion {
+    ImageDecisionQuestion::Noul {
+        instructions: instructions.to_owned(),
+        criteria: None,
     }
-    ImageDecisionRoi::new(transform.bounds())
-        .map(Some)
-        .map_err(invalid_evidence)
-}
-
-fn is_full_frame(transform: FrameRoiTransform) -> bool {
-    transform.bounds().map(f32::to_bits)
-        == FrameRoiTransform::full_frame().bounds().map(f32::to_bits)
-}
-
-fn decision_question(request: &FrameDecisionEvaluationRequest) -> String {
-    format!(
-        "{} v{} {}",
-        request.predicate().id(),
-        request.predicate().version(),
-        subject_token(request.subject())
-    )
 }
 
 fn guard_image(
@@ -296,67 +364,56 @@ fn guard_image(
     Ok(())
 }
 
-fn guard_encoded_request(
-    request: &ImageDecisionRequest,
-    limits: FrameDecisionEvaluatorLimits,
-) -> Result<(), FrameDecisionEvaluationFailure> {
-    let encoded = serde_json::to_vec(request).map_err(|error| {
-        FrameDecisionEvaluationFailure::InvalidEvidence {
-            message: error.to_string(),
-        }
-    })?;
-    if encoded.len() > limits.max_request_bytes() {
-        return Err(limit_exceeded(
-            "max_request_bytes",
-            format!(
-                "request bytes {} exceed {}",
-                encoded.len(),
-                limits.max_request_bytes()
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn structured_from_answer(
-    answer: &ImageDecisionAnswer,
+fn structured_from_primitive(
+    answer: &ImageDecisionPrimitiveAnswer,
 ) -> Result<JevStructuredOutput, FrameDecisionEvaluationFailure> {
-    let evidence_box = answer
-        .source_box()
-        .map(|roi| FrameRoiTransform::new(roi.bounds()))
-        .transpose()
-        .map_err(invalid_provenance)?;
-    let distribution = if answer.probability().is_none() {
-        choice_distribution(answer.text())?
-    } else {
-        None
-    };
-    JevStructuredOutput::new(
-        answer.probability(),
-        distribution,
-        None,
-        None,
-        None,
-        evidence_box,
-        None,
-    )
-    .map_err(invalid_provenance)
-}
-
-fn choice_distribution(
-    text: Option<&str>,
-) -> Result<Option<LabProbabilityVector>, FrameDecisionEvaluationFailure> {
-    let (present, absent) = match text {
-        Some("present") => (1.0, 0.0),
-        Some("absent") => (0.0, 1.0),
-        _ => return Ok(None),
-    };
-    LabProbabilityVector::new(
-        vec!["present".to_owned(), "absent".to_owned()],
-        vec![present, absent],
-    )
-    .map(Some)
-    .map_err(invalid_provenance)
+    match answer {
+        ImageDecisionPrimitiveAnswer::Noul { noul } => {
+            JevStructuredOutput::new(Some(*noul), None, None, None, None, None, None)
+                .map_err(invalid_provenance)
+        }
+        ImageDecisionPrimitiveAnswer::Choice {
+            probabilities,
+            confidence,
+            ..
+        } => {
+            let (labels, values): (Vec<_>, Vec<_>) = probabilities
+                .iter()
+                .map(|(label, value)| (label.clone(), *value))
+                .unzip();
+            let distribution =
+                LabProbabilityVector::new(labels, values).map_err(invalid_provenance)?;
+            JevStructuredOutput::new(
+                None,
+                Some(distribution),
+                None,
+                None,
+                Some(*confidence),
+                None,
+                None,
+            )
+            .map_err(invalid_provenance)
+        }
+        ImageDecisionPrimitiveAnswer::Score {
+            score,
+            legend,
+            probabilities,
+            confidence,
+        } => {
+            let distribution = LabProbabilityVector::new(legend.clone(), probabilities.clone())
+                .map_err(invalid_provenance)?;
+            JevStructuredOutput::new(
+                None,
+                None,
+                Some(distribution),
+                Some(*score),
+                Some(*confidence),
+                None,
+                None,
+            )
+            .map_err(invalid_provenance)
+        }
+    }
 }
 
 fn provenance_for(
@@ -383,7 +440,7 @@ fn provenance_for(
 }
 
 fn response_digest(
-    result: &ImageDecisionResult,
+    result: &SourceImageDecisionResult,
 ) -> Result<Sha256Digest, FrameDecisionEvaluationFailure> {
     let bytes = serde_json::to_vec(result).map_err(|error| {
         FrameDecisionEvaluationFailure::InvalidProvenance {
@@ -405,7 +462,10 @@ fn map_provider(
             FrameDecisionEvaluationFailure::InvalidProvenance { message }
         }
         ImageDecisionProviderError::LimitExceeded { limit, message } => {
-            FrameDecisionEvaluationFailure::LimitExceeded { limit, message }
+            FrameDecisionEvaluationFailure::LimitExceeded {
+                limit: typed_limit(&limit),
+                message,
+            }
         }
         ImageDecisionProviderError::DeadlineExceeded { .. } => {
             FrameDecisionEvaluationFailure::DeadlineExceeded
@@ -413,11 +473,13 @@ fn map_provider(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn invalid_evidence(error: A2aLabError) -> FrameDecisionEvaluationFailure {
-    FrameDecisionEvaluationFailure::InvalidEvidence {
-        message: error.to_string(),
+fn typed_limit(limit: &str) -> String {
+    match limit {
+        "request" => "max_request_bytes",
+        "image" => "max_image_bytes",
+        other => other,
     }
+    .to_owned()
 }
 
 #[allow(clippy::needless_pass_by_value)]

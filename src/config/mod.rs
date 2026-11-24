@@ -39,6 +39,7 @@ pub use image_decision::{
     ResolvedImageDecisionClient,
 };
 pub use load::LoadedLabConfig;
+pub(crate) use load::strip_typesafe_secret;
 pub use logging::{
     DEFAULT_LOG_OUTPUT_FORMAT, DEFAULT_LOGGING_LEVEL, LogOutputFormat, LoggingConfig,
     OpenTelemetryLoggingConfig,
@@ -118,7 +119,7 @@ impl A2aLabConfig {
         Self::from_value(&value)
     }
 
-    fn from_value(value: &serde_json::Value) -> Result<Self, A2aLabError> {
+    pub(crate) fn from_value(value: &serde_json::Value) -> Result<Self, A2aLabError> {
         let map = object_at("", value)?;
         let schema_version = parse_schema_version(map.get("schema_version"))?;
         let allowed_envelope = match schema_version {

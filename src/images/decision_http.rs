@@ -403,7 +403,7 @@ fn failure_status(status: StatusCode, json: bool, payload: &[u8]) -> ImageDecisi
     unavailable(&format!("http status {code}"))
 }
 
-async fn read_capped(
+pub(crate) async fn read_capped(
     mut response: reqwest::Response,
     max: usize,
 ) -> Result<Vec<u8>, ImageDecisionProviderError> {
@@ -439,7 +439,7 @@ fn push_capped(
     Ok(())
 }
 
-fn parse_endpoint(endpoint: &str) -> Result<Url, A2aLabError> {
+pub(crate) fn parse_endpoint(endpoint: &str) -> Result<Url, A2aLabError> {
     let url = Url::parse(endpoint.trim()).map_err(|_| endpoint_error())?;
     let http = matches!(url.scheme(), "http" | "https");
     if !http || url.host_str().is_none() {
@@ -452,7 +452,7 @@ fn endpoint_error() -> A2aLabError {
     A2aLabError::invalid("endpoint", "must be an absolute http(s) url")
 }
 
-fn content_type_is_json(headers: &reqwest::header::HeaderMap) -> bool {
+pub(crate) fn content_type_is_json(headers: &reqwest::header::HeaderMap) -> bool {
     headers
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -467,7 +467,7 @@ fn content_type_is_json(headers: &reqwest::header::HeaderMap) -> bool {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn transport_error(error: reqwest::Error) -> ImageDecisionProviderError {
+pub(crate) fn transport_error(error: reqwest::Error) -> ImageDecisionProviderError {
     if error.is_timeout() {
         deadline_exceeded("decision deadline elapsed")
     } else {
@@ -475,7 +475,7 @@ fn transport_error(error: reqwest::Error) -> ImageDecisionProviderError {
     }
 }
 
-fn unavailable(message: &str) -> ImageDecisionProviderError {
+pub(crate) fn unavailable(message: &str) -> ImageDecisionProviderError {
     provider_or(ImageDecisionProviderError::unavailable(message), || {
         ImageDecisionProviderError::Unavailable {
             message: "decision endpoint is unavailable".to_owned(),
@@ -483,7 +483,7 @@ fn unavailable(message: &str) -> ImageDecisionProviderError {
     })
 }
 
-fn invalid_answer(message: &str) -> ImageDecisionProviderError {
+pub(crate) fn invalid_answer(message: &str) -> ImageDecisionProviderError {
     provider_or(ImageDecisionProviderError::invalid_answer(message), || {
         ImageDecisionProviderError::InvalidAnswer {
             message: "response answers are invalid".to_owned(),
@@ -491,7 +491,7 @@ fn invalid_answer(message: &str) -> ImageDecisionProviderError {
     })
 }
 
-fn limit_exceeded(limit: &str, message: &str) -> ImageDecisionProviderError {
+pub(crate) fn limit_exceeded(limit: &str, message: &str) -> ImageDecisionProviderError {
     provider_or(
         ImageDecisionProviderError::limit_exceeded(limit, message),
         || ImageDecisionProviderError::LimitExceeded {
@@ -501,7 +501,7 @@ fn limit_exceeded(limit: &str, message: &str) -> ImageDecisionProviderError {
     )
 }
 
-fn deadline_exceeded(message: &str) -> ImageDecisionProviderError {
+pub(crate) fn deadline_exceeded(message: &str) -> ImageDecisionProviderError {
     provider_or(
         ImageDecisionProviderError::deadline_exceeded(message),
         || ImageDecisionProviderError::DeadlineExceeded {

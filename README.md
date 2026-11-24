@@ -87,6 +87,26 @@ The devkit `v0.1.0` release at `9d5327868d96b3e800fd89f6debf434bcc12709d` is the
 
 Use the standalone [A2A-LAB TCK documentation](https://github.com/A3Analytics/a2a-lab-tck/blob/1fd47d5c73e6fa3f7bd6505d75e43ee68cae33fd/README.md) to create fixtures, pin its Action, retain the JSON report, and display the consumer repository's workflow badge. That badge reports only the consumer-owned workflow result; it is not certification or a devkit badge.
 
+## Configuration priority
+
+`LoadedLabConfig::load` reads one required JSON file, then applies two optional layers. Later layers replace earlier values.
+
+1. The base file, such as `a2a-lab.json`.
+2. The sibling `<stem>.secret.<ext>` in the same directory, such as `a2a-lab.secret.json`. The whole sibling document is deep-merged. A missing sibling is skipped. A sibling that exists but cannot be read or parsed fails the load.
+3. `TYPESAFE_API_KEY`, which replaces only `typesafe.api_key`.
+
+`typesafe` accepts `api_key` and is removed before the remaining document is validated, so the key is absent from settings, logs, and `Debug`. An empty key fails the load. When none of these layers supplies a key, image decisions and semantic decisions fall back to the environment variable named by their `credentials.env` field.
+
+`a2a-lab.secret.json`:
+
+```json
+{
+  "typesafe": {
+    "api_key": "replace-with-your-typesafe-key"
+  }
+}
+```
+
 ## Configure application logging
 
 Application logging is optional. Add a `logging` section to `a2a-lab.json`, call `init_logging_from_loaded` before starting A2A, MCP, SiLA, or a direct `A2aLabService` host, and keep the returned guard for the process lifetime. Omitted `logging.format` uses human-readable stderr text; set `"format": "json"` or the `otel` feature for explicit structured export.

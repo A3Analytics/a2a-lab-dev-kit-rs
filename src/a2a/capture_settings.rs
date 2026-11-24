@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 use crate::config::{
     ConfigStoreError, LabConfigSnapshot, LabConfigStore, VideoCaptureSettings,
     VideoCaptureSettingsView, VideoCaptureSettingsWatch, VideoConfig, pending_restart_and_reindex,
+    strip_typesafe_secret,
 };
 use crate::error::A2aLabError;
 #[cfg(feature = "nokhwa")]
@@ -200,6 +201,7 @@ fn settings_payload(
     live: &VideoCaptureSettingsView,
 ) -> Value {
     let mut document = snapshot.document.clone();
+    strip_typesafe_secret(&mut document);
     keep_credential_env_names(&mut document);
     let (pending_restart, pending_reindex) = pending_restart_and_reindex(baseline, &document);
     serde_json::json!({
@@ -262,4 +264,30 @@ fn api_error(status: StatusCode, code: &str, message: &str) -> Response {
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ConfigPersistence;
+
+    #[test]
+    fn settings_response_omits_typesafe_api_key() {
+        let secret = "sk-settings-typesafe-key";
+        let snapshot = LabConfigSnapshot {
+            persistence: ConfigPersistence::Writable,
+            revision: Some("sha256:ab".to_owned()),
+            document: serde_json::json!({
+                "schema_version": 1,
+                "typesafe": { "api_key": secret }
+            }),
+            loaded: None,
+        };
+        let live = VideoCaptureSettings::from_video_config(None).view();
+        let payload = settings_payload(&Value::Object(Map::new()), &snapshot, &live);
+        let encoded = payload.to_string();
+        assert!(!encoded.contains(secret));
+        assert!(payload["document"].get("typesafe").is_none());
+        assert!(!payload["error"].to_string().contains(secret));
+    }
 }

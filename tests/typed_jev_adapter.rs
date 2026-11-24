@@ -1,4 +1,4 @@
-//! Typed lab-predicate evaluations adapted onto the generic JEV client.
+//! Typed lab-predicate evaluations adapted onto `TypeSafe` System One questions.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,21 +14,22 @@ use a2a_lab_dev_kit::{
     IMAGE_DECISION_EXCLUDED_SCOPE, IMAGE_DECISION_TRANSPORTS, Image, ImageDecisionHttpClient,
     ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionRequest, ImageDescriptor,
     ImageId, ImageSourceId, JEV_PRODUCER_ID, JevEvaluationId, JsonObject,
-    KeyedFrameDecisionEvaluation, LabPredicate, OperatorDecisionCriteria, OperatorReferenceImage,
-    PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED, PREDICATE_PLATE_MISALIGNED,
-    PipetteChannelSubject, PlateAlignmentReference, PlateSlotSubject,
-    RejectedDecisionEvaluatorBackend, SavedFrameRef, Sha256Digest, TypedLabPredicateJevAdapter,
-    UtcTimestamp, VideoSourceId, bind_local, execute_generic_image_decision,
-    interpret_structured_outcome, reject_decision_evaluator_backend,
-    reject_forbidden_decision_input,
+    KeyedFrameDecisionEvaluation, LabPredicate, LoadedLabConfig, OperatorDecisionCriteria,
+    OperatorReferenceImage, PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED,
+    PREDICATE_PLATE_MISALIGNED, PipetteChannelSubject, PlateAlignmentReference, PlateSlotSubject,
+    RejectedDecisionEvaluatorBackend, SavedFrameRef, Sha256Digest, TypeSafeSystemOneClient,
+    TypedLabPredicateJevAdapter, UtcTimestamp, VideoSourceId, bind_local,
+    execute_generic_image_decision, interpret_structured_outcome,
+    reject_decision_evaluator_backend, reject_forbidden_decision_input,
 };
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::response::Response;
 use axum::routing::post;
+use base64::Engine;
 use serde_json::{Value, json};
 
 #[test]
@@ -208,7 +209,7 @@ async fn three_v1_predicates_map_generic_answers_without_a_ledger_append() {
         ),
     ];
     let mut frames = HashMap::new();
-    frames.insert(saved.frame_id().clone(), image);
+    frames.insert(saved.frame_id().clone(), image.clone());
     let adapter = TypedLabPredicateJevAdapter::new(
         evaluator_config(),
         limits,
@@ -225,27 +226,9 @@ async fn three_v1_predicates_map_generic_answers_without_a_ledger_append() {
     assert_outcome(&evaluations[0], DecisionOutcome::Present);
     assert_outcome(&evaluations[1], DecisionOutcome::Absent);
     assert_outcome(&evaluations[2], DecisionOutcome::Unknown);
-    assert_eq!(
-        evaluations[0]
-            .structured_output()
-            .unwrap()
-            .noul_probability(),
-        Some(1.0)
-    );
-    assert_eq!(
-        evaluations[1]
-            .structured_output()
-            .unwrap()
-            .noul_probability(),
-        Some(0.0)
-    );
-    assert_eq!(
-        evaluations[2]
-            .structured_output()
-            .unwrap()
-            .noul_probability(),
-        Some(0.5)
-    );
+    assert_noul_bits(&evaluations[0], 1.0);
+    assert_noul_bits(&evaluations[1], 0.0);
+    assert_noul_bits(&evaluations[2], 0.5);
     assert!(evaluations.iter().all(|evaluation| {
         evaluation
             .structured_output()
@@ -255,17 +238,45 @@ async fn three_v1_predicates_map_generic_answers_without_a_ledger_append() {
     }));
     let sent = seen.0.lock().expect("seen").clone();
     assert_eq!(sent.len(), 3);
-    for body in sent {
-        let value: Value = serde_json::from_slice(&body).unwrap();
-        assert!(value["model_input"].get("roi").is_none());
-        assert_eq!(value["model_input"]["model"], "jev-1.14.0");
-        assert!(value["question"].as_str().unwrap().contains(" v1 "));
+    let mut names = Vec::new();
+    for captured in sent {
+        assert_eq!(
+            captured.authorization.as_deref(),
+            Some("Bearer typed-adapter-test-key")
+        );
+        assert_eq!(captured.danger.as_deref(), Some("true"));
+        let value: Value = serde_json::from_slice(&captured.body).unwrap();
+        assert!(value.get("roi").is_none());
+        assert!(value["state"].get("roi").is_none());
+        assert_eq!(value["model"], "jev-1.14.0");
+        let reference = value["state"]["image"].as_str().unwrap();
+        let asset = &value["assets"][reference];
+        assert_eq!(asset["format"], "png");
+        assert_eq!(
+            asset["data_base64"],
+            base64::engine::general_purpose::STANDARD.encode(image.data())
+        );
+        let questions = value["questions"].as_object().unwrap();
+        assert_eq!(questions.len(), 1);
+        let (name, question) = questions.iter().next().unwrap();
+        names.push(name.clone());
+        assert_eq!(question["type"], "noul");
+        assert_eq!(question["instructions"], question_instructions(name));
     }
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "foreign_object_present".to_owned(),
+            "pipette_tip_attached".to_owned(),
+            "plate_misaligned".to_owned(),
+        ]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn typed_success_preserves_provenance_and_idempotent_append() {
-    let answers = json!({"answers":[{"text":"scored","probability":1.0,"model_box":{"bounds":[0.25,0.25,0.75,0.75]}}]});
+    let answers = noul_body("pipette_tip_attached", 1.0);
     let (url, _) = spawn(Reply::fixed(StatusCode::OK, &answers)).await;
     let limits = FrameDecisionEvaluatorLimits::pilot();
     let config = evaluator_config();
@@ -289,6 +300,8 @@ async fn typed_success_preserves_provenance_and_idempotent_append() {
     let mut ledger = FrameDecisionLedger::new();
     let first = adapter.evaluate_frame(&request, &image).await.unwrap();
     assert!(ledger.history().is_empty());
+    let generic_answers = json!({"answers":[{"text":"scored","probability":1.0,"model_box":{"bounds":[0.25,0.25,0.75,0.75]}}]});
+    let (generic_url, _) = spawn(Reply::fixed(StatusCode::OK, &generic_answers)).await;
     let generic = ImageDecisionRequest::new(
         image.clone(),
         "Is anything visible?",
@@ -296,7 +309,7 @@ async fn typed_success_preserves_provenance_and_idempotent_append() {
     )
     .unwrap();
     let generic_client = ImageDecisionHttpClient::new(
-        &url,
+        &generic_url,
         TypedLabPredicateJevAdapter::http_limits(limits).unwrap(),
     )
     .unwrap();
@@ -337,7 +350,7 @@ async fn typed_success_preserves_provenance_and_idempotent_append() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn full_and_cropped_images_keep_source_normalized_boxes() {
-    let answers = json!({"answers":[{"text":"present","probability":1.0,"model_box":{"bounds":[0.0,0.0,0.5,1.0]}}]});
+    let answers = noul_body("pipette_tip_attached", 1.0);
     let (url, seen) = spawn(Reply::fixed(StatusCode::OK, &answers)).await;
     let limits = FrameDecisionEvaluatorLimits::pilot();
     let adapter = TypedLabPredicateJevAdapter::new(
@@ -357,16 +370,23 @@ async fn full_and_cropped_images_keep_source_normalized_boxes() {
         "jev-req-full",
     );
     let full_result = adapter.evaluate_frame(&full, &image).await.unwrap();
+    assert_outcome(&full_result, DecisionOutcome::Present);
+    assert!(
+        full_result
+            .structured_output()
+            .unwrap()
+            .evidence_box()
+            .is_none()
+    );
     assert_eq!(
         bits(
             full_result
-                .structured_output()
+                .provenance()
                 .unwrap()
-                .evidence_box()
-                .unwrap()
+                .model_input_transform()
                 .bounds()
         ),
-        bits([0.0, 0.0, 0.5, 1.0])
+        bits(FrameRoiTransform::full_frame().bounds())
     );
 
     let crop = FrameRoiTransform::new([0.25, 0.25, 0.75, 0.75]).unwrap();
@@ -379,31 +399,32 @@ async fn full_and_cropped_images_keep_source_normalized_boxes() {
         "jev-req-crop",
     );
     let cropped_result = adapter.evaluate_frame(&cropped, &image).await.unwrap();
+    assert_outcome(&cropped_result, DecisionOutcome::Present);
     assert_eq!(
         bits(
             cropped_result
-                .structured_output()
+                .provenance()
                 .unwrap()
-                .evidence_box()
-                .unwrap()
+                .model_input_transform()
                 .bounds()
         ),
-        bits([0.25, 0.25, 0.5, 0.75])
+        bits(crop.bounds())
     );
 
     let sent = seen.0.lock().expect("seen").clone();
-    let full_json: Value = serde_json::from_slice(&sent[0]).unwrap();
-    let crop_json: Value = serde_json::from_slice(&sent[1]).unwrap();
-    assert!(full_json["model_input"].get("roi").is_none());
-    assert_eq!(
-        crop_json["model_input"]["roi"]["bounds"],
-        json!([0.25, 0.25, 0.75, 0.75])
-    );
+    let encoded = base64::engine::general_purpose::STANDARD.encode(image.data());
+    for captured in &sent {
+        let value: Value = serde_json::from_slice(&captured.body).unwrap();
+        assert!(value.get("roi").is_none());
+        assert!(value["state"].get("roi").is_none());
+        let reference = value["state"]["image"].as_str().unwrap();
+        assert_eq!(value["assets"][reference]["data_base64"], encoded);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cropped_edge_maps_a_text_label_onto_the_source_image() {
-    let answers = json!({"answers":[{"text":"present","model_box":{"bounds":[0.0,0.0,1.0,1.0]}}]});
+    let answers = noul_body("foreign_object_present", 1.0);
     let (url, _) = spawn(Reply::fixed(StatusCode::OK, &answers)).await;
     let limits = FrameDecisionEvaluatorLimits::pilot();
     let image = image_bytes(vec![1, 2, 3, 4], 640, 480);
@@ -425,9 +446,16 @@ async fn cropped_edge_maps_a_text_label_onto_the_source_image() {
     let result = adapter.evaluate_frame(&request, &image).await.unwrap();
     assert_eq!(result.outcome(), Some(DecisionOutcome::Present));
     let structured = result.structured_output().unwrap();
-    assert!(structured.noul_probability().is_none());
+    assert_noul_bits(&result, 1.0);
+    assert!(structured.evidence_box().is_none());
     assert_eq!(
-        bits(structured.evidence_box().unwrap().bounds()),
+        bits(
+            result
+                .provenance()
+                .unwrap()
+                .model_input_transform()
+                .bounds()
+        ),
         bits([0.5, 0.5, 1.0, 1.0])
     );
 }
@@ -447,7 +475,7 @@ async fn provider_failures_and_typed_limits_stay_on_the_evaluator() {
 
     let (timeout_url, _) = spawn(Reply::delayed(
         StatusCode::OK,
-        &json!({"answers":[{"text":"present"}]}),
+        &noul_body("pipette_tip_attached", 1.0),
         Duration::from_secs(2),
     ))
     .await;
@@ -630,6 +658,165 @@ async fn unsupported_predicate_does_not_call_the_generic_client() {
     assert_eq!(missing.as_str(), "invalid_evidence");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn loaded_semantic_config_uses_endpoint_model_and_resolved_key() {
+    let _env = EnvGuard::clear_typesafe();
+    let (url, seen) = spawn(Reply::fixed(
+        StatusCode::OK,
+        &noul_body("pipette_tip_attached", 1.0),
+    ))
+    .await;
+    let root = temp_config_dir("typed-jev-loaded");
+    let config_path = root.join("a2a-lab.json");
+    std::fs::write(&config_path, semantic_document(&url, None)).unwrap();
+    assert_missing_semantic_key(&config_path);
+
+    std::fs::write(
+        root.join("a2a-lab.secret.json"),
+        br#"{"typesafe":{"api_key":"loaded-secret-placeholder"}}"#,
+    )
+    .unwrap();
+    let limits = FrameDecisionEvaluatorLimits::pilot();
+    let image = image_bytes(vec![1, 2, 3, 4], 640, 480);
+    let crop = FrameRoiTransform::new([0.25, 0.25, 0.75, 0.75]).unwrap();
+    let request = loaded_request(crop, limits);
+    let adapter = loaded_adapter(&config_path, limits);
+    assert_loaded_result(&adapter, &request, &image, crop).await;
+    assert_system_one_call(&seen, 0, "Bearer loaded-secret-placeholder", &image);
+
+    std::fs::remove_file(root.join("a2a-lab.secret.json")).unwrap();
+    unsafe {
+        std::env::set_var("TYPED_JEV_FALLBACK_KEY", "semantic-fallback-placeholder");
+    }
+    std::fs::write(
+        &config_path,
+        semantic_document(&url, Some("TYPED_JEV_FALLBACK_KEY")),
+    )
+    .unwrap();
+    loaded_adapter(&config_path, limits)
+        .evaluate_frame(&request, &image)
+        .await
+        .unwrap();
+    assert_system_one_call(&seen, 1, "Bearer semantic-fallback-placeholder", &image);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn temp_config_dir(prefix: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    root
+}
+
+fn assert_missing_semantic_key(config_path: &std::path::Path) {
+    let missing_key = LoadedLabConfig::load(config_path).unwrap();
+    let missing = TypedLabPredicateJevAdapter::from_loaded(
+        &missing_key,
+        evaluator_config(),
+        FrameDecisionEvaluatorLimits::pilot(),
+        evaluated_at(),
+    )
+    .unwrap_err();
+    assert_eq!(missing.code(), "invalid");
+    assert!(!missing.to_string().contains("typed-adapter"));
+}
+
+fn loaded_request(
+    crop: FrameRoiTransform,
+    limits: FrameDecisionEvaluatorLimits,
+) -> FrameDecisionEvaluationRequest {
+    typed_request(
+        frame(b"loaded"),
+        LabPredicate::pipette_tip_attached_v1(),
+        pipette_subject(),
+        crop,
+        limits,
+        "jev-req-loaded",
+    )
+}
+
+fn loaded_adapter(
+    config_path: &std::path::Path,
+    limits: FrameDecisionEvaluatorLimits,
+) -> TypedLabPredicateJevAdapter {
+    let loaded = LoadedLabConfig::load(config_path).unwrap();
+    let adapter = TypedLabPredicateJevAdapter::from_loaded(
+        &loaded,
+        evaluator_config(),
+        limits,
+        evaluated_at(),
+    )
+    .unwrap();
+    assert_eq!(adapter.model(), "jev-1.14.0");
+    adapter
+}
+
+async fn assert_loaded_result(
+    adapter: &TypedLabPredicateJevAdapter,
+    request: &FrameDecisionEvaluationRequest,
+    image: &Image,
+    crop: FrameRoiTransform,
+) {
+    let ledger = FrameDecisionLedger::new();
+    let evaluation = adapter.evaluate_frame(request, image).await.unwrap();
+    assert!(ledger.history().is_empty());
+    assert_outcome(&evaluation, DecisionOutcome::Present);
+    assert_eq!(
+        bits(
+            evaluation
+                .provenance()
+                .unwrap()
+                .model_input_transform()
+                .bounds()
+        ),
+        bits(crop.bounds())
+    );
+}
+
+fn assert_system_one_call(seen: &Seen, index: usize, authorization: &str, image: &Image) {
+    let captured = seen.0.lock().expect("seen").clone();
+    assert_eq!(
+        captured[index].authorization.as_deref(),
+        Some(authorization)
+    );
+    let body: Value = serde_json::from_slice(&captured[index].body).unwrap();
+    assert!(body.get("roi").is_none());
+    assert_eq!(body["model"], "jev-1.14.0");
+    assert_eq!(
+        body["questions"]["pipette_tip_attached"]["instructions"],
+        "pipette tip attached"
+    );
+    assert_eq!(
+        body["assets"][body["state"]["image"].as_str().unwrap()]["data_base64"],
+        base64::engine::general_purpose::STANDARD.encode(image.data())
+    );
+}
+
+#[test]
+fn from_loaded_requires_semantic_decisions() {
+    let root = std::env::temp_dir().join(format!("typed-jev-missing-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let config_path = root.join("a2a-lab.json");
+    std::fs::write(&config_path, br#"{"schema_version":1}"#).unwrap();
+    let loaded = LoadedLabConfig::load(&config_path).unwrap();
+    let error = TypedLabPredicateJevAdapter::from_loaded(
+        &loaded,
+        evaluator_config(),
+        FrameDecisionEvaluatorLimits::pilot(),
+        evaluated_at(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "invalid");
+    assert!(error.to_string().contains("semantic_indexing.decisions"));
+    let _ = std::fs::remove_dir_all(root);
+}
+
 fn assert_appended_record(
     stored: &FrameDecisionRecord,
     request: &FrameDecisionEvaluationRequest,
@@ -684,6 +871,17 @@ fn assert_provenance(
     assert_eq!(
         provenance.jev_response_digest(),
         evaluation.jev_response_digest().unwrap()
+    );
+}
+
+fn assert_noul_bits(evaluation: &KeyedFrameDecisionEvaluation, expected: f32) {
+    assert_eq!(
+        evaluation
+            .structured_output()
+            .unwrap()
+            .noul_probability()
+            .map(f32::to_bits),
+        Some(expected.to_bits())
     );
 }
 
@@ -854,15 +1052,29 @@ fn custom_limits(
     .unwrap()
 }
 
-fn client(url: &str, limits: FrameDecisionEvaluatorLimits) -> ImageDecisionHttpClient {
-    ImageDecisionHttpClient::new(
+fn client(url: &str, limits: FrameDecisionEvaluatorLimits) -> TypeSafeSystemOneClient {
+    TypeSafeSystemOneClient::new(
         url,
+        "typed-adapter-test-key",
         TypedLabPredicateJevAdapter::http_limits(limits).unwrap(),
     )
     .unwrap()
 }
 
-fn idle_client(limits: FrameDecisionEvaluatorLimits) -> ImageDecisionHttpClient {
+fn noul_body(name: &str, noul: f32) -> Value {
+    json!({"answers": {name: {"type": "noul", "noul": noul}}})
+}
+
+fn question_instructions(name: &str) -> &'static str {
+    match name {
+        "pipette_tip_attached" => "pipette tip attached",
+        "foreign_object_present" => "foreign object present",
+        "plate_misaligned" => "plate misaligned",
+        _ => panic!("unexpected question {name}"),
+    }
+}
+
+fn idle_client(limits: FrameDecisionEvaluatorLimits) -> TypeSafeSystemOneClient {
     client("http://127.0.0.1:9/decide", limits)
 }
 
@@ -914,7 +1126,14 @@ impl Reply {
     }
 }
 
-struct Seen(Mutex<Vec<Vec<u8>>>);
+#[derive(Clone)]
+struct Captured {
+    body: Vec<u8>,
+    authorization: Option<String>,
+    danger: Option<String>,
+}
+
+struct Seen(Mutex<Vec<Captured>>);
 
 #[derive(Clone)]
 struct AppState {
@@ -942,18 +1161,26 @@ async fn spawn(reply: Reply) -> (String, Arc<Seen>) {
     panic!("decision server did not accept connections");
 }
 
-async fn received(State(state): State<AppState>, body: Bytes) -> Response {
-    state.seen.0.lock().expect("seen").push(body.to_vec());
+async fn received(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Response {
+    state.seen.0.lock().expect("seen").push(Captured {
+        authorization: header_text(&headers, AUTHORIZATION.as_str()),
+        danger: header_text(&headers, "typesafe-danger-zone-images"),
+        body: body.to_vec(),
+    });
     match &state.reply {
         Reply::ByPredicate => {
             let value: Value = serde_json::from_slice(&body).unwrap_or_else(|_| json!({}));
-            let question = value["question"].as_str().unwrap_or("");
-            let answers = if question.contains(PREDICATE_PIPETTE_TIP_ATTACHED) {
-                json!({"answers":[{"text":"scored","probability":1.0,"model_box":{"bounds":[0.25,0.25,0.75,0.75]}}]})
-            } else if question.contains(PREDICATE_FOREIGN_OBJECT_PRESENT) {
-                json!({"answers":[{"text":"scored","probability":0.0}]})
+            let questions = value["questions"].as_object();
+            let answers = if questions.is_some_and(|map| map.contains_key("pipette_tip_attached")) {
+                noul_body("pipette_tip_attached", 1.0)
+            } else if questions.is_some_and(|map| map.contains_key("foreign_object_present")) {
+                noul_body("foreign_object_present", 0.0)
             } else {
-                json!({"answers":[{"text":"scored","probability":0.5}]})
+                noul_body("plate_misaligned", 0.5)
             };
             json_response(StatusCode::OK, serde_json::to_vec(&answers).unwrap())
         }
@@ -976,6 +1203,92 @@ async fn received(State(state): State<AppState>, body: Bytes) -> Response {
             }
         }
     }
+}
+
+fn semantic_document(endpoint: &str, credentials_env: Option<&str>) -> Vec<u8> {
+    let mut decisions = json!({
+        "endpoint": endpoint,
+        "model": "jev-1.14.0"
+    });
+    if let Some(name) = credentials_env {
+        decisions["credentials"] = json!({"env": name});
+    }
+    serde_json::to_vec(&json!({
+        "schema_version": 2,
+        "semantic_indexing": {
+            "decisions": decisions,
+            "limits": {
+                "worker": {
+                    "max_batch_items": 1,
+                    "max_concurrency": 1,
+                    "max_queue_backlog": 1,
+                    "max_retry_attempts": 1,
+                    "job_deadline": "30s",
+                    "retry_backoff": "5s"
+                },
+                "search": {
+                    "top_k": 1,
+                    "candidate_limit": 1,
+                    "max_neighbor_frames": 1,
+                    "query_window": "1h"
+                },
+                "storage": {
+                    "vector_index_path": "./semantic",
+                    "max_disk_bytes": 1024
+                },
+                "decisions": {
+                    "max_batch_items": 1,
+                    "max_concurrency": 1,
+                    "job_deadline": "45s",
+                    "coverage_policy": "on_demand"
+                }
+            }
+        }
+    }))
+    .unwrap()
+}
+
+struct EnvGuard {
+    previous_key: Option<String>,
+    previous_fallback: Option<String>,
+}
+
+impl EnvGuard {
+    fn clear_typesafe() -> Self {
+        let previous_key = std::env::var("TYPESAFE_API_KEY").ok();
+        let previous_fallback = std::env::var("TYPED_JEV_FALLBACK_KEY").ok();
+        unsafe {
+            std::env::remove_var("TYPESAFE_API_KEY");
+            std::env::remove_var("TYPED_JEV_FALLBACK_KEY");
+        }
+        Self {
+            previous_key,
+            previous_fallback,
+        }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        restore_env("TYPESAFE_API_KEY", self.previous_key.as_deref());
+        restore_env("TYPED_JEV_FALLBACK_KEY", self.previous_fallback.as_deref());
+    }
+}
+
+fn restore_env(name: &str, value: Option<&str>) {
+    unsafe {
+        match value {
+            Some(value) => std::env::set_var(name, value),
+            None => std::env::remove_var(name),
+        }
+    }
+}
+
+fn header_text(headers: &axum::http::HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
 }
 
 fn json_response(status: StatusCode, body: Vec<u8>) -> Response {

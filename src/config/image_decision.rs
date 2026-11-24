@@ -22,7 +22,7 @@ use crate::images::{
     ImageDecisionExecutor, ImageDecisionHttpClient, ImageDecisionHttpLimits,
     ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionProviderError,
     ImageDecisionRequest, ImageDecisionResult, ImageDecisionRoi, ImageTransportConfig,
-    ModelPinnedImageDecision, execute_generic_image_decision,
+    ModelPinnedImageDecision, PinnedTypeSafeDecision, execute_generic_image_decision,
 };
 use crate::{IMAGE_DECISION_DOWNSTREAM_DEPENDENCY, JEV_MAX_IMAGE_BYTES, JEV_MAX_REQUEST_BYTES};
 
@@ -399,18 +399,30 @@ impl ResolvedImageDecisionClient {
                 "agentcore image decisions are executed by the lab agent",
             ));
         };
-        let limits = ImageDecisionHttpLimits::new(
-            ImageTransportConfig::new(self.config.max_image_bytes())?,
-            usize::try_from(self.config.max_request_bytes()).unwrap_or(usize::MAX),
-            usize::try_from(self.config.max_response_bytes()).unwrap_or(usize::MAX),
-            self.config.timeout(),
-        )?;
-        let http = ImageDecisionHttpClient::new(endpoint, limits)?;
+        let http = ImageDecisionHttpClient::new(endpoint, http_limits(&self.config)?)?;
         Ok(Arc::new(ModelPinnedImageDecision::with_roi(
             http,
             model,
             self.config.roi(),
         )))
+    }
+
+    /// Authenticated System One executor pinned to this client's endpoint and model.
+    pub(crate) fn typesafe_executor(
+        &self,
+        api_key: &str,
+    ) -> Result<Arc<dyn ImageDecisionExecutor>, A2aLabError> {
+        let (Some(endpoint), Some(model)) = (self.config.endpoint(), self.config.model()) else {
+            return Err(A2aLabError::unavailable(
+                "agentcore image decisions are executed by the lab agent",
+            ));
+        };
+        Ok(Arc::new(PinnedTypeSafeDecision::new(
+            endpoint,
+            api_key,
+            model,
+            http_limits(&self.config)?,
+        )?))
     }
 
     /// Completes one generic decision and maps boxes onto the original image.
@@ -460,6 +472,15 @@ impl ResolvedImageDecisionClient {
         }
         Ok(result)
     }
+}
+
+fn http_limits(config: &ImageDecisionClientConfig) -> Result<ImageDecisionHttpLimits, A2aLabError> {
+    ImageDecisionHttpLimits::new(
+        ImageTransportConfig::new(config.max_image_bytes())?,
+        usize::try_from(config.max_request_bytes()).unwrap_or(usize::MAX),
+        usize::try_from(config.max_response_bytes()).unwrap_or(usize::MAX),
+        config.timeout(),
+    )
 }
 
 fn jev_image_cap() -> u64 {
@@ -692,11 +713,14 @@ fn parse_endpoint(text: &str) -> Result<String, A2aLabError> {
     if text.chars().any(char::is_whitespace) {
         return Err(malformed_endpoint());
     }
-    if text.starts_with("http://") || text.contains('@') || embeds_credential_query(text) {
+    if text.contains('@') || embeds_credential_query(text) {
         return Err(A2aLabError::invalid(
             FIELD_ENDPOINT,
             "endpoint must use https and must not embed credentials",
         ));
+    }
+    if text.starts_with("http://") {
+        return loopback_http_endpoint(text);
     }
     let Some(rest) = text.strip_prefix("https://") else {
         return Err(malformed_endpoint());
@@ -707,6 +731,35 @@ fn parse_endpoint(text: &str) -> Result<String, A2aLabError> {
     }
     validate_host_port(host_port)?;
     Ok(text.to_owned())
+}
+
+fn loopback_http_endpoint(text: &str) -> Result<String, A2aLabError> {
+    let Some(rest) = text.strip_prefix("http://") else {
+        return Err(malformed_endpoint());
+    };
+    let host_port = rest.split_once('/').map_or(rest, |(host, _)| host);
+    if host_port.is_empty() || !is_loopback_host(host_port) {
+        return Err(A2aLabError::invalid(
+            FIELD_ENDPOINT,
+            "endpoint must use https and must not embed credentials",
+        ));
+    }
+    validate_host_port(host_port)?;
+    Ok(text.to_owned())
+}
+
+fn is_loopback_host(host_port: &str) -> bool {
+    let host = if let Some(stripped) = host_port.strip_prefix('[') {
+        let Some((host, _)) = stripped.split_once(']') else {
+            return false;
+        };
+        host
+    } else {
+        host_port
+            .split_once(':')
+            .map_or(host_port, |(host, _)| host)
+    };
+    host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 fn embeds_credential_query(text: &str) -> bool {
