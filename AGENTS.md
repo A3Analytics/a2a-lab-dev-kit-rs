@@ -18,6 +18,19 @@ Everything runs through `mise`. The `backlog` binary is provided by mise and is 
 
 Add tools under `[tools]` in `mise.toml`; add tasks in `.mise/run.toml`.
 
+### Rust build targets
+
+- Reuse existing Cargo targets. Do not add a new build or test target unless the user explicitly requests one.
+- Add integration tests as modules in an existing suite listed in `Cargo.toml`. Keep `autotests = false` so each test file does not become a separate executable.
+- Use the existing `mise` tasks for routine Rust builds and tests. They use `--all-features` and share the default `target` directory. Keep feature-compatibility checks in their dedicated CI job.
+
+### Rust build cache
+
+- Keep routine builds in the shared `target` directory. Avoid per-task target directories and ad hoc changes to features, profiles, toolchains, or `RUSTFLAGS`. These can leave additional copies of compiled artifacts.
+- For focused verification, select the existing integration suite with `mise run test -- --test <suite> -E '<filter>'` so Cargo links only that integration target. Run the full quality gate for final verification.
+- Before a cold full build or after unexpectedly large growth, check `du -sh target` and `df -h .`. If `target` exceeds 50 GB or the disk has less than 50 GB free, diagnose the growth before starting another full build.
+- When cleaning, check that builds and tests are idle. Preview host debug cleanup with `mise exec -- cargo clean --dry-run --profile dev --target-dir target`. Keep cleanup scoped to rebuildable output so reports, fixtures, and tool checkouts under `target` are preserved.
+
 ## Cursor skills
 
 Repo-specific agent skills live in `.cursor/skills/`:
