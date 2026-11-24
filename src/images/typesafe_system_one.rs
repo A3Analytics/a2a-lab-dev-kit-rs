@@ -41,6 +41,7 @@ pub struct TypeSafeSystemOneClient {
     endpoint: Url,
     authorization: HeaderValue,
     limits: ImageDecisionHttpLimits,
+    preamble: Option<String>,
     http: reqwest::Client,
 }
 
@@ -51,6 +52,7 @@ impl fmt::Debug for TypeSafeSystemOneClient {
             .field("endpoint", &self.endpoint.as_str())
             .field("api_key", &"<redacted>")
             .field("limits", &self.limits)
+            .field("preamble", &self.preamble)
             .finish_non_exhaustive()
     }
 }
@@ -74,8 +76,16 @@ impl TypeSafeSystemOneClient {
             endpoint,
             authorization,
             limits,
+            preamble: None,
             http,
         })
+    }
+
+    /// Stores the exact preamble. Blank text is kept and does not change questions.
+    #[must_use]
+    pub fn with_preamble(mut self, preamble: Option<String>) -> Self {
+        self.preamble = preamble;
+        self
     }
 
     /// Absolute System One endpoint.
@@ -101,7 +111,10 @@ impl TypeSafeSystemOneClient {
             return Err(invalid_answer("questions are invalid"));
         }
         let model = validated_model(model)?;
-        let answers = self.exchange(&model, image, questions, false).await?;
+        let outbound = super::preamble::outbound_questions(self.preamble.as_deref(), questions)?;
+        let answers = self
+            .exchange(&model, image, outbound.as_ref(), false)
+            .await?;
         let mut primitives = BTreeMap::new();
         for (name, question) in questions {
             let Some(answer) = answers.get(name) else {
@@ -130,7 +143,12 @@ impl TypeSafeSystemOneClient {
     ) -> Result<BTreeMap<String, ImageDecisionAnswer>, ImageDecisionProviderError> {
         let wire = box_questions(questions)?;
         let model = validated_model(model)?;
-        let answers = self.exchange(&model, image, &wire, true).await?;
+        let answers = if super::preamble::has_preamble(self.preamble.as_deref()) {
+            let composed = composed_boxes(&wire, self.preamble.as_deref())?;
+            self.exchange(&model, image, &composed, true).await?
+        } else {
+            self.exchange(&model, image, &wire, true).await?
+        };
         boxes_from_answers(questions, &answers)
     }
 
@@ -178,9 +196,11 @@ impl PinnedTypeSafeDecision {
         api_key: &str,
         model: &str,
         limits: ImageDecisionHttpLimits,
+        preamble: Option<String>,
     ) -> Result<Self, A2aLabError> {
         Ok(Self {
-            client: TypeSafeSystemOneClient::new(endpoint, api_key, limits)?,
+            client: TypeSafeSystemOneClient::new(endpoint, api_key, limits)?
+                .with_preamble(preamble),
             model: model.to_owned(),
         })
     }
@@ -492,6 +512,34 @@ struct BoxQuestion<'a> {
     #[serde(rename = "type")]
     kind: &'static str,
     instructions: &'a str,
+}
+
+#[derive(Serialize)]
+struct OwnedBoxQuestion {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    instructions: String,
+}
+
+fn composed_boxes(
+    questions: &BTreeMap<&str, BoxQuestion<'_>>,
+    preamble: Option<&str>,
+) -> Result<BTreeMap<String, OwnedBoxQuestion>, ImageDecisionProviderError> {
+    let mut composed = BTreeMap::new();
+    for (name, question) in questions {
+        composed.insert(
+            (*name).to_owned(),
+            OwnedBoxQuestion {
+                kind: "box",
+                instructions: super::preamble::outbound_instructions(
+                    preamble,
+                    question.instructions,
+                )?
+                .into_owned(),
+            },
+        );
+    }
+    Ok(composed)
 }
 
 #[derive(Deserialize)]

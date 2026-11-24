@@ -65,6 +65,8 @@ pub struct A2aServer {
     capture_settings: Option<super::capture_settings::VideoCaptureSettingsHandle>,
     #[cfg(feature = "web-ui")]
     lab_config_store: crate::config::LabConfigStore,
+    #[cfg(feature = "web-ui")]
+    default_chat_preamble: Option<String>,
 }
 
 impl A2aServer {
@@ -89,6 +91,8 @@ impl A2aServer {
             capture_settings: None,
             #[cfg(feature = "web-ui")]
             lab_config_store: crate::config::LabConfigStore::unconfigured(),
+            #[cfg(feature = "web-ui")]
+            default_chat_preamble: None,
         }
     }
 
@@ -192,6 +196,14 @@ impl A2aServer {
     #[must_use]
     pub fn with_lab_config_store(mut self, store: crate::config::LabConfigStore) -> Self {
         self.lab_config_store = store;
+        self
+    }
+
+    /// Prefills an omitted `chat.preamble` and supplies Reset to default.
+    #[cfg(feature = "web-ui")]
+    #[must_use]
+    pub fn with_default_chat_preamble(mut self, preamble: impl Into<String>) -> Self {
+        self.default_chat_preamble = Some(preamble.into());
         self
     }
 
@@ -344,6 +356,8 @@ fn router(
     let capture_settings = server.capture_settings.clone();
     #[cfg(feature = "web-ui")]
     let lab_config_store = server.lab_config_store.clone();
+    #[cfg(feature = "web-ui")]
+    let default_chat_preamble = server.default_chat_preamble.clone();
     let app = Router::new()
         .merge(a2a_server::agent_card::agent_card_router(Arc::new(
             StaticAgentCard::new(card),
@@ -357,6 +371,7 @@ fn router(
             super::web_ui::router().merge(super::capture_settings::router(
                 lab_config_store,
                 capture_settings,
+                default_chat_preamble,
             )),
         )
     } else {

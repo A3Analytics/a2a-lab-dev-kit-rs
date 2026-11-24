@@ -5,7 +5,8 @@ use std::sync::Mutex;
 
 use a2a_lab_dev_kit::videos::{CaptureFormat, CaptureFormatPreference};
 use a2a_lab_dev_kit::{
-    A2A_LAB_CONFIG_SCHEMA_VERSION, A2aLabConfig, ChatProvider, LoadedLabConfig, VideoInputFormat,
+    A2A_LAB_CONFIG_SCHEMA_VERSION, A2aLabConfig, A2aLabError, ChatProvider, LoadedLabConfig,
+    VideoInputFormat,
 };
 
 static WORKING_DIRECTORY: Mutex<()> = Mutex::new(());
@@ -306,6 +307,60 @@ fn dvr_save_interval_accepts_subsecond_durations() {
 }
 
 #[test]
+fn load_preserves_exact_preamble_and_omitted_preamble() {
+    let root = std::env::temp_dir().join(format!(
+        "a2a-lab-preamble-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let omitted = root.join("omitted.json");
+    std::fs::write(
+        &omitted,
+        r#"{"schema_version":1,"chat":{"provider":"openai","model":"kept"}}"#,
+    )
+    .unwrap();
+    let omitted = LoadedLabConfig::load(&omitted).unwrap();
+    let chat = omitted.config.chat.unwrap();
+    assert!(chat.preamble.is_none());
+    assert_eq!(chat.provider, Some(ChatProvider::Openai));
+    assert_eq!(chat.model.as_deref(), Some("kept"));
+
+    let blank = root.join("blank.json");
+    std::fs::write(
+        &blank,
+        r#"{"schema_version":1,"chat":{"provider":"anthropic","model":"kept","preamble":""}}"#,
+    )
+    .unwrap();
+    let blank = LoadedLabConfig::load(&blank).unwrap();
+    let chat = blank.config.chat.unwrap();
+    assert_eq!(chat.preamble.as_deref(), Some(""));
+    assert_eq!(chat.provider, Some(ChatProvider::Anthropic));
+    assert_eq!(chat.model.as_deref(), Some("kept"));
+
+    let base = root.join("a2a-lab.json");
+    std::fs::write(
+        &base,
+        r#"{"schema_version":1,"chat":{"provider":"openai","model":"base-model","preamble":" \t\n"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("a2a-lab.secret.json"),
+        r#"{"chat":{"model":"secret-model"}}"#,
+    )
+    .unwrap();
+    let loaded = LoadedLabConfig::load(&base).unwrap();
+    let chat = loaded.config.chat.unwrap();
+    assert_eq!(chat.preamble.as_deref(), Some(" \t\n"));
+    assert_eq!(chat.provider, Some(ChatProvider::Openai));
+    assert_eq!(chat.model.as_deref(), Some("secret-model"));
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn rejects_invalid_dvr_save_interval_without_echoing_values() {
     for text in ["", "0ms", "-1s", "badspanzz"] {
         let document = format!(
@@ -314,5 +369,41 @@ fn rejects_invalid_dvr_save_interval_without_echoing_values() {
         let error = A2aLabConfig::parse(&document).unwrap_err();
         assert!(!error.to_string().contains("badspanzz"));
         assert_eq!(error.code(), "invalid");
+    }
+}
+
+#[test]
+fn semantic_decision_preamble_keeps_any_string_and_rejects_non_strings() {
+    let limits = r#""worker":{"max_batch_items":1,"max_concurrency":1,"max_queue_backlog":1,"max_retry_attempts":1,"job_deadline":"30s","retry_backoff":"5s"},"search":{"top_k":1,"candidate_limit":1,"max_neighbor_frames":1,"query_window":"1h"},"roi":{"min_edge_pixels":280,"max_edge_pixels":1568,"max_rois_per_frame":1},"storage":{"vector_index_path":"./semantic","max_disk_bytes":1024},"decisions":{"max_batch_items":1,"max_concurrency":1,"job_deadline":"45s","coverage_policy":"on_demand"}"#;
+    let document = |decisions: &str| {
+        format!(
+            r#"{{"schema_version":2,"semantic_indexing":{{"embeddings":{{"provider":"p","model":"m","space":{{"dimensions":8,"normalization":"l2_unit","metric":"cosine","generation":1}}}},"decisions":{decisions},"limits":{{{limits}}}}}}}"#
+        )
+    };
+    let omitted = A2aLabConfig::parse(&document("{}")).unwrap();
+    let omitted = omitted.semantic_indexing.unwrap().decisions;
+    assert!(omitted.preamble().is_none());
+    assert!(omitted.clone().preamble().is_none());
+    for text in ["", " ", " \t\n", "  keep\n"] {
+        let decisions = format!(r#"{{"preamble":{}}}"#, serde_json::to_string(text).unwrap());
+        let parsed = A2aLabConfig::parse(&document(&decisions)).unwrap();
+        let decisions = parsed.semantic_indexing.unwrap().decisions;
+        assert_eq!(decisions.preamble(), Some(text));
+        assert_eq!(decisions.clone().preamble(), Some(text));
+    }
+    for decisions in [
+        r#"{"preamble":1}"#,
+        r#"{"preamble":null}"#,
+        r#"{"preamble":true}"#,
+        r#"{"preamble":["a"]}"#,
+        r#"{"preamble":{"text":"a"}}"#,
+    ] {
+        match A2aLabConfig::parse(&document(decisions)).unwrap_err() {
+            A2aLabError::Invalid { field, message } => {
+                assert_eq!(field, "semantic_indexing.decisions.preamble");
+                assert_eq!(message, "must be a string");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 }

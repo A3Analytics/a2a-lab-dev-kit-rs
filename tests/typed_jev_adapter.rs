@@ -13,10 +13,11 @@ use a2a_lab_dev_kit::{
     FrameDecisionRecord, FrameRoiTransform, IMAGE_DECISION_DOWNSTREAM_DEPENDENCY,
     IMAGE_DECISION_EXCLUDED_SCOPE, IMAGE_DECISION_TRANSPORTS, Image, ImageDecisionHttpClient,
     ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionRequest, ImageDescriptor,
-    ImageId, ImageSourceId, JEV_PRODUCER_ID, JevEvaluationId, JsonObject,
-    KeyedFrameDecisionEvaluation, LabPredicate, LoadedLabConfig, OperatorDecisionCriteria,
-    OperatorReferenceImage, PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED,
-    PREDICATE_PLATE_MISALIGNED, PipetteChannelSubject, PlateAlignmentReference, PlateSlotSubject,
+    ImageId, ImageSourceId, JEV_MAX_EDGE_PIXELS, JEV_MAX_IMAGE_BYTES, JEV_MIN_EDGE_PIXELS,
+    JEV_PRODUCER_ID, JevEvaluationId, JsonObject, KeyedFrameDecisionEvaluation, LabPredicate,
+    LoadedLabConfig, OperatorDecisionCriteria, OperatorReferenceImage,
+    PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED, PREDICATE_PLATE_MISALIGNED,
+    PipetteChannelSubject, PlateAlignmentReference, PlateSlotSubject,
     RejectedDecisionEvaluatorBackend, SavedFrameRef, Sha256Digest, TypeSafeSystemOneClient,
     TypedLabPredicateJevAdapter, UtcTimestamp, VideoSourceId, bind_local,
     execute_generic_image_decision, interpret_structured_outcome,
@@ -701,6 +702,115 @@ async fn loaded_semantic_config_uses_endpoint_model_and_resolved_key() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)]
+async fn semantic_decision_preamble_is_prepended_before_provider_limits() {
+    let _env = EnvGuard::clear_typesafe();
+    let limits = FrameDecisionEvaluatorLimits::pilot();
+    let image = image_bytes(vec![1, 2, 3, 4], 640, 480);
+    let request = loaded_request(FrameRoiTransform::full_frame(), limits);
+    let (url, seen) = spawn(Reply::fixed(
+        StatusCode::OK,
+        &noul_body("pipette_tip_attached", 1.0),
+    ))
+    .await;
+
+    let blank_root = write_loaded_config(&url, Some(" \t\n"));
+    loaded_adapter(&blank_root.join("a2a-lab.json"), limits)
+        .evaluate_frame(&request, &image)
+        .await
+        .unwrap();
+    let blank_body = seen.0.lock().expect("seen").clone();
+    let blank: Value = serde_json::from_slice(&blank_body[0].body).unwrap();
+    assert_eq!(
+        blank["questions"]["pipette_tip_attached"]["instructions"],
+        "pipette tip attached"
+    );
+
+    let guided_root = write_loaded_config(&url, Some("  Guide"));
+    loaded_adapter(&guided_root.join("a2a-lab.json"), limits)
+        .evaluate_frame(&request, &image)
+        .await
+        .unwrap();
+    let guided = seen.0.lock().expect("seen").clone();
+    let guided: Value = serde_json::from_slice(&guided[1].body).unwrap();
+    assert_eq!(
+        guided["questions"]["pipette_tip_attached"]["instructions"],
+        "  Guide\npipette tip attached"
+    );
+    assert_eq!(guided["questions"]["pipette_tip_attached"]["type"], "noul");
+    let guided_len = guided_body_len(&seen, 1);
+
+    let long_root = write_loaded_config(
+        &url,
+        Some(&"x".repeat(a2a_lab_dev_kit::MAX_IMAGE_DECISION_QUESTION_CHARS)),
+    );
+    let error = loaded_adapter(&long_root.join("a2a-lab.json"), limits)
+        .evaluate_frame(&request, &image)
+        .await
+        .unwrap_err();
+    assert_eq!(error.as_str(), "limit_exceeded");
+    assert!(error.to_string().contains("question"));
+    assert_eq!(seen.0.lock().expect("seen").len(), 2);
+
+    let tight = FrameDecisionEvaluatorLimits::new(
+        8,
+        6,
+        4,
+        4,
+        JEV_MIN_EDGE_PIXELS,
+        JEV_MAX_EDGE_PIXELS,
+        JEV_MAX_IMAGE_BYTES,
+        guided_len - 1,
+        256 * 1024,
+        Duration::from_secs(45),
+    )
+    .unwrap();
+    let saved = frame(b"loaded-tight");
+    let tight_request = FrameDecisionEvaluationRequest::new(
+        tight,
+        JevEvaluationId::new("jev-req-preamble-tight").unwrap(),
+        saved.clone(),
+        LabPredicate::pipette_tip_attached_v1(),
+        pipette_subject(),
+        evidence_for(&saved),
+        criteria(),
+        FrameRoiTransform::full_frame(),
+        1,
+        640,
+    )
+    .unwrap();
+    let error = loaded_adapter(&guided_root.join("a2a-lab.json"), tight)
+        .evaluate_frame(&tight_request, &image)
+        .await
+        .unwrap_err();
+    assert_eq!(error.as_str(), "limit_exceeded");
+    assert!(error.to_string().contains("max_request_bytes"));
+    assert_eq!(seen.0.lock().expect("seen").len(), 2);
+    let _ = std::fs::remove_dir_all(blank_root);
+    let _ = std::fs::remove_dir_all(guided_root);
+    let _ = std::fs::remove_dir_all(long_root);
+}
+
+fn write_loaded_config(url: &str, preamble: Option<&str>) -> std::path::PathBuf {
+    let root = temp_config_dir("typed-jev-preamble");
+    std::fs::write(
+        root.join("a2a-lab.json"),
+        semantic_document_with_preamble(url, None, preamble),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("a2a-lab.secret.json"),
+        br#"{"typesafe":{"api_key":"loaded-secret-placeholder"}}"#,
+    )
+    .unwrap();
+    root
+}
+
+fn guided_body_len(seen: &Arc<Seen>, index: usize) -> usize {
+    seen.0.lock().expect("seen")[index].body.len()
+}
+
 fn temp_config_dir(prefix: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!(
         "{prefix}-{}-{}",
@@ -1206,12 +1316,23 @@ async fn received(
 }
 
 fn semantic_document(endpoint: &str, credentials_env: Option<&str>) -> Vec<u8> {
+    semantic_document_with_preamble(endpoint, credentials_env, None)
+}
+
+fn semantic_document_with_preamble(
+    endpoint: &str,
+    credentials_env: Option<&str>,
+    preamble: Option<&str>,
+) -> Vec<u8> {
     let mut decisions = json!({
         "endpoint": endpoint,
         "model": "jev-1.14.0"
     });
     if let Some(name) = credentials_env {
         decisions["credentials"] = json!({"env": name});
+    }
+    if let Some(preamble) = preamble {
+        decisions["preamble"] = json!(preamble);
     }
     serde_json::to_vec(&json!({
         "schema_version": 2,

@@ -115,6 +115,7 @@ pub struct ImageDecisionClientConfig {
     max_request_bytes: u64,
     max_response_bytes: u64,
     roi_bits: Option<[u32; 4]>,
+    preamble: Option<String>,
 }
 
 impl ImageDecisionClientConfig {
@@ -160,6 +161,7 @@ impl ImageDecisionClientConfig {
             None => None,
             Some(value) => Some(parse_roi(value)?.bounds().map(f32::to_bits)),
         };
+        let preamble = super::parse_preamble("image_decision.preamble", map.get("preamble"))?;
         Ok(Self {
             backend,
             timeout_secs,
@@ -167,6 +169,7 @@ impl ImageDecisionClientConfig {
             max_request_bytes,
             max_response_bytes,
             roi_bits,
+            preamble,
         })
     }
 
@@ -260,6 +263,12 @@ impl ImageDecisionClientConfig {
         self.roi_bits.is_none()
     }
 
+    /// Exact preamble text. Absent means omitted. Blank and whitespace are kept.
+    #[must_use]
+    pub fn preamble(&self) -> Option<&str> {
+        self.preamble.as_deref()
+    }
+
     /// Crop applied when the client builds model input. Omission selects the full image.
     #[must_use]
     pub fn effective_roi(&self) -> ImageDecisionRoi {
@@ -280,29 +289,7 @@ impl ImageDecisionClientConfig {
 
 impl Serialize for ImageDecisionClientConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut length = match &self.backend {
-            ImageDecisionBackend::Http { .. } => 2,
-            ImageDecisionBackend::AgentCore(_) => 4,
-        };
-        if self.timeout_secs != DEFAULT_IMAGE_DECISION_TIMEOUT_SECS {
-            length += 1;
-        }
-        if self.max_image_bytes != jev_image_cap() {
-            length += 1;
-        }
-        if self.max_request_bytes != jev_request_cap() {
-            length += 1;
-        }
-        if self.max_response_bytes != MAX_IMAGE_DECISION_RESPONSE_BYTES {
-            length += 1;
-        }
-        if self.credentials_env().is_some() {
-            length += 1;
-        }
-        if self.roi_bits.is_some() {
-            length += 1;
-        }
-        let mut map = serializer.serialize_map(Some(length))?;
+        let mut map = serializer.serialize_map(Some(self.serialized_field_count()))?;
         match &self.backend {
             ImageDecisionBackend::Http {
                 endpoint,
@@ -337,7 +324,27 @@ impl Serialize for ImageDecisionClientConfig {
         if let Some(roi) = self.roi() {
             map.serialize_entry("roi", &roi)?;
         }
+        if let Some(preamble) = &self.preamble {
+            map.serialize_entry("preamble", preamble)?;
+        }
         map.end()
+    }
+}
+
+impl ImageDecisionClientConfig {
+    fn serialized_field_count(&self) -> usize {
+        let mut length = match &self.backend {
+            ImageDecisionBackend::Http { .. } => 2,
+            ImageDecisionBackend::AgentCore(_) => 4,
+        };
+        length += usize::from(self.timeout_secs != DEFAULT_IMAGE_DECISION_TIMEOUT_SECS);
+        length += usize::from(self.max_image_bytes != jev_image_cap());
+        length += usize::from(self.max_request_bytes != jev_request_cap());
+        length += usize::from(self.max_response_bytes != MAX_IMAGE_DECISION_RESPONSE_BYTES);
+        length += usize::from(self.credentials_env().is_some());
+        length += usize::from(self.roi_bits.is_some());
+        length += usize::from(self.preamble.is_some());
+        length
     }
 }
 
@@ -399,7 +406,8 @@ impl ResolvedImageDecisionClient {
                 "agentcore image decisions are executed by the lab agent",
             ));
         };
-        let http = ImageDecisionHttpClient::new(endpoint, http_limits(&self.config)?)?;
+        let http = ImageDecisionHttpClient::new(endpoint, http_limits(&self.config)?)?
+            .with_preamble(self.config.preamble.clone());
         Ok(Arc::new(ModelPinnedImageDecision::with_roi(
             http,
             model,
@@ -422,6 +430,7 @@ impl ResolvedImageDecisionClient {
             api_key,
             model,
             http_limits(&self.config)?,
+            self.config.preamble.clone(),
         )?))
     }
 
@@ -528,6 +537,7 @@ fn reject_unknown(map: &Map<String, Value>) -> Result<(), A2aLabError> {
         "max_response_bytes",
         "credentials",
         "roi",
+        "preamble",
     ];
     for key in map.keys() {
         if !ALLOWED.contains(&key.as_str()) {

@@ -236,6 +236,7 @@ pub struct SemanticDecisionsConfig {
     endpoint: String,
     model: String,
     credentials: Option<CredentialReference>,
+    preamble: Option<String>,
 }
 
 impl SemanticDecisionsConfig {
@@ -261,6 +262,12 @@ impl SemanticDecisionsConfig {
     #[must_use]
     pub fn credentials(&self) -> Option<&CredentialReference> {
         self.credentials.as_ref()
+    }
+
+    /// Exact preamble text. Absent means omitted. Blank and whitespace are kept.
+    #[must_use]
+    pub fn preamble(&self) -> Option<&str> {
+        self.preamble.as_deref()
     }
 }
 
@@ -878,7 +885,7 @@ fn parse_decisions(value: Option<&Value>) -> Result<SemanticDecisionsConfig, A2a
     reject_unknown_keys(
         map,
         "semantic_indexing.decisions",
-        &["provider", "endpoint", "model", "credentials"],
+        &["provider", "endpoint", "model", "credentials", "preamble"],
     )?;
     let provider = match map.get("provider") {
         Some(value) => {
@@ -900,11 +907,14 @@ fn parse_decisions(value: Option<&Value>) -> Result<SemanticDecisionsConfig, A2a
         "semantic_indexing.decisions.credentials",
         map.get("credentials"),
     )?;
+    let preamble =
+        super::parse_preamble("semantic_indexing.decisions.preamble", map.get("preamble"))?;
     Ok(SemanticDecisionsConfig {
         provider,
         endpoint,
         model,
         credentials,
+        preamble,
     })
 }
 
@@ -914,6 +924,7 @@ fn default_decisions() -> SemanticDecisionsConfig {
         endpoint: DEFAULT_JEV_API_ENDPOINT.to_owned(),
         model: DEFAULT_JEV_MODEL_REVISION.to_owned(),
         credentials: None,
+        preamble: None,
     }
 }
 

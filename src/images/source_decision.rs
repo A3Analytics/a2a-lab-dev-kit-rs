@@ -89,6 +89,33 @@ impl TryFrom<ImageDecisionQuestionRaw> for ImageDecisionQuestion {
     }
 }
 
+impl ImageDecisionQuestion {
+    pub(crate) fn instructions(&self) -> &str {
+        match self {
+            Self::Choice { instructions, .. }
+            | Self::Score { instructions, .. }
+            | Self::Noul { instructions, .. } => instructions,
+        }
+    }
+
+    pub(crate) fn with_instructions(&self, instructions: String) -> Self {
+        match self {
+            Self::Choice { criteria, .. } => Self::Choice {
+                instructions,
+                criteria: criteria.clone(),
+            },
+            Self::Score { criteria, .. } => Self::Score {
+                instructions,
+                criteria: criteria.clone(),
+            },
+            Self::Noul { criteria, .. } => Self::Noul {
+                instructions,
+                criteria: criteria.clone(),
+            },
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for ImageDecisionQuestion {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         ImageDecisionQuestionRaw::deserialize(deserializer)?

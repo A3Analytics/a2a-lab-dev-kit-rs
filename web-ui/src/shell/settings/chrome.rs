@@ -132,6 +132,38 @@ pub fn TextField(
 }
 
 #[component]
+pub fn TextAreaField(
+    id: String,
+    label: String,
+    help: String,
+    error: String,
+    restart: bool,
+    locked: bool,
+    value: String,
+    oninput: EventHandler<String>,
+) -> Element {
+    let described = described_by(&id, &error);
+    let invalid = !error.is_empty();
+    rsx! {
+        div { class: "settings-field",
+            FieldLabel { id: id.clone(), label, restart, live: false, reindex: false }
+            textarea {
+                id: "{id}",
+                rows: "4",
+                autocomplete: "off",
+                spellcheck: false,
+                value: "{value}",
+                readonly: locked,
+                "aria-invalid": if invalid { "true" } else { "false" },
+                aria_describedby: "{described}",
+                oninput: move |event| oninput.call(event.value()),
+            }
+            FieldCopy { id: id.clone(), help, error }
+        }
+    }
+}
+
+#[component]
 pub fn SelectField(
     id: String,
     label: String,

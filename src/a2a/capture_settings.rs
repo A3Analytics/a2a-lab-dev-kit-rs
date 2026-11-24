@@ -70,10 +70,15 @@ struct SettingsState {
     store: LabConfigStore,
     settings: Option<VideoCaptureSettingsHandle>,
     baseline: Value,
+    default_chat_preamble: Option<String>,
 }
 
 /// Registers `GET` and `PATCH` handlers for [`CAPTURE_SETTINGS_PATH`].
-pub fn router(store: LabConfigStore, settings: Option<VideoCaptureSettingsHandle>) -> Router {
+pub fn router(
+    store: LabConfigStore,
+    settings: Option<VideoCaptureSettingsHandle>,
+    default_chat_preamble: Option<String>,
+) -> Router {
     let baseline = store
         .snapshot()
         .map_or_else(|_| Value::Object(Map::new()), |snapshot| snapshot.document);
@@ -87,6 +92,7 @@ pub fn router(store: LabConfigStore, settings: Option<VideoCaptureSettingsHandle
             store,
             settings,
             baseline,
+            default_chat_preamble,
         })
 }
 
@@ -126,6 +132,7 @@ async fn read_settings(State(state): State<SettingsState>) -> Response {
             &state.baseline,
             &snapshot,
             &live_view(&state),
+            state.default_chat_preamble.as_deref(),
         ))
         .into_response(),
         Err(error) => store_error(&error),
@@ -162,6 +169,7 @@ async fn patch_settings(State(state): State<SettingsState>, Json(body): Json<Val
                 &state.baseline,
                 &snapshot,
                 &live_view(&state),
+                state.default_chat_preamble.as_deref(),
             ))
             .into_response()
         }
@@ -199,19 +207,24 @@ fn settings_payload(
     baseline: &Value,
     snapshot: &LabConfigSnapshot,
     live: &VideoCaptureSettingsView,
+    default_chat_preamble: Option<&str>,
 ) -> Value {
     let mut document = snapshot.document.clone();
     strip_typesafe_secret(&mut document);
     keep_credential_env_names(&mut document);
     let (pending_restart, pending_reindex) = pending_restart_and_reindex(baseline, &document);
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "document": document,
         "revision": snapshot.revision,
         "persistence": snapshot.persistence.as_str(),
         "live": live,
         "pending_restart": pending_restart,
         "pending_reindex": pending_reindex,
-    })
+    });
+    if let Some(preamble) = default_chat_preamble.filter(|text| !text.is_empty()) {
+        payload["defaults"] = serde_json::json!({ "chat_preamble": preamble });
+    }
+    payload
 }
 
 fn keep_credential_env_names(value: &mut Value) {
@@ -284,7 +297,18 @@ mod tests {
             loaded: None,
         };
         let live = VideoCaptureSettings::from_video_config(None).view();
-        let payload = settings_payload(&Value::Object(Map::new()), &snapshot, &live);
+        let payload = settings_payload(&Value::Object(Map::new()), &snapshot, &live, None);
+        assert!(payload.get("defaults").is_none());
+        let with_default = settings_payload(
+            &Value::Object(Map::new()),
+            &snapshot,
+            &live,
+            Some("Keep the built-in text."),
+        );
+        assert_eq!(
+            with_default["defaults"]["chat_preamble"],
+            "Keep the built-in text."
+        );
         let encoded = payload.to_string();
         assert!(!encoded.contains(secret));
         assert!(payload["document"].get("typesafe").is_none());

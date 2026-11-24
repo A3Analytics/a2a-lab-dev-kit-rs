@@ -118,6 +118,53 @@ fn lab_file_round_trips_the_public_client_shape() {
     assert_eq!(again.credentials_env(), Some("JEV_API_TOKEN"));
     assert_bounds(again.roi().unwrap().bounds(), [0.25, 0.25, 0.75, 0.75]);
     assert!(!again.omits_roi());
+    assert!(again.preamble().is_none());
+    assert!(encoded.get("preamble").is_none());
+}
+
+#[test]
+fn preamble_keeps_any_string_and_round_trips_without_trimming() {
+    let base = json!({
+        "endpoint": "https://jev.example/v1/decide",
+        "model": "jev-1.14.0"
+    });
+    let omitted = A2aLabConfig::parse(&document(&base)).unwrap();
+    let omitted_client = omitted.image_decision.unwrap();
+    assert!(omitted_client.preamble().is_none());
+    assert!(omitted_client.clone().preamble().is_none());
+    assert!(
+        serde_json::to_value(&omitted_client)
+            .unwrap()
+            .get("preamble")
+            .is_none()
+    );
+
+    for text in ["", " ", " \t\n", "  keep\n"] {
+        let mut client = base.clone();
+        client["preamble"] = json!(text);
+        let parsed = A2aLabConfig::parse(&document(&client)).unwrap();
+        let parsed = parsed.image_decision.unwrap();
+        assert_eq!(parsed.preamble(), Some(text));
+        assert_eq!(parsed.clone().preamble(), Some(text));
+        let encoded = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(encoded["preamble"], text);
+        assert_eq!(encoded["endpoint"], "https://jev.example/v1/decide");
+        assert_eq!(encoded["model"], "jev-1.14.0");
+        let restored: ImageDecisionClientConfig = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.preamble(), Some(text));
+    }
+
+    for body in [
+        json!({"endpoint": "https://jev.example/v1/decide", "model": "jev-1.14.0", "preamble": 1}),
+        json!({"endpoint": "https://jev.example/v1/decide", "model": "jev-1.14.0", "preamble": null}),
+        json!({"endpoint": "https://jev.example/v1/decide", "model": "jev-1.14.0", "preamble": true}),
+        json!({"endpoint": "https://jev.example/v1/decide", "model": "jev-1.14.0", "preamble": ["a"]}),
+        json!({"endpoint": "https://jev.example/v1/decide", "model": "jev-1.14.0", "preamble": {"text": "a"}}),
+    ] {
+        let (field, message) = invalid(&document(&body));
+        assert_eq!(field, "image_decision.preamble");
+        assert_eq!(message, "must be a string");
+    }
 }
 
 #[test]

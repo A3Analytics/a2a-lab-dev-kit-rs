@@ -65,7 +65,7 @@ pub const A2A_LAB_CONFIG_SCHEMA_VERSION: u32 = 1;
 pub struct A2aLabConfig {
     /// Parsed `schema_version` field (`1` or `2` only).
     pub schema_version: u32,
-    /// Optional chat provider/model overrides.
+    /// Optional chat provider, model, and preamble overrides.
     pub chat: Option<ChatConfig>,
     /// Optional video settings. Absent when the file omits `videos`.
     pub videos: Option<VideoConfig>,
@@ -77,7 +77,7 @@ pub struct A2aLabConfig {
     pub logging: Option<LoggingConfig>,
 }
 
-/// Optional chat provider and model overrides.
+/// Optional chat provider, model, and preamble overrides.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatConfig {
     /// When set, selects one of the supported chat providers.
@@ -86,6 +86,9 @@ pub struct ChatConfig {
     /// When set, must contain non-whitespace text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Exact preamble text. Absent means omitted. Blank and whitespace are kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preamble: Option<String>,
 }
 
 /// Supported chat provider identifiers.
@@ -284,16 +287,28 @@ fn parse_chat(value: Option<&serde_json::Value>) -> Result<Option<ChatConfig>, A
         return Err(A2aLabError::invalid("chat", "must be a JSON object"));
     }
     let map = object_at("chat", value)?;
-    reject_unknown_keys(map, "chat", &["provider", "model"])?;
+    reject_unknown_keys(map, "chat", &["provider", "model", "preamble"])?;
     let provider = parse_provider(map.get("provider"))?;
     let model = parse_model(map.get("model"))?;
-    if provider.is_none() && model.is_none() {
-        return Ok(Some(ChatConfig {
-            provider: None,
-            model: None,
-        }));
+    let preamble = parse_preamble("chat.preamble", map.get("preamble"))?;
+    Ok(Some(ChatConfig {
+        provider,
+        model,
+        preamble,
+    }))
+}
+
+pub(super) fn parse_preamble(
+    field: &'static str,
+    value: Option<&serde_json::Value>,
+) -> Result<Option<String>, A2aLabError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value {
+        serde_json::Value::String(text) => Ok(Some(text.clone())),
+        _ => Err(A2aLabError::invalid(field, "must be a string")),
     }
-    Ok(Some(ChatConfig { provider, model }))
 }
 
 fn parse_provider(value: Option<&serde_json::Value>) -> Result<Option<ChatProvider>, A2aLabError> {
@@ -360,6 +375,7 @@ mod tests {
             config.chat.as_ref().unwrap().model.as_deref(),
             Some("gpt-test")
         );
+        assert!(config.chat.as_ref().unwrap().preamble.is_none());
     }
 
     #[test]
@@ -370,8 +386,88 @@ mod tests {
             Some(ChatConfig {
                 provider: None,
                 model: None,
+                preamble: None,
             })
         );
+    }
+
+    #[test]
+    fn preamble_keeps_any_string_and_stays_optional() {
+        let omitted =
+            A2aLabConfig::parse(r#"{"schema_version":1,"chat":{"model":"kept"}}"#).unwrap();
+        assert!(omitted.chat.as_ref().unwrap().preamble.is_none());
+        assert_eq!(
+            omitted.chat.as_ref().unwrap().model.as_deref(),
+            Some("kept")
+        );
+
+        for text in ["", " ", " \n\t ", "  keep\n"] {
+            let document = format!(
+                r#"{{"schema_version":1,"chat":{{"provider":"openai","model":"kept","preamble":{}}}}}"#,
+                serde_json::to_string(text).unwrap()
+            );
+            let config = A2aLabConfig::parse(&document).unwrap();
+            let chat = config.chat.unwrap();
+            assert_eq!(chat.preamble.as_deref(), Some(text));
+            assert_eq!(chat.provider, Some(ChatProvider::Openai));
+            assert_eq!(chat.model.as_deref(), Some("kept"));
+            let serialized = serde_json::to_value(&chat).unwrap();
+            assert_eq!(serialized["preamble"], text);
+            assert_eq!(serialized["model"], "kept");
+            assert_eq!(serialized["provider"], "openai");
+        }
+
+        let blank = ChatConfig {
+            provider: None,
+            model: None,
+            preamble: Some(String::new()),
+        };
+        assert_eq!(
+            serde_json::to_value(&blank).unwrap(),
+            serde_json::json!({"preamble": ""})
+        );
+    }
+
+    #[test]
+    fn preamble_rejects_non_string_duplicate_and_unknown_fields() {
+        let non_string = [
+            r#"{"schema_version":1,"chat":{"preamble":1}}"#,
+            r#"{"schema_version":1,"chat":{"preamble":null}}"#,
+            r#"{"schema_version":1,"chat":{"preamble":true}}"#,
+            r#"{"schema_version":1,"chat":{"preamble":["a"]}}"#,
+            r#"{"schema_version":1,"chat":{"preamble":{"text":"a"}}}"#,
+        ];
+        for document in non_string {
+            let error = A2aLabConfig::parse(document).unwrap_err();
+            match error {
+                A2aLabError::Invalid { field, message } => {
+                    assert_eq!(field, "chat.preamble");
+                    assert_eq!(message, "must be a string");
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        let duplicate = A2aLabConfig::parse(
+            r#"{"schema_version":1,"chat":{"preamble":"one","preamble":"two"}}"#,
+        )
+        .unwrap_err();
+        match duplicate {
+            A2aLabError::Invalid { field, message } => {
+                assert_eq!(field, "input");
+                assert_eq!(message, "duplicate JSON object key");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        let unknown =
+            A2aLabConfig::parse(r#"{"schema_version":1,"chat":{"preamble":"kept","extra":true}}"#)
+                .unwrap_err();
+        match unknown {
+            A2aLabError::Invalid { field, message } => {
+                assert_eq!(field, "chat");
+                assert_eq!(message, "unknown field");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

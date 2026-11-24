@@ -2,19 +2,19 @@
 
 use dioxus::prelude::*;
 
-use super::chrome::{SectionCard, SelectField, TextField};
+use super::chrome::{CheckField, SectionCard, SelectField, TextAreaField, TextField};
 use super::document::{FieldErrors, restart_required, writable};
 use crate::settings_semantic::{
     COVERAGE_POLICIES, DECISIONS_COVERAGE, DECISIONS_CREDENTIALS, DECISIONS_DEADLINE,
     DECISIONS_ENDPOINT, DECISIONS_MAX_BATCH, DECISIONS_MAX_CONCURRENCY, DECISIONS_MODEL,
-    DEFAULT_JEV_API_ENDPOINT, DESCRIPTION_CREDENTIALS, DESCRIPTION_MODEL, DESCRIPTION_PROVIDER,
-    DESCRIPTION_PROVIDERS, EMBEDDINGS_CREDENTIALS, EMBEDDINGS_DIMENSIONS, EMBEDDINGS_GENERATION,
-    EMBEDDINGS_METRIC, EMBEDDINGS_MODEL, EMBEDDINGS_NORMALIZATION, EMBEDDINGS_PROVIDER,
-    METRIC_VALUES, NORMALIZATION_VALUES, ROI_MAX_EDGE, ROI_MAX_PER_FRAME, ROI_MIN_EDGE,
-    SEARCH_CANDIDATES, SEARCH_NEIGHBORS, SEARCH_SCORE_FLOOR, SEARCH_TOP_K, SEARCH_WINDOW,
-    STORAGE_DISK, STORAGE_INDEX, STORAGE_SQLITE, SemanticDraft, WORKER_BACKOFF, WORKER_DEADLINE,
-    WORKER_MAX_BATCH, WORKER_MAX_CONCURRENCY, WORKER_MAX_QUEUE, WORKER_MAX_RETRIES, added_semantic,
-    reindex_required,
+    DECISIONS_PREAMBLE, DEFAULT_JEV_API_ENDPOINT, DESCRIPTION_CREDENTIALS, DESCRIPTION_MODEL,
+    DESCRIPTION_PROVIDER, DESCRIPTION_PROVIDERS, EMBEDDINGS_CREDENTIALS, EMBEDDINGS_DIMENSIONS,
+    EMBEDDINGS_GENERATION, EMBEDDINGS_METRIC, EMBEDDINGS_MODEL, EMBEDDINGS_NORMALIZATION,
+    EMBEDDINGS_PROVIDER, METRIC_VALUES, NORMALIZATION_VALUES, ROI_MAX_EDGE, ROI_MAX_PER_FRAME,
+    ROI_MIN_EDGE, SEARCH_CANDIDATES, SEARCH_NEIGHBORS, SEARCH_SCORE_FLOOR, SEARCH_TOP_K,
+    SEARCH_WINDOW, STORAGE_DISK, STORAGE_INDEX, STORAGE_SQLITE, SemanticDraft, WORKER_BACKOFF,
+    WORKER_DEADLINE, WORKER_MAX_BATCH, WORKER_MAX_CONCURRENCY, WORKER_MAX_QUEUE,
+    WORKER_MAX_RETRIES, added_semantic, reindex_required,
 };
 
 #[component]
@@ -218,6 +218,28 @@ pub fn SemanticPanel(
                 locked,
                 value: draft.decisions_credentials.clone(),
                 oninput: move |value| super::edit_semantic(move |semantic| semantic.decisions_credentials = value),
+            }
+            CheckField {
+                id: "settings-semantic-decisions-preamble-enabled".to_string(),
+                label: "Include preamble".to_string(),
+                help: "Unchecked omits semantic_indexing.decisions.preamble. Checked stores the field, including a blank value.".to_string(),
+                error: error_text(&errors, DECISIONS_PREAMBLE),
+                restart: restart_required(DECISIONS_PREAMBLE),
+                locked,
+                checked: draft.decisions_preamble_set,
+                oninput: move |value| super::edit_semantic(move |semantic| semantic.decisions_preamble_set = value),
+            }
+            if draft.decisions_preamble_set {
+                TextAreaField {
+                    id: "settings-semantic-decisions-preamble".to_string(),
+                    label: "semantic_indexing.decisions.preamble".to_string(),
+                    help: "Exact preamble text. Blank and whitespace are kept.".to_string(),
+                    error: error_text(&errors, DECISIONS_PREAMBLE),
+                    restart: restart_required(DECISIONS_PREAMBLE),
+                    locked,
+                    value: draft.decisions_preamble.clone(),
+                    oninput: move |value| super::edit_semantic(move |semantic| semantic.decisions_preamble = value),
+                }
             }
         }
         LimitsPanel { draft: draft.clone(), errors: errors.clone(), locked }

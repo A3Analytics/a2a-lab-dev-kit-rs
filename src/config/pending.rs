@@ -129,6 +129,15 @@ mod tests {
     }
 
     #[test]
+    fn preamble_changes_are_restart_required() {
+        let baseline = json!({"chat":{"model":"keep-me"}});
+        let current = json!({"chat":{"model":"keep-me","preamble":""}});
+        let (restart, reindex) = pending_restart_and_reindex(&baseline, &current);
+        assert_eq!(restart, vec!["chat.preamble"]);
+        assert!(reindex.is_empty());
+    }
+
+    #[test]
     fn other_fields_are_restart_required() {
         let baseline = json!({"chat":{"model":"keep-me"},"videos":{"live_retention":"30s"}});
         let current = json!({"chat":{"model":"other"},"videos":{"live_retention":"45s"}});

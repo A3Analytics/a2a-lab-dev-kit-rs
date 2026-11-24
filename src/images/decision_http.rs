@@ -26,9 +26,10 @@ use async_trait::async_trait;
 
 use crate::error::A2aLabError;
 use crate::images::{
-    Image, ImageDecisionModelAnswer, ImageDecisionPrimitiveAnswer, ImageDecisionProviderError,
-    ImageDecisionQuestions, ImageDecisionRequest, ImageDecisionResult, ImageDecisionRoi,
-    ImageTransportConfig, SourceImageDecisionResult, execute_generic_image_decision,
+    Image, ImageDecisionModelAnswer, ImageDecisionModelInput, ImageDecisionPrimitiveAnswer,
+    ImageDecisionProviderError, ImageDecisionQuestions, ImageDecisionRequest, ImageDecisionResult,
+    ImageDecisionRoi, ImageTransportConfig, SourceImageDecisionResult,
+    execute_generic_image_decision,
 };
 
 use super::decision::ImageDecisionExecutor;
@@ -125,6 +126,7 @@ impl ImageDecisionHttpLimits {
 pub struct ImageDecisionHttpClient {
     endpoint: Url,
     limits: ImageDecisionHttpLimits,
+    preamble: Option<String>,
     http: reqwest::Client,
 }
 
@@ -144,8 +146,16 @@ impl ImageDecisionHttpClient {
         Ok(Self {
             endpoint,
             limits,
+            preamble: None,
             http,
         })
+    }
+
+    /// Stores the exact preamble. Blank text is kept and does not change questions.
+    #[must_use]
+    pub fn with_preamble(mut self, preamble: Option<String>) -> Self {
+        self.preamble = preamble;
+        self
     }
 
     /// Absolute decision endpoint.
@@ -170,7 +180,7 @@ impl ImageDecisionHttpClient {
         &self,
         request: &ImageDecisionRequest,
     ) -> Result<ImageDecisionResult, ImageDecisionProviderError> {
-        let body = prepare_body(request, self.limits)?;
+        let body = prepare_body(request, self.preamble.as_deref(), self.limits)?;
         let response = self
             .http
             .post(self.endpoint.clone())
@@ -201,6 +211,7 @@ impl ImageDecisionHttpClient {
             .image_transport()
             .check_payload(image.data())
             .map_err(|_| limit_exceeded("image", "image exceeds the configured maximum"))?;
+        let outbound = super::preamble::outbound_questions(self.preamble.as_deref(), questions)?;
         let data = base64::engine::general_purpose::STANDARD.encode(image.data());
         let body = ProviderBody {
             model,
@@ -211,7 +222,7 @@ impl ImageDecisionHttpClient {
                 },
                 roi,
             },
-            questions,
+            questions: outbound.as_ref(),
         };
         let body =
             serde_json::to_vec(&body).map_err(|_| invalid_answer("request json is invalid"))?;
@@ -332,14 +343,23 @@ struct WireResponse {
 
 fn prepare_body(
     request: &ImageDecisionRequest,
+    preamble: Option<&str>,
     limits: ImageDecisionHttpLimits,
 ) -> Result<Vec<u8>, ImageDecisionProviderError> {
     limits
         .image_transport()
         .check_payload(request.image().data())
         .map_err(|_| limit_exceeded("image", "image exceeds the configured maximum"))?;
-    let body =
-        serde_json::to_vec(request).map_err(|_| invalid_answer("request json is invalid"))?;
+    let question = super::preamble::outbound_instructions(preamble, request.question())?;
+    let body = match &question {
+        std::borrow::Cow::Borrowed(_) => serde_json::to_vec(request),
+        std::borrow::Cow::Owned(question) => serde_json::to_vec(&OutboundGeneric {
+            image: request.image(),
+            question,
+            model_input: request.model_input(),
+        }),
+    }
+    .map_err(|_| invalid_answer("request json is invalid"))?;
     if body.len() > limits.max_request_bytes() {
         return Err(limit_exceeded(
             "request",
@@ -347,6 +367,13 @@ fn prepare_body(
         ));
     }
     Ok(body)
+}
+
+#[derive(Serialize)]
+struct OutboundGeneric<'a> {
+    image: &'a Image,
+    question: &'a str,
+    model_input: &'a ImageDecisionModelInput,
 }
 
 fn interpret(

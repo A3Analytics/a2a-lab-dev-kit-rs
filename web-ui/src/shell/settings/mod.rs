@@ -19,13 +19,15 @@ use crate::settings_semantic::{
     SemanticDraft, semantic_draft_from_document, surgical_semantic_changes,
 };
 use chrome::{
-    AlertKind, CheckField, SectionCard, SelectField, SettingsAlert, StickyActions, TextField,
+    AlertKind, CheckField, SectionCard, SelectField, SettingsAlert, StickyActions, TextAreaField,
+    TextField,
 };
 use document::{
-    CHAT_MODEL, CHAT_PROVIDER, CoreDraft, LOGGING_ENABLED, LOGGING_FILTER, LOGGING_FORMAT,
-    LOGGING_LEVEL, LOGGING_OTEL, SettingsSnapshot, SettingsWriteError, classify_settings_write,
-    draft_from_document, parse_snapshot, patch_envelope, persistence_message, restart_required,
-    surgical_core_changes, writable,
+    CHAT_MODEL, CHAT_PREAMBLE, CHAT_PROVIDER, CoreDraft, LOGGING_ENABLED, LOGGING_FILTER,
+    LOGGING_FORMAT, LOGGING_LEVEL, LOGGING_OTEL, SettingsSnapshot, SettingsWriteError,
+    apply_default_chat_preamble, classify_settings_write, draft_from_document, parse_snapshot,
+    patch_envelope,
+    persistence_message, restart_required, surgical_core_changes, writable,
 };
 use semantic::SemanticPanel;
 use videos::{
@@ -46,6 +48,7 @@ pub struct SettingsUi {
     pub pending_restart: Vec<String>,
     pub document: Value,
     pub draft: CoreDraft,
+    pub default_chat_preamble: String,
     pub video: VideoDraft,
     pub semantic: SemanticDraft,
     pub errors: BTreeMap<String, String>,
@@ -64,6 +67,7 @@ impl SettingsUi {
             pending_restart: Vec::new(),
             document: Value::Object(Default::default()),
             draft: CoreDraft::empty(),
+            default_chat_preamble: String::new(),
             video: VideoDraft::empty(),
             semantic: SemanticDraft::empty(),
             errors: BTreeMap::new(),
@@ -149,7 +153,12 @@ pub fn SettingsView(ui: Signal<SettingsUi>, visible: bool) -> Element {
                         event.prevent_default();
                         cancel_core();
                     },
-                    ChatSection { draft: state.draft.clone(), errors: state.errors.clone(), locked }
+                    ChatSection {
+                        draft: state.draft.clone(),
+                        default_preamble: state.default_chat_preamble.clone(),
+                        errors: state.errors.clone(),
+                        locked,
+                    }
                     LoggingSection { draft: state.draft.clone(), errors: state.errors.clone(), locked }
                     VideosPanel {
                         draft: state.video.clone(),
@@ -172,11 +181,19 @@ pub fn SettingsView(ui: Signal<SettingsUi>, visible: bool) -> Element {
 }
 
 #[component]
-fn ChatSection(draft: CoreDraft, errors: BTreeMap<String, String>, locked: bool) -> Element {
+fn ChatSection(
+    draft: CoreDraft,
+    default_preamble: String,
+    errors: BTreeMap<String, String>,
+    locked: bool,
+) -> Element {
+    let reset_to = default_preamble.clone();
+    let show_reset = !default_preamble.is_empty();
+    let already_default = draft.chat_preamble == default_preamble;
     rsx! {
         SectionCard {
             title: "Chat",
-            description: "Chat provider and model overrides. Saved changes require an agent restart and are never applied live.",
+            description: "Chat provider, model, and preamble. Saved changes require an agent restart and are never applied live.",
             SelectField {
                 id: "settings-chat-provider".to_string(),
                 label: "chat.provider".to_string(),
@@ -202,6 +219,35 @@ fn ChatSection(draft: CoreDraft, errors: BTreeMap<String, String>, locked: bool)
                 locked,
                 value: draft.chat_model.clone(),
                 oninput: move |value| edit_draft(|draft| draft.chat_model = value),
+            }
+            TextAreaField {
+                id: "settings-chat-preamble".to_string(),
+                label: "chat.preamble".to_string(),
+                help: "Exact preamble text. An omitted value starts as the built-in preamble. Blank and whitespace are kept. Saved changes require an agent restart.".to_string(),
+                error: error_text(&errors, CHAT_PREAMBLE),
+                restart: restart_required(CHAT_PREAMBLE),
+                locked,
+                value: draft.chat_preamble.clone(),
+                oninput: move |value| edit_draft(|draft| {
+                    draft.chat_preamble_set = true;
+                    draft.chat_preamble = value;
+                }),
+            }
+            if show_reset {
+                button {
+                    id: "settings-chat-preamble-reset",
+                    class: "settings-button-outline",
+                    r#type: "button",
+                    disabled: locked || already_default,
+                    onclick: move |_| {
+                        let preamble = reset_to.clone();
+                        edit_draft(move |draft| {
+                            draft.chat_preamble_set = true;
+                            draft.chat_preamble = preamble;
+                        });
+                    },
+                    "Reset to default"
+                }
             }
         }
     }
@@ -486,7 +532,9 @@ async fn reload_after_conflict(message: String) {
 fn apply_snapshot(state: &mut SettingsUi, snapshot: SettingsSnapshot) {
     state.view = snapshot.live.clone();
     state.document = snapshot.document;
+    state.default_chat_preamble = snapshot.default_chat_preamble.clone().unwrap_or_default();
     state.draft = draft_from_document(&state.document);
+    apply_default_chat_preamble(&mut state.draft, snapshot.default_chat_preamble.as_deref());
     state.video = video_draft_from_document(&state.document);
     state.semantic = semantic_draft_from_document(&state.document);
     state.revision = snapshot.revision;

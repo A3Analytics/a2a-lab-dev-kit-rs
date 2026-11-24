@@ -179,6 +179,7 @@
 }
 
 .settings-field input[aria-invalid="true"],
+.settings-field textarea[aria-invalid="true"],
 .settings-field select[aria-invalid="true"] {
   border-color: var(--destructive);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 25%, transparent);

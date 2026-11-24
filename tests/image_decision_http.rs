@@ -4,17 +4,18 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use a2a_lab_dev_kit::{
-    A2aLabError, FakeFrameDecisionEvaluator, FakeJevBehavior, FrameDecisionEvaluator,
+    A2aLabConfig, A2aLabError, FakeFrameDecisionEvaluator, FakeJevBehavior, FrameDecisionEvaluator,
     FrameDecisionEvaluatorLimits, FrameDecisionEvaluatorProviderConfig, FrameDecisionLedger,
     FrameDecisionRecord, IMAGE_DECISION_DOWNSTREAM_DEPENDENCY, IMAGE_DECISION_EXCLUDED_SCOPE,
     IMAGE_DECISION_HTTP_DEADLINE, IMAGE_DECISION_HTTP_MAX_IMAGE_BYTES,
     IMAGE_DECISION_HTTP_MAX_REQUEST_BYTES, IMAGE_DECISION_HTTP_MAX_RESPONSE_BYTES,
-    IMAGE_DECISION_TRANSPORTS, Image, ImageDecisionClass, ImageDecisionHttpClient,
-    ImageDecisionHttpLimits, ImageDecisionModelAnswer, ImageDecisionModelInput,
-    ImageDecisionProviderError, ImageDecisionRequest, ImageDecisionResult, ImageDecisionRoi,
-    ImageDescriptor, ImageId, ImageSourceId, JsonObject, LabPredicate,
+    IMAGE_DECISION_TRANSPORTS, Image, ImageDecisionClass, ImageDecisionExecutor,
+    ImageDecisionHttpClient, ImageDecisionHttpLimits, ImageDecisionModelAnswer,
+    ImageDecisionModelInput, ImageDecisionProviderError, ImageDecisionRequest, ImageDecisionResult,
+    ImageDecisionRoi, ImageDescriptor, ImageId, ImageSourceId, JsonObject, LabPredicate,
     PREDICATE_FOREIGN_OBJECT_PRESENT, PREDICATE_PIPETTE_TIP_ATTACHED, PREDICATE_PLATE_MISALIGNED,
-    Sha256Digest, UtcTimestamp, bind_local, execute_generic_image_decision,
+    ResolvedImageDecisionClient, Sha256Digest, UtcTimestamp, bind_local,
+    execute_generic_image_decision,
 };
 use axum::Router;
 use axum::body::{Body, Bytes};
@@ -415,6 +416,121 @@ fn typed_evaluator_and_published_revision_boundary_stay_in_place() {
             .unwrap_err()
             .code()
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)]
+async fn configured_preamble_is_prepended_before_provider_limits() {
+    let request = decision(None);
+    let bare = serde_json::to_vec(&request).unwrap();
+    let answers = br#"{"answers":[{"text":"yes","probability":1.0}]}"#;
+
+    let (url, seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        answers,
+        false,
+    ))
+    .await;
+    let executor = configured_executor(&url, Some(" \t\n"), None, None);
+    let result = executor.decide(&request).await.unwrap();
+    assert_eq!(result.answers()[0].text(), Some("yes"));
+    assert_eq!(seen.0.lock().expect("seen").clone().unwrap(), bare);
+
+    let (url, seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        answers,
+        false,
+    ))
+    .await;
+    let executor = configured_executor(&url, None, None, None);
+    executor.decide(&request).await.unwrap();
+    assert_eq!(seen.0.lock().expect("seen").clone().unwrap(), bare);
+
+    let (url, seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        answers,
+        false,
+    ))
+    .await;
+    let executor = configured_executor(&url, Some("  Guide"), None, None);
+    executor.decide(&request).await.unwrap();
+    let sent: serde_json::Value =
+        serde_json::from_slice(&seen.0.lock().expect("seen").clone().unwrap()).unwrap();
+    let expected: serde_json::Value = serde_json::from_slice(&bare).unwrap();
+    assert_eq!(sent["image"], expected["image"]);
+    assert_eq!(sent["model_input"], expected["model_input"]);
+    assert_eq!(sent["question"], format!("  Guide\n{}", request.question()));
+
+    let (url, seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        answers,
+        false,
+    ))
+    .await;
+    let too_long = "x".repeat(a2a_lab_dev_kit::MAX_IMAGE_DECISION_QUESTION_CHARS);
+    let executor = configured_executor(&url, Some(&too_long), None, None);
+    let error = executor.decide(&request).await.unwrap_err();
+    assert!(matches!(
+        error,
+        ImageDecisionProviderError::LimitExceeded { ref limit, .. } if limit == "question"
+    ));
+    assert!(seen.0.lock().expect("seen").is_none());
+
+    let (url, seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        answers,
+        false,
+    ))
+    .await;
+    let executor = configured_executor(
+        &url,
+        Some("Guide"),
+        Some(u64::try_from(bare.len()).unwrap()),
+        Some(64),
+    );
+    let error = executor.decide(&request).await.unwrap_err();
+    assert!(matches!(
+        error,
+        ImageDecisionProviderError::LimitExceeded { ref limit, .. } if limit == "request"
+    ));
+    assert!(seen.0.lock().expect("seen").is_none());
+}
+
+fn configured_executor(
+    url: &str,
+    preamble: Option<&str>,
+    max_request_bytes: Option<u64>,
+    max_image_bytes: Option<u64>,
+) -> std::sync::Arc<dyn ImageDecisionExecutor> {
+    let mut client = serde_json::json!({
+        "endpoint": url,
+        "model": "jev-1.14.0"
+    });
+    if let Some(preamble) = preamble {
+        client["preamble"] = serde_json::json!(preamble);
+    }
+    if let Some(max_request_bytes) = max_request_bytes {
+        client["max_request_bytes"] = serde_json::json!(max_request_bytes);
+    }
+    if let Some(max_image_bytes) = max_image_bytes {
+        client["max_image_bytes"] = serde_json::json!(max_image_bytes);
+    }
+    let config = A2aLabConfig::parse(
+        &serde_json::to_string(&serde_json::json!({
+            "schema_version": 1,
+            "image_decision": client
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    ResolvedImageDecisionClient::from_config(config.image_decision.unwrap())
+        .executor()
+        .unwrap()
 }
 
 struct Reply {

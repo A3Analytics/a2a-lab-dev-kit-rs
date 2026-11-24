@@ -92,7 +92,8 @@ impl TypedLabPredicateJevAdapter {
             decisions.endpoint(),
             api_key,
             Self::http_limits(limits)?,
-        )?;
+        )?
+        .with_preamble(decisions.preamble().map(str::to_owned));
         Self::assemble(
             config,
             limits,

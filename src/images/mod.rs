@@ -7,6 +7,7 @@
 mod decision;
 mod decision_http;
 mod model;
+mod preamble;
 mod provider;
 mod resolve;
 mod source_decision;

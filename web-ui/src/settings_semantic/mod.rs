@@ -31,6 +31,7 @@ pub const DECISIONS_PROVIDER: &str = "semantic_indexing.decisions.provider";
 pub const DECISIONS_ENDPOINT: &str = "semantic_indexing.decisions.endpoint";
 pub const DECISIONS_MODEL: &str = "semantic_indexing.decisions.model";
 pub const DECISIONS_CREDENTIALS: &str = "semantic_indexing.decisions.credentials.env";
+pub const DECISIONS_PREAMBLE: &str = "semantic_indexing.decisions.preamble";
 
 pub(crate) const DESCRIPTION_PROVIDERS: &[&str] = &["bedrock", "openai"];
 pub(crate) const DECISION_PROVIDERS: &[&str] = &["jev"];
@@ -58,6 +59,8 @@ pub struct SemanticDraft {
     pub decisions_endpoint: String,
     pub decisions_model: String,
     pub decisions_credentials: String,
+    pub decisions_preamble_set: bool,
+    pub decisions_preamble: String,
     pub limits: SemanticLimitsDraft,
 }
 
@@ -80,6 +83,8 @@ impl SemanticDraft {
             decisions_endpoint: DEFAULT_JEV_API_ENDPOINT.to_owned(),
             decisions_model: String::new(),
             decisions_credentials: String::new(),
+            decisions_preamble_set: false,
+            decisions_preamble: String::new(),
             limits: SemanticLimitsDraft::empty(),
         }
     }
@@ -117,6 +122,8 @@ pub fn semantic_draft_from_document(document: &Value) -> SemanticDraft {
         ),
         decisions_model: string_or_empty(decisions.and_then(|value| value.get("model"))),
         decisions_credentials: credential_env(decisions),
+        decisions_preamble_set: decisions.and_then(|value| value.get("preamble")).is_some(),
+        decisions_preamble: string_or_empty(decisions.and_then(|value| value.get("preamble"))),
         limits: limits::from_document(limits),
     }
 }
@@ -466,6 +473,15 @@ fn decisions_change(
         &draft.decisions_credentials,
         &mut object,
     );
+    push_exact_string(
+        &mut object,
+        "preamble",
+        decisions
+            .and_then(|value| value.get("preamble"))
+            .and_then(Value::as_str),
+        draft.decisions_preamble_set,
+        &draft.decisions_preamble,
+    );
     if !object.is_empty() {
         nested.insert("decisions".to_owned(), Value::Object(object));
     }
@@ -564,6 +580,25 @@ fn validate_generation(errors: &mut FieldErrors, value: &str) {
                 "semantic_indexing.embeddings.space.generation must be greater than zero."
                     .to_owned(),
             );
+        }
+    }
+}
+
+fn push_exact_string(
+    target: &mut Map<String, Value>,
+    key: &str,
+    current: Option<&str>,
+    set: bool,
+    next: &str,
+) {
+    match (current, set) {
+        (None, false) => {}
+        (Some(current), true) if current == next => {}
+        (Some(_), false) => {
+            target.insert(key.to_owned(), Value::Null);
+        }
+        (_, true) => {
+            target.insert(key.to_owned(), Value::String(next.to_owned()));
         }
     }
 }
@@ -716,6 +751,60 @@ mod tests {
         );
         assert!(changes["semantic_indexing"].get("embeddings").is_none());
         assert!(changes["semantic_indexing"].get("limits").is_none());
+    }
+
+    #[test]
+    fn decision_preamble_draft_keeps_exact_text() {
+        let document = json!({
+            "schema_version": 2,
+            "semantic_indexing": {
+                "description": { "model": "luna" },
+                "decisions": { "model": "jev-1.14.0", "preamble": "  keep\n" },
+                "limits": { "storage": { "vector_index_path": "./x" } }
+            }
+        });
+        let draft = semantic_draft_from_document(&document);
+        assert_eq!(DECISIONS_PREAMBLE, "semantic_indexing.decisions.preamble");
+        assert!(draft.decisions_preamble_set);
+        assert_eq!(draft.decisions_preamble, "  keep\n");
+        let mut unchanged = draft.clone();
+        unchanged.description_model = "luna-2".to_owned();
+        let changes = surgical_semantic_changes(&document, &unchanged).unwrap();
+        assert!(changes["semantic_indexing"].get("decisions").is_none());
+
+        let mut blank = semantic_draft_from_document(&json!({
+            "schema_version": 2,
+            "semantic_indexing": {
+                "description": { "model": "luna" },
+                "limits": { "storage": { "vector_index_path": "./x" } }
+            }
+        }));
+        assert!(!blank.decisions_preamble_set);
+        blank.decisions_preamble_set = true;
+        blank.decisions_preamble = String::new();
+        let changes = surgical_semantic_changes(
+            &json!({
+                "schema_version": 2,
+                "semantic_indexing": {
+                    "description": { "model": "luna" },
+                    "limits": { "storage": { "vector_index_path": "./x" } }
+                }
+            }),
+            &blank,
+        )
+        .unwrap();
+        assert_eq!(
+            changes["semantic_indexing"]["decisions"]["preamble"],
+            json!("")
+        );
+
+        let mut clear = draft;
+        clear.decisions_preamble_set = false;
+        let changes = surgical_semantic_changes(&document, &clear).unwrap();
+        assert_eq!(
+            changes["semantic_indexing"]["decisions"]["preamble"],
+            Value::Null
+        );
     }
 
     #[test]

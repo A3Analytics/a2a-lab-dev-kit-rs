@@ -90,6 +90,176 @@ async fn fixture_receives_bearer_danger_header_and_named_question_body() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)]
+async fn preamble_is_prepended_to_typed_and_box_questions_before_limits() {
+    let image = image_with("image/png", vec![0xff, 0x00, 0x10, b'a']);
+    let questions = named_questions();
+    let (plain_url, plain_seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        &answer_body(),
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    TypeSafeSystemOneClient::new(&plain_url, API_KEY, generous())
+        .unwrap()
+        .decide_questions("jev-1.14.0", &image, &questions)
+        .await
+        .unwrap();
+    let plain = plain_seen.lock().expect("seen").clone().unwrap().body;
+
+    let (blank_url, blank_seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        &answer_body(),
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    TypeSafeSystemOneClient::new(&blank_url, API_KEY, generous())
+        .unwrap()
+        .with_preamble(Some(" \t\n".to_owned()))
+        .decide_questions("jev-1.14.0", &image, &questions)
+        .await
+        .unwrap();
+    assert_eq!(
+        blank_seen.lock().expect("seen").clone().unwrap().body,
+        plain
+    );
+
+    let (url, seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        &answer_body(),
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    TypeSafeSystemOneClient::new(&url, API_KEY, generous())
+        .unwrap()
+        .with_preamble(Some("  Guide".to_owned()))
+        .decide_questions("jev-1.14.0", &image, &questions)
+        .await
+        .unwrap();
+    let body: Value =
+        serde_json::from_slice(&seen.lock().expect("seen").clone().unwrap().body).unwrap();
+    assert_eq!(
+        body["questions"]["billing"]["instructions"],
+        "  Guide\nIs this message about billing?"
+    );
+    assert_eq!(
+        body["questions"]["tone"]["instructions"],
+        "  Guide\nWhat is the tone?"
+    );
+    assert_eq!(
+        body["questions"]["urgency"]["instructions"],
+        "  Guide\nHow urgent is this message?"
+    );
+    assert_eq!(body["questions"]["tone"]["type"], "choice");
+    assert_eq!(body["questions"]["urgency"]["type"], "score");
+
+    let mut boxes = BTreeMap::new();
+    boxes.insert("tip".to_owned(), "Locate the tip.".to_owned());
+    let box_reply = json!({
+        "answers": {
+            "tip": {
+                "type": "box",
+                "box": {"top": 0.0, "bottom": 1.0, "left": 0.0, "right": 1.0},
+                "confidence": 0.5
+            }
+        }
+    });
+    let (box_url, box_seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        &serde_json::to_vec(&box_reply).unwrap(),
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    TypeSafeSystemOneClient::new(&box_url, API_KEY, generous())
+        .unwrap()
+        .with_preamble(Some("  Guide".to_owned()))
+        .decide_boxes("jev-1.14.0", &image, &boxes)
+        .await
+        .unwrap();
+    let sent: Value =
+        serde_json::from_slice(&box_seen.lock().expect("seen").clone().unwrap().body).unwrap();
+    assert_eq!(
+        sent["questions"]["tip"]["instructions"],
+        "  Guide\nLocate the tip."
+    );
+    assert_eq!(sent["questions"]["tip"]["type"], "box");
+
+    let (limit_url, limit_seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        &answer_body(),
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    let too_long = "x".repeat(a2a_lab_dev_kit::MAX_IMAGE_DECISION_QUESTION_CHARS);
+    let error = TypeSafeSystemOneClient::new(&limit_url, API_KEY, generous())
+        .unwrap()
+        .with_preamble(Some(too_long))
+        .decide_questions("jev-1.14.0", &image, &noul_only())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ImageDecisionProviderError::LimitExceeded { ref limit, .. } if limit == "question"
+    ));
+    assert!(limit_seen.lock().expect("seen").is_none());
+
+    let noul_reply =
+        br#"{"answers":{"billing":{"type":"noul","noul":0.5}},"usage":{"input_tokens":1}}"#;
+    let (size_url, size_seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        noul_reply,
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    let sent_len = {
+        TypeSafeSystemOneClient::new(&size_url, API_KEY, generous())
+            .unwrap()
+            .with_preamble(Some("Guide".to_owned()))
+            .decide_questions("jev-1.14.0", &image, &noul_only())
+            .await
+            .unwrap();
+        size_seen.lock().expect("seen").clone().unwrap().body.len()
+    };
+    let (tight_url, tight_seen) = spawn(reply(
+        StatusCode::OK,
+        Some("application/json"),
+        noul_reply,
+        false,
+        Duration::ZERO,
+    ))
+    .await;
+    let tight = limits(
+        1024 * 1024,
+        sent_len - 1,
+        1024 * 1024,
+        Duration::from_secs(2),
+    );
+    let error = TypeSafeSystemOneClient::new(&tight_url, API_KEY, tight)
+        .unwrap()
+        .with_preamble(Some("Guide".to_owned()))
+        .decide_questions("jev-1.14.0", &image, &noul_only())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ImageDecisionProviderError::LimitExceeded { ref limit, .. } if limit == "request"
+    ));
+    assert!(tight_seen.lock().expect("seen").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn asset_format_follows_png_jpg_and_jpeg_media_types() {
     for (media_type, format) in [
         ("image/png", "png"),

@@ -8,6 +8,7 @@ use serde_json::{Map, Value, json};
 pub const SCHEMA_VERSION: &str = "schema_version";
 pub const CHAT_PROVIDER: &str = "chat.provider";
 pub const CHAT_MODEL: &str = "chat.model";
+pub const CHAT_PREAMBLE: &str = "chat.preamble";
 pub const LOGGING_ENABLED: &str = "logging";
 pub const LOGGING_LEVEL: &str = "logging.level";
 pub const LOGGING_FORMAT: &str = "logging.format";
@@ -59,6 +60,7 @@ pub struct SettingsSnapshot {
     pub live: Option<CaptureSettingsView>,
     pub pending_restart: Vec<String>,
     pub pending_reindex: Vec<String>,
+    pub default_chat_preamble: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +68,8 @@ pub struct CoreDraft {
     pub schema_version: String,
     pub chat_provider: String,
     pub chat_model: String,
+    pub chat_preamble_set: bool,
+    pub chat_preamble: String,
     pub logging_enabled: bool,
     pub logging_level: String,
     pub logging_format: String,
@@ -79,6 +83,8 @@ impl CoreDraft {
             schema_version: String::new(),
             chat_provider: String::new(),
             chat_model: String::new(),
+            chat_preamble_set: false,
+            chat_preamble: String::new(),
             logging_enabled: false,
             logging_level: DEFAULT_LEVEL.to_owned(),
             logging_format: DEFAULT_FORMAT.to_owned(),
@@ -108,6 +114,12 @@ pub fn parse_snapshot(body: &str) -> Result<SettingsSnapshot, String> {
         .and_then(|live| serde_json::from_value(live).ok());
     let pending_restart = string_list(value.get("pending_restart"));
     let pending_reindex = string_list(value.get("pending_reindex"));
+    let default_chat_preamble = value
+        .get("defaults")
+        .and_then(|defaults| defaults.get("chat_preamble"))
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned);
     Ok(SettingsSnapshot {
         document,
         revision,
@@ -115,7 +127,18 @@ pub fn parse_snapshot(body: &str) -> Result<SettingsSnapshot, String> {
         live,
         pending_restart,
         pending_reindex,
+        default_chat_preamble,
     })
+}
+
+pub fn apply_default_chat_preamble(draft: &mut CoreDraft, default: Option<&str>) {
+    let Some(default) = default.filter(|text| !text.is_empty()) else {
+        return;
+    };
+    if !draft.chat_preamble_set {
+        draft.chat_preamble = default.to_owned();
+        draft.chat_preamble_set = true;
+    }
 }
 
 pub fn draft_from_document(document: &Value) -> CoreDraft {
@@ -125,6 +148,8 @@ pub fn draft_from_document(document: &Value) -> CoreDraft {
         schema_version: number_text(document.get(SCHEMA_VERSION)),
         chat_provider: string_text(chat.and_then(|value| value.get("provider"))),
         chat_model: string_text(chat.and_then(|value| value.get("model"))),
+        chat_preamble_set: chat.and_then(|value| value.get("preamble")).is_some(),
+        chat_preamble: string_text(chat.and_then(|value| value.get("preamble"))),
         logging_enabled: logging.is_some(),
         logging_level: string_or(logging.and_then(|value| value.get("level")), DEFAULT_LEVEL),
         logging_format: string_or(
@@ -344,6 +369,14 @@ fn chat_change(original: &Value, draft: &CoreDraft, changes: &mut Map<String, Va
             .and_then(Value::as_str),
         draft.chat_model.trim(),
     );
+    push_exact(
+        &mut nested,
+        "preamble",
+        chat.and_then(|value| value.get("preamble"))
+            .and_then(Value::as_str),
+        draft.chat_preamble_set,
+        &draft.chat_preamble,
+    );
     if !nested.is_empty() {
         changes.insert("chat".to_owned(), Value::Object(nested));
     }
@@ -406,6 +439,25 @@ fn otel_change(logging: Option<&Value>, draft: &CoreDraft, nested: &mut Map<Stri
         }
         (_, next) => {
             nested.insert("opentelemetry".to_owned(), json!({ "endpoint": next }));
+        }
+    }
+}
+
+fn push_exact(
+    target: &mut Map<String, Value>,
+    key: &str,
+    current: Option<&str>,
+    set: bool,
+    next: &str,
+) {
+    match (current, set) {
+        (None, false) => {}
+        (Some(current), true) if current == next => {}
+        (Some(_), false) => {
+            target.insert(key.to_owned(), Value::Null);
+        }
+        (_, true) => {
+            target.insert(key.to_owned(), Value::String(next.to_owned()));
         }
     }
 }
@@ -517,6 +569,25 @@ mod tests {
         assert_eq!(snapshot.pending_restart, vec!["chat.model"]);
         assert_eq!(snapshot.pending_reindex, Vec::<String>::new());
         assert_eq!(snapshot.live.unwrap().live_output_fps, 5);
+        assert!(snapshot.default_chat_preamble.is_none());
+    }
+
+    #[test]
+    fn omitted_preamble_prefills_from_the_default() {
+        let mut body: Value = serde_json::from_str(ORIGINAL).unwrap();
+        body["defaults"] = json!({ "chat_preamble": "  built-in\n" });
+        let snapshot = parse_snapshot(&body.to_string()).unwrap();
+        assert_eq!(
+            snapshot.default_chat_preamble.as_deref(),
+            Some("  built-in\n")
+        );
+        let mut draft = draft_from_document(&snapshot.document);
+        assert!(!draft.chat_preamble_set);
+        apply_default_chat_preamble(&mut draft, snapshot.default_chat_preamble.as_deref());
+        assert!(draft.chat_preamble_set);
+        assert_eq!(draft.chat_preamble, "  built-in\n");
+        let changes = surgical_core_changes(&snapshot.document, &draft).unwrap();
+        assert_eq!(changes["chat"]["preamble"], "  built-in\n");
     }
 
     #[test]
@@ -534,6 +605,70 @@ mod tests {
         assert!(changes.get("videos").is_none());
         assert!(changes.get("logging").is_none());
         assert!(changes["chat"].get("provider").is_none());
+        assert!(changes["chat"].get("preamble").is_none());
+    }
+
+    #[test]
+    fn preamble_draft_distinguishes_omitted_blank_and_exact_text() {
+        let omitted = json!({"schema_version": 1, "chat": {"model": "kept"}});
+        let omitted_draft = draft_from_document(&omitted);
+        assert!(!omitted_draft.chat_preamble_set);
+        assert!(omitted_draft.chat_preamble.is_empty());
+        let unchanged = surgical_core_changes(&omitted, &omitted_draft).unwrap();
+        assert!(
+            unchanged
+                .get("chat")
+                .and_then(|chat| chat.get("preamble"))
+                .is_none()
+        );
+
+        let mut add_blank = omitted_draft.clone();
+        add_blank.chat_preamble_set = true;
+        assert_eq!(
+            surgical_core_changes(&omitted, &add_blank).unwrap(),
+            json!({"chat": {"preamble": ""}})
+        );
+
+        let mut add_text = omitted_draft;
+        add_text.chat_preamble_set = true;
+        add_text.chat_preamble = "  keep\n".to_owned();
+        assert_eq!(
+            surgical_core_changes(&omitted, &add_text).unwrap(),
+            json!({"chat": {"preamble": "  keep\n"}})
+        );
+
+        let blank = json!({"schema_version": 1, "chat": {"provider": "openai", "preamble": ""}});
+        let blank_draft = draft_from_document(&blank);
+        assert!(blank_draft.chat_preamble_set);
+        assert!(blank_draft.chat_preamble.is_empty());
+        assert!(
+            surgical_core_changes(&blank, &blank_draft)
+                .unwrap()
+                .get("chat")
+                .is_none()
+        );
+
+        let spaced = json!({"schema_version": 1, "chat": {"model": "kept", "preamble": "  "}});
+        let mut edit = draft_from_document(&spaced);
+        assert!(edit.chat_preamble_set);
+        assert_eq!(edit.chat_preamble, "  ");
+        edit.chat_preamble = " \t".to_owned();
+        let changes = surgical_core_changes(&spaced, &edit).unwrap();
+        assert_eq!(changes, json!({"chat": {"preamble": " \t"}}));
+        assert!(changes["chat"].get("model").is_none());
+
+        edit.chat_preamble_set = false;
+        assert_eq!(
+            surgical_core_changes(&spaced, &edit).unwrap(),
+            json!({"chat": {"preamble": null}})
+        );
+        assert!(restart_required(CHAT_PREAMBLE));
+
+        let mut whitespace_model = draft_from_document(&spaced);
+        whitespace_model.chat_model = "   ".to_owned();
+        let errors = surgical_core_changes(&spaced, &whitespace_model).unwrap_err();
+        assert!(errors.contains_key(CHAT_MODEL));
+        assert!(!errors.contains_key(CHAT_PREAMBLE));
     }
 
     #[test]
