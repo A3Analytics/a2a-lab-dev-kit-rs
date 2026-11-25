@@ -14,7 +14,12 @@ checkout_tck() {
   if [ ! -d "$tck_dir/.git" ]; then
     git clone https://github.com/a2aproject/a2a-tck.git "$tck_dir"
   fi
-  git -C "$tck_dir" fetch origin
+  git -C "$tck_dir" fetch --force origin "$tck_rev"
+  if ! git -C "$tck_dir" cat-file -e "$tck_rev^{tree}" 2>/dev/null; then
+    rm -rf "$tck_dir"
+    git clone https://github.com/a2aproject/a2a-tck.git "$tck_dir"
+    git -C "$tck_dir" fetch --force origin "$tck_rev"
+  fi
   git -C "$tck_dir" checkout --detach "$tck_rev"
   printf '.git\n.venv\nreports\n' >"$tck_dir/.dockerignore"
 }

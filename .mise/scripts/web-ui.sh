@@ -34,6 +34,7 @@ publish = false
 a2a-lab-dev-kit = { path = "$root", default-features = $default_features }
 EOF
   mkdir -p "$dir/src"
+  cp "$root/Cargo.lock" "$dir/Cargo.lock"
   cat >"$dir/src/main.rs" <<'EOF'
 fn main() {
     let _opt_in = a2a_lab_dev_kit::A2aServer::with_web_ui;
